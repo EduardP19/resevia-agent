@@ -25,7 +25,7 @@ export interface AIResponse {
 
 export async function callAI(systemInstruction: string, messages: AIMessage[]): Promise<AIResponse> {
   const model = genAI.getGenerativeModel({ 
-    model: 'gemini-2.0-flash',
+    model: process.env.AI_MODEL_NAME || 'gemini-2.5-flash',
     systemInstruction,
     tools: [{
       functionDeclarations: [
