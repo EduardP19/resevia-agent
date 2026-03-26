@@ -52,7 +52,7 @@ export async function callAI(systemInstruction: string, messages: AIMessage[]): 
               clientName: { type: SchemaType.STRING },
               clientEmail: { type: SchemaType.STRING }
             },
-            required: ['serviceName', 'date', 'time', 'clientName']
+            required: ['serviceName', 'date', 'time', 'clientName', 'clientEmail']
           }
         },
         {

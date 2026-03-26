@@ -75,8 +75,11 @@ export async function holdBooking(details: {
       cal_booking_id: booking.id,
       salon_id: details.salonId,
       customer_phone: details.customerPhone,
+      client_name: details.clientName,
+      client_email: details.clientEmail,
       status: 'held',
       service_name: details.serviceName,
+      duration_minutes: duration,
       start_time: startISO,
       expires_at: new Date(Date.now() + 10 * 60000).toISOString(), // 10 min hold
     });
@@ -111,10 +114,10 @@ export async function confirmBooking(holdUid: string) {
     const response = await calApiV2.post('/bookings', {
       eventTypeId: SERVICE_EVENT_TYPE_ID,
       start: hold.start_time,
-      lengthInMinutes: hold.duration || 30, // Need to track duration in DB too
+      lengthInMinutes: hold.duration_minutes,
       attendee: {
-        name: 'Confirmed Client', // Ideally pass real name/email from previous flow
-        email: 'confirmed@resevia.com',
+        name: hold.client_name,
+        email: hold.client_email,
         timeZone: 'Europe/London',
         language: 'en'
       },

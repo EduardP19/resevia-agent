@@ -26,6 +26,7 @@ export async function getOrCreateConversation(salonId: string, customerPhone: st
   let { data, error } = await supabase
     .from('sessions')
     .select('*')
+    .eq('salon_id', salonId)
     .eq('client_identifier', customerPhone)
     .eq('status', 'active')
     .single();
@@ -35,9 +36,10 @@ export async function getOrCreateConversation(salonId: string, customerPhone: st
       .from('sessions')
       .insert({
         platform: 'sms',
+        salon_id: salonId,
         client_identifier: customerPhone,
         status: 'active',
-        metadata: { salon_id: salonId }
+        metadata: {}
       })
       .select()
       .single();

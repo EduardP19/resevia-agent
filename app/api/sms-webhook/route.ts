@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
 
     await supabase.from('sessions').update({
       metadata: { ...conversation.metadata, tokens: aiResponse.tokens },
-      status: triggerHandoff ? 'handed_off' : 'active',
+      status: triggerHandoff ? 'handed_over' : 'active',
       updated_at: new Date().toISOString()
     }).eq('id', conversation.id);
 
