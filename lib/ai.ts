@@ -43,44 +43,22 @@ export async function callAI(systemInstruction: string, messages: AIMessage[]): 
   const lastMessage = messages[messages.length - 1];
 
   // Build Gemini chat history from all messages except the last.
-  // System messages (tool results) are converted into proper functionCall/functionResponse
-  // pairs so Gemini has full context of what tools it has already called.
+  // System messages (prior tool results) are filtered out — their content is
+  // already captured in Sophia's following assistant response.
+  // Gemini rejects functionResponse parts inside startChat history, so we never
+  // put them there; only the *current* tool result is sent as functionResponse
+  // via sendMessage below.
   const history = messages
     .slice(0, -1)
-    .reduce((acc: any[], m: AIMessage) => {
-      if (m.role === 'system') {
-        const parsed = parseToolMessage(m.content);
-        if (parsed) {
-          // Gemini requires a model functionCall turn immediately before a functionResponse.
-          // Insert a synthetic one if the last turn in acc isn't already a functionCall.
-          const last = acc[acc.length - 1];
-          const lastIsFunctionCall =
-            last?.role === 'model' &&
-            last.parts?.some((p: any) => p.functionCall);
+    .filter(m => m.role !== 'system')
+    .map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }]
+    }));
 
-          if (!lastIsFunctionCall) {
-            acc.push({
-              role: 'model',
-              parts: [{ functionCall: { name: parsed.toolName, args: {} } }]
-            });
-          }
-          acc.push({
-            role: 'user',
-            parts: [{ functionResponse: { name: parsed.toolName, response: { result: parsed.result } } }]
-          });
-        }
-        return acc;
-      }
-
-      acc.push({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }]
-      });
-      return acc;
-    }, []);
-
-  // If the current message is a tool result, append a synthetic model functionCall
-  // at the end of history so Gemini accepts the functionResponse via sendMessage.
+  // Determine what to send as the current message.
+  // If it's a tool result, append a synthetic model functionCall to history so
+  // Gemini accepts the functionResponse, then send the result properly formatted.
   let sendPayload: any;
   if (lastMessage.role === 'system') {
     const parsed = parseToolMessage(lastMessage.content);
