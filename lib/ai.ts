@@ -31,13 +31,15 @@ export async function callAI(systemInstruction: string, messages: AIMessage[]): 
       functionDeclarations: [
         {
           name: 'check_availability',
-          description: 'Check available time slots for a specific date',
+          description: 'Check available time slots for a specific service on a given date',
           parameters: {
             type: SchemaType.OBJECT,
             properties: {
-              date: { type: SchemaType.STRING, description: 'Date in YYYY-MM-DD format' }
+              date: { type: SchemaType.STRING, description: 'Date in YYYY-MM-DD format' },
+              serviceName: { type: SchemaType.STRING, description: 'The service the customer wants to book' },
+              workerName: { type: SchemaType.STRING, description: 'Specific worker requested (optional)' }
             },
-            required: ['date']
+            required: ['date', 'serviceName']
           }
         },
         {
@@ -50,7 +52,8 @@ export async function callAI(systemInstruction: string, messages: AIMessage[]): 
               date: { type: SchemaType.STRING, description: 'YYYY-MM-DD' },
               time: { type: SchemaType.STRING, description: 'HH:mm' },
               clientName: { type: SchemaType.STRING },
-              clientEmail: { type: SchemaType.STRING }
+              clientEmail: { type: SchemaType.STRING },
+              workerName: { type: SchemaType.STRING, description: 'Specific worker to assign (optional)' }
             },
             required: ['serviceName', 'date', 'time', 'clientName', 'clientEmail']
           }

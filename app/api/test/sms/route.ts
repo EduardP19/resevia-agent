@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
       let toolResult;
 
       if (name === 'check_availability') {
-        const slots = await fetchAvailability(args.date);
+        const slots = await fetchAvailability(args.date, args.serviceName, salon.id, args.workerName);
         toolResult = slots.length > 0 ? `Available: ${slots.join(', ')}` : 'None found.';
       } else if (name === 'book_appointment') {
         const result = await holdBooking({ ...args, salonId: salon.id, customerPhone: from });
