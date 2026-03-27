@@ -69,3 +69,45 @@ export async function saveMessage(sessionId: string, role: 'user' | 'assistant' 
     content
   });
 }
+
+// Mark a session as completed
+export async function completeSession(salonId: string, clientIdentifier: string) {
+  await supabase
+    .from('sessions')
+    .update({ status: 'completed', updated_at: new Date().toISOString() })
+    .eq('salon_id', salonId)
+    .eq('client_identifier', clientIdentifier)
+    .eq('status', 'active');
+}
+
+// Dashboard: all messages within a single session
+export async function getSessionTranscript(sessionId: string) {
+  const { data } = await supabase
+    .from('transcripts')
+    .select('id, role, content, created_at')
+    .eq('session_id', sessionId)
+    .order('created_at', { ascending: true });
+  return data || [];
+}
+
+// Dashboard: all sessions for a specific client (same phone number)
+export async function getClientSessions(salonId: string, clientIdentifier: string) {
+  const { data } = await supabase
+    .from('sessions')
+    .select('id, status, platform, created_at, updated_at, metadata')
+    .eq('salon_id', salonId)
+    .eq('client_identifier', clientIdentifier)
+    .order('created_at', { ascending: false });
+  return data || [];
+}
+
+// Dashboard: all sessions for a salon (for inbox/overview)
+export async function getSalonSessions(salonId: string, limit = 50) {
+  const { data } = await supabase
+    .from('sessions')
+    .select('id, client_identifier, status, platform, created_at, updated_at, metadata')
+    .eq('salon_id', salonId)
+    .order('updated_at', { ascending: false })
+    .limit(limit);
+  return data || [];
+}

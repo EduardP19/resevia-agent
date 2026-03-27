@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, completeSession } from './supabase';
 import axios from 'axios';
 
 const CAL_COM_API_KEY = process.env.CAL_COM_API_KEY;
@@ -240,6 +240,8 @@ export async function confirmBooking(holdUid: string) {
         cal_booking_id: newBooking.id
       })
       .eq('id', hold.id);
+
+    await completeSession(hold.salon_id, hold.customer_phone);
 
     return { success: true, bookingUid: newBooking.uid };
   } catch (error: any) {
