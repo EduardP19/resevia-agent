@@ -24,7 +24,7 @@ export function buildSystemPrompt(salon: any, workers?: any[], faqs?: any[]) {
         const body = Object.entries(byCategory)
           .map(([cat, entries]) => `## ${cat}\n${entries.join('\n')}`)
           .join('\n\n');
-        return `\n\n---\n\n# Frequently asked questions\n\nUse these answers when clients ask. If an answer contains a placeholder (e.g. [LINK], [X]), do not invent a value — escalate to the team instead.\n\n${body}`;
+        return `\n\n---\n\n# Frequently asked questions\n\nUse these answers when clients ask. **Direct and Natural Tone**: Do NOT use technical jargon (e.g. "held UID", "eventTypeId"). Use the service names directly as the client would, and DO NOT wrap them in quotation marks. If an answer contains a placeholder (e.g. [LINK], [X]), do not invent a value — escalate to the team instead.\n\n${body}`;
       })()
     : '';
 
