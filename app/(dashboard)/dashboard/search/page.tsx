@@ -68,9 +68,15 @@ export default function SearchPage() {
             
             <div className="mb-6">
               <div className="text-xs font-bold text-gray-300 uppercase mb-2 tracking-widest">Chat Context</div>
-              <p className="text-gray-700 font-medium line-clamp-2 text-sm leading-relaxed italic">
+              <p className="text-gray-700 font-medium line-clamp-2 text-sm leading-relaxed italic mb-3">
                 "{session.context}"
               </p>
+              <div className="flex items-center space-x-2">
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Outcome:</div>
+                <div className="text-sm font-extrabold text-indigo-600 uppercase tracking-tight">
+                  {session.outcome}
+                </div>
+              </div>
             </div>
 
             <div className="flex items-center justify-between pt-4 border-t border-gray-50">
