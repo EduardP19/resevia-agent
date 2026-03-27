@@ -29,8 +29,14 @@ export async function POST(req: NextRequest) {
       .limit(1)
       .single();
 
+    const { data: workers } = await supabase
+      .from('workers')
+      .select('name, services')
+      .eq('salon_id', salon.id)
+      .eq('is_active', true);
+
     let history = await getTranscriptHistory(conversation.id);
-    let systemPrompt = buildSystemPrompt(salon);
+    let systemPrompt = buildSystemPrompt(salon, workers || []);
     
     if (activeHold) {
        systemPrompt += `\n\n[SYSTEM INFO] You currently have a slot held for this client: ${activeHold.service_name} at ${new Date(activeHold.start_time).toLocaleString()}. They need to confirm to finalize.`;
