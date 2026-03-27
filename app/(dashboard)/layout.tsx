@@ -1,10 +1,11 @@
 import Link from 'next/link';
-import NotificationBell from './NotificationBell';
 import Logo from './Logo';
+import { PlaygroundProvider } from './PlaygroundContext';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-screen bg-gray-50 font-sans">
+    <PlaygroundProvider>
+      <div className="flex h-screen bg-gray-50 font-sans">
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
         <div className="p-6 flex items-center space-x-3">
@@ -65,5 +66,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </main>
     </div>
+    </PlaygroundProvider>
   );
 }
