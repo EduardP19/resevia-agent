@@ -194,20 +194,30 @@ export async function searchSessionsByPhone(phone: string) {
   
   if (sError) throw sError;
 
-  // For each session, get the first user message for context
+  // For each session, get the first user message for context and determine outcome
   const results = await Promise.all((sessions || []).map(async (s: any) => {
-    const { data: firstMessage } = await supabase
+    const { data: transcript } = await supabase
       .from('transcripts')
-      .select('content')
+      .select('content, role')
       .eq('session_id', s.id)
-      .eq('role', 'user')
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .single();
+      .order('created_at', { ascending: true });
     
+    const firstUserMsg = transcript?.find(m => m.role === 'user')?.content || 'No user messages yet';
+    
+    // Determine outcome
+    let outcome = 'Enquiry';
+    if (s.status === 'handed_over') outcome = 'Escalated';
+    if (s.status === 'review') outcome = 'Awaiting Approval';
+    if (transcript?.some(m => m.content.includes('confirmed') || m.content.includes('book_direct'))) {
+      outcome = 'Booked';
+    } else if (s.status === 'completed') {
+      outcome = 'Completed';
+    }
+
     return {
       ...s,
-      context: firstMessage?.content || 'No user messages yet'
+      context: firstUserMsg,
+      outcome
     };
   }));
 
