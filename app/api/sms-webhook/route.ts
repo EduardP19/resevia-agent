@@ -125,7 +125,6 @@ export async function POST(req: NextRequest) {
 
     return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
   } catch (error: any) {
-    console.error('[Webhook Error]', error);
     return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
   }
 }

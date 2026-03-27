@@ -1,14 +1,15 @@
-import React from 'react';
 import Link from 'next/link';
 import NotificationBell from './NotificationBell';
+import Logo from './Logo';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen bg-gray-50 font-sans">
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-6">
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-brand-purple to-brand-orange bg-clip-text text-transparent italic">
+        <div className="p-6 flex items-center space-x-3">
+          <Logo className="w-10 h-10" />
+          <h1 className="text-2xl font-bold text-gray-900">
             Resevia
           </h1>
         </div>
