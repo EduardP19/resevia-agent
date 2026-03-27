@@ -14,7 +14,7 @@ export async function GET() {
     const { data: toExpire } = await supabase
       .from('sessions')
       .select('id, client_identifier, salon_id')
-      .eq('status', 'active')
+      .in('status', ['active', 'review'])
       .lt('updated_at', twoMinsAgo);
 
     for (const session of (toExpire || [])) {
@@ -28,7 +28,7 @@ export async function GET() {
     const { data: toWarn } = await supabase
       .from('sessions')
       .select('id, client_identifier, salon_id, metadata')
-      .eq('status', 'active')
+      .in('status', ['active', 'review'])
       .lt('updated_at', oneMinAgo)
       .gt('updated_at', twoMinsAgo);
 
