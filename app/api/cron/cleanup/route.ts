@@ -35,7 +35,7 @@ export async function GET() {
     for (const session of (toWarn || [])) {
       if (session.metadata?.warned_at) continue;
 
-      const msg = "In 2 minutes this session will expire. You will have to start a new one by saying Hi if you'd like to continue.";
+      const msg = "Just checking if you're still there! In 2 minutes this session will expire and you'll have to start a new one by saying Hi.";
       await sendSMS(session.client_identifier!, msg);
       await saveMessage(session.id, 'system', msg);
       
