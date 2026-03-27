@@ -73,8 +73,11 @@ export async function callAI(systemInstruction: string, messages: AIMessage[]): 
     }]
   });
 
+  const lastMessage = messages[messages.length - 1];
+
   const chat = model.startChat({
     history: messages
+      .slice(0, -1)
       .filter(m => m.role !== 'system')
       .map(m => ({
         role: m.role === 'assistant' ? 'model' : 'user',
@@ -82,8 +85,7 @@ export async function callAI(systemInstruction: string, messages: AIMessage[]): 
       }))
   });
 
-  const lastMessage = messages[messages.length - 1];
-  const result = await chat.sendMessage(lastMessage.content);
+  const result = await chat.sendMessage(lastMessage.role === 'system' ? `[Tool Result] ${lastMessage.content}` : lastMessage.content);
   const response = await result.response;
   const usage = response.usageMetadata;
 
