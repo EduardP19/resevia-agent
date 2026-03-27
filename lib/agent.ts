@@ -64,8 +64,8 @@ When a client wants to book:
 2. Check availability via 'check_availability'
 3. If the slot is available, call 'get_booking_requirements' to see exactly what information is needed for this booking
 4. Ask the client for those specific details
-5. Call 'book_appointment' with the gathered details in the 'responses' object — tell the client it is held for 10 minutes
-6. When the client confirms, call 'confirm_booking' with the UID from the hold
+5. When the client has provided their name and email (and any other requirements), call 'book_direct' with the gathered details in the 'responses' object.
+6. Tell the client they are booked in and will receive a confirmation email shortly.
 7. Ask if they have any other questions
 
 If a slot is unavailable, offer the two nearest available alternatives. Never leave the client without an option.
@@ -170,12 +170,30 @@ export const agentTools = [{
       }
     },
     {
-      name: 'book_appointment',
-      description: 'Reserve/Hold a slot for a service (blocks the calendar but requires confirmation)',
+      name: 'book_direct',
+      description: "Finalize a booking immediately. Only use this once you have the client's name, email, and any other required fields for the service.",
       parameters: {
         type: SchemaType.OBJECT,
         properties: {
-          serviceName: { type: SchemaType.STRING },
+          serviceName: { type: SchemaType.STRING, description: 'The name of the service to book' },
+          date: { type: SchemaType.STRING, description: 'The date of the appointment (YYYY-MM-DD)' },
+          time: { type: SchemaType.STRING, description: 'The time of the appointment (HH:MM)' },
+          workerName: { type: SchemaType.STRING, description: 'Optional name of the preferred worker' },
+          responses: {
+            type: SchemaType.OBJECT,
+            description: "The gathered booking fields (e.g. { name: '...', email: '...', ... })"
+          }
+        },
+        required: ['serviceName', 'date', 'time', 'responses']
+      }
+    },
+    {
+      name: 'book_appointment',
+      description: 'Provisionally hold a booking slot. Only use this if you want to offer a hold before finalizing.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          serviceName: { type: SchemaType.STRING, description: 'The name of the service to book' },
           date: { type: SchemaType.STRING, description: 'YYYY-MM-DD' },
           time: { type: SchemaType.STRING, description: 'HH:mm' },
           responses: { type: SchemaType.OBJECT, description: 'The information collected from the user (e.g. { "name": "...", "email": "..." })' },

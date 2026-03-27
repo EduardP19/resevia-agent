@@ -4,7 +4,7 @@ import { buildSystemPrompt } from '../../../lib/agent';
 import { callAI } from '../../../lib/ai';
 import { sendSMS } from '../../../lib/twilio';
 import { isHandoff } from '../../../lib/handoff';
-import { holdBooking, confirmBooking, fetchAvailability, cancelBooking, rescheduleBooking, getBookingFields } from '../../../lib/booking_service';
+import { holdBooking, confirmBooking, fetchAvailability, cancelBooking, rescheduleBooking, getBookingFields, bookDirect } from '../../../lib/booking_service';
 
 export async function POST(req: NextRequest) {
   try {
@@ -62,6 +62,18 @@ export async function POST(req: NextRequest) {
         } else {
           toolResult = "Service not found or no workers available.";
         }
+      } else if (name === 'book_direct') {
+        const directRes = await bookDirect({
+          serviceName: args.serviceName,
+          date: args.date,
+          time: args.time,
+          responses: args.responses || {},
+          salonId: salon.id,
+          customerPhone: fromNumber,
+          workerName: args.workerName,
+          salonServices: salon.services
+        });
+        toolResult = JSON.stringify(directRes);
       } else if (name === 'book_appointment') {
         const result = await holdBooking({ ...args, salonId: salon.id, customerPhone: fromNumber, salonServices: salon.services });
         toolResult = result.success ? `Slot HELD. UID: ${result.bookingUid}` : `Failed: ${result.error}`;

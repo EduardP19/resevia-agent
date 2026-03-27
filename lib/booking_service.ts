@@ -382,3 +382,37 @@ export async function confirmBooking(holdUid: string) {
     return { success: false, error: 'Failed to confirm booking.' };
   }
 }
+
+/**
+ * A seamless one-step booking that holds and confirms immediately.
+ */
+export async function bookDirect(details: {
+  serviceName: string;
+  date: string;
+  time: string;
+  responses: Record<string, any>;
+  salonId: string;
+  customerPhone: string;
+  workerName?: string;
+  salonServices?: any[];
+}) {
+  try {
+    // 1. Hold the slot
+    const hold = await holdBooking(details);
+    if (!hold.success) return hold;
+
+    // 2. Confirm immediately
+    const confirm = await confirmBooking(hold.bookingUid!);
+    if (!confirm.success) return confirm;
+
+    return { 
+        success: true, 
+        bookingUid: confirm.bookingUid,
+        workerName: hold.workerName,
+        duration: hold.duration
+    };
+  } catch (error: any) {
+    console.error('[Direct Booking Error]', error.message);
+    return { success: false, error: 'Failed to finalize booking.' };
+  }
+}
