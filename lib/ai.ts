@@ -68,6 +68,30 @@ export async function callAI(systemInstruction: string, messages: AIMessage[]): 
             },
             required: ['holdUid']
           }
+        },
+        {
+          name: 'cancel_booking',
+          description: "Cancel the customer's next upcoming confirmed appointment",
+          parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+              serviceName: { type: SchemaType.STRING, description: 'Service name to disambiguate if customer has multiple bookings (optional)' }
+            },
+            required: []
+          }
+        },
+        {
+          name: 'reschedule_booking',
+          description: "Reschedule the customer's next upcoming confirmed appointment to a new date and time",
+          parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+              newDate: { type: SchemaType.STRING, description: 'New date in YYYY-MM-DD format' },
+              newTime: { type: SchemaType.STRING, description: 'New time in HH:mm format' },
+              serviceName: { type: SchemaType.STRING, description: 'Service name to disambiguate if customer has multiple bookings (optional)' }
+            },
+            required: ['newDate', 'newTime']
+          }
         }
       ]
     }]

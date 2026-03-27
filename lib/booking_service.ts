@@ -198,6 +198,103 @@ export async function holdBooking(details: {
 }
 
 /**
+ * Cancels the customer's next upcoming confirmed booking.
+ */
+export async function cancelBooking(customerPhone: string, salonId: string, serviceName?: string) {
+  try {
+    let query = supabase
+      .from('bookings')
+      .select('*')
+      .eq('customer_phone', customerPhone)
+      .eq('salon_id', salonId)
+      .eq('status', 'confirmed')
+      .gte('start_time', new Date().toISOString())
+      .order('start_time', { ascending: true });
+
+    if (serviceName) {
+      query = (query as any).ilike('service_name', `%${serviceName}%`);
+    }
+
+    const { data: bookings } = await (query as any).limit(1);
+    if (!bookings || bookings.length === 0) {
+      return { success: false, error: 'No upcoming booking found.' };
+    }
+
+    const booking = bookings[0];
+
+    await calApiV2.delete(`/bookings/${booking.cal_booking_uid}`, {
+      data: { cancellationReason: 'Customer requested cancellation via SMS' }
+    });
+
+    await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', booking.id);
+
+    return {
+      success: true,
+      serviceName: booking.service_name,
+      startTime: new Date(booking.start_time).toLocaleString('en-GB', { timeZone: 'Europe/London' })
+    };
+  } catch (error: any) {
+    console.error('[Cancel Error]', error.response?.data || error.message);
+    return { success: false, error: 'Failed to cancel booking.' };
+  }
+}
+
+/**
+ * Reschedules the customer's next upcoming confirmed booking to a new date/time.
+ * Uses Cal.com native reschedule endpoint — no cancel+rebook needed.
+ */
+export async function rescheduleBooking(
+  customerPhone: string,
+  salonId: string,
+  newDate: string,
+  newTime: string,
+  serviceName?: string
+) {
+  try {
+    let query = supabase
+      .from('bookings')
+      .select('*')
+      .eq('customer_phone', customerPhone)
+      .eq('salon_id', salonId)
+      .eq('status', 'confirmed')
+      .gte('start_time', new Date().toISOString())
+      .order('start_time', { ascending: true });
+
+    if (serviceName) {
+      query = (query as any).ilike('service_name', `%${serviceName}%`);
+    }
+
+    const { data: bookings } = await (query as any).limit(1);
+    if (!bookings || bookings.length === 0) {
+      return { success: false, error: 'No upcoming booking found.' };
+    }
+
+    const booking = bookings[0];
+    const newStartISO = getUtcStart(newDate, newTime);
+    const newEndISO = new Date(new Date(newStartISO).getTime() + booking.duration_minutes * 60000).toISOString();
+
+    await calApiV2.patch(`/bookings/${booking.cal_booking_uid}/reschedule`, {
+      start: newStartISO
+    });
+
+    await supabase
+      .from('bookings')
+      .update({ start_time: newStartISO, end_time: newEndISO })
+      .eq('id', booking.id);
+
+    return {
+      success: true,
+      serviceName: booking.service_name,
+      newTime: formatSlotTime(newStartISO),
+      newDate
+    };
+  } catch (error: any) {
+    console.error('[Reschedule Error]', error.response?.data || error.message);
+    return { success: false, error: 'Failed to reschedule booking.' };
+  }
+}
+
+/**
  * Confirms a hold by creating the real booking in Cal.com using the assigned worker's event type.
  */
 export async function confirmBooking(holdUid: string) {

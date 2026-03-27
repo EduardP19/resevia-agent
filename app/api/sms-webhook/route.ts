@@ -4,7 +4,7 @@ import { buildSystemPrompt } from '../../../lib/prompt';
 import { callAI } from '../../../lib/ai';
 import { sendSMS } from '../../../lib/twilio';
 import { isHandoff } from '../../../lib/handoff';
-import { holdBooking, confirmBooking, fetchAvailability } from '../../../lib/booking_service';
+import { holdBooking, confirmBooking, fetchAvailability, cancelBooking, rescheduleBooking } from '../../../lib/booking_service';
 
 export async function POST(req: NextRequest) {
   try {
@@ -58,6 +58,16 @@ export async function POST(req: NextRequest) {
       } else if (name === 'confirm_booking') {
         const result = await confirmBooking(args.holdUid);
         toolResult = result.success ? "Booking confirmed!" : `Failed: ${result.error}`;
+      } else if (name === 'cancel_booking') {
+        const result = await cancelBooking(fromNumber, salon.id, args.serviceName);
+        toolResult = result.success
+          ? `Cancelled: ${result.serviceName} on ${result.startTime}`
+          : `Failed: ${result.error}`;
+      } else if (name === 'reschedule_booking') {
+        const result = await rescheduleBooking(fromNumber, salon.id, args.newDate, args.newTime, args.serviceName);
+        toolResult = result.success
+          ? `Rescheduled: ${result.serviceName} to ${result.newDate} at ${result.newTime}`
+          : `Failed: ${result.error}`;
       }
 
       await saveMessage(conversation.id, 'system' as any, `Tool (${name}): ${toolResult}`);
