@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSalonBySmsNumber, getOrCreateConversation, getTranscriptHistory, saveMessage, supabase } from '../../../lib/supabase';
+import { getSalonBySmsNumber, getOrCreateConversation, getTranscriptHistory, saveMessage, getWorkers, getFAQs, getActiveHold, supabase } from '../../../lib/supabase';
 import { buildSystemPrompt } from '../../../lib/agent';
 import { callAI } from '../../../lib/ai';
 import { sendSMS } from '../../../lib/twilio';
@@ -19,24 +19,14 @@ export async function POST(req: NextRequest) {
     const conversation = await getOrCreateConversation(salon.id, fromNumber);
     await saveMessage(conversation.id, 'user', userInput);
 
-    // Context Injection: Check for an active hold
-    const { data: activeHold } = await supabase
-      .from('bookings')
-      .select('*')
-      .eq('customer_phone', fromNumber)
-      .eq('status', 'held')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+    const [workers, faqs, activeHold, history] = await Promise.all([
+      getWorkers(salon.id),
+      getFAQs(salon.id),
+      getActiveHold(fromNumber),
+      getTranscriptHistory(conversation.id)
+    ]);
 
-    const { data: workers } = await supabase
-      .from('workers')
-      .select('name, services')
-      .eq('salon_id', salon.id)
-      .eq('is_active', true);
-
-    let history = await getTranscriptHistory(conversation.id);
-    let systemPrompt = buildSystemPrompt(salon, workers || []);
+    let systemPrompt = buildSystemPrompt(salon, workers, faqs);
     
     if (activeHold) {
        systemPrompt += `\n\n[SYSTEM INFO] You currently have a slot held for this client: ${activeHold.service_name} at ${new Date(activeHold.start_time).toLocaleString()}. They need to confirm to finalize.`;
@@ -44,16 +34,17 @@ export async function POST(req: NextRequest) {
 
     let aiResponse = await callAI(systemPrompt, history.map((h: any) => ({ role: h.role, content: h.content })));
 
-    if (aiResponse.tool_call) {
+    let toolCallCount = 0;
+    while (aiResponse.tool_call && toolCallCount < 5) {
+      toolCallCount++;
       const { name, args } = aiResponse.tool_call;
-      let toolResult;
+      let toolResult: string;
 
       if (name === 'check_availability') {
         const slots = await fetchAvailability(args.date, args.serviceName, salon.id, args.workerName);
         toolResult = slots.length > 0 ? `Available: ${slots.join(', ')}` : "None found.";
       } else if (name === 'book_appointment') {
-        // AI tool remains "book_appointment", but we use it to HOLD first
-        const result = await holdBooking({ ...args, salonId: salon.id, customerPhone: fromNumber });
+        const result = await holdBooking({ ...args, salonId: salon.id, customerPhone: fromNumber, salonServices: salon.services });
         toolResult = result.success ? `Slot HELD. UID: ${result.bookingUid}` : `Failed: ${result.error}`;
       } else if (name === 'confirm_booking') {
         const result = await confirmBooking(args.holdUid);
@@ -68,10 +59,11 @@ export async function POST(req: NextRequest) {
         toolResult = result.success
           ? `Rescheduled: ${result.serviceName} to ${result.newDate} at ${result.newTime}`
           : `Failed: ${result.error}`;
+      } else {
+        toolResult = 'Unknown tool.';
       }
 
       await saveMessage(conversation.id, 'system' as any, `Tool (${name}): ${toolResult}`);
-      
       const updatedHistory = await getTranscriptHistory(conversation.id);
       aiResponse = await callAI(systemPrompt, updatedHistory.map((h: any) => ({ role: h.role, content: h.content })));
     }

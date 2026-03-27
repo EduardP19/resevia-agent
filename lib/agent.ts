@@ -2,7 +2,7 @@ import { SchemaType } from '@google/generative-ai';
 
 // ─── System Prompt ────────────────────────────────────────────────────────────
 
-export function buildSystemPrompt(salon: any, workers?: any[]) {
+export function buildSystemPrompt(salon: any, workers?: any[], faqs?: any[]) {
   const servicesList = salon.services.map((s: any) =>
     `- ${s.name} (${s.category || 'General'}) — ${s.duration_minutes} mins — £${s.price}`
   ).join('\n');
@@ -13,6 +13,20 @@ export function buildSystemPrompt(salon: any, workers?: any[]) {
         return `- ${w.name}: ${services}`;
       }).join('\n')
     : null;
+
+  const faqSection = faqs && faqs.length > 0
+    ? (() => {
+        const byCategory: Record<string, string[]> = {};
+        for (const f of faqs) {
+          if (!byCategory[f.category]) byCategory[f.category] = [];
+          byCategory[f.category].push(`- ${f.question} — ${f.answer}`);
+        }
+        const body = Object.entries(byCategory)
+          .map(([cat, entries]) => `## ${cat}\n${entries.join('\n')}`)
+          .join('\n\n');
+        return `\n\n---\n\n# Frequently asked questions\n\nUse these answers when clients ask. If an answer contains a placeholder (e.g. [LINK], [X]), do not invent a value — escalate to the team instead.\n\n${body}`;
+      })()
+    : '';
 
   return `
 # Identity
@@ -108,6 +122,8 @@ Current time: ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute
 Services offered:
 ${servicesList}
 ${workersList ? `\nTeam members and their specialisms:\n${workersList}` : ''}
+
+${faqSection}
 
 ---
 

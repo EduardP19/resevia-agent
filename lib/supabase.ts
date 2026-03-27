@@ -5,6 +5,16 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABAS
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
+// Load salon by ID
+export async function getSalonById(salonId: string) {
+  const { data } = await supabase
+    .from('business_profiles')
+    .select('*')
+    .eq('id', salonId)
+    .single();
+  return data;
+}
+
 // Load salon by their Twilio SMS number
 export async function getSalonBySmsNumber(smsNumber: string) {
   const { data, error } = await supabase
@@ -98,6 +108,40 @@ export async function getClientSessions(salonId: string, clientIdentifier: strin
     .eq('salon_id', salonId)
     .eq('client_identifier', clientIdentifier)
     .order('created_at', { ascending: false });
+  return data || [];
+}
+
+// Active workers for a salon (name + services, used for system prompt)
+export async function getWorkers(salonId: string) {
+  const { data } = await supabase
+    .from('workers')
+    .select('name, services')
+    .eq('salon_id', salonId)
+    .eq('is_active', true);
+  return data || [];
+}
+
+// The most recent held (unconfirmed) booking for a customer
+export async function getActiveHold(customerPhone: string) {
+  const { data } = await supabase
+    .from('bookings')
+    .select('*')
+    .eq('customer_phone', customerPhone)
+    .eq('status', 'held')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+  return data || null;
+}
+
+// FAQ entries for a salon
+export async function getFAQs(salonId: string) {
+  const { data } = await supabase
+    .from('faqs')
+    .select('category, question, answer')
+    .eq('salon_id', salonId)
+    .order('category')
+    .order('sort_order');
   return data || [];
 }
 

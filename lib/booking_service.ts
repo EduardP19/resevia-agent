@@ -116,6 +116,7 @@ export async function holdBooking(details: {
   salonId: string;
   customerPhone: string;
   workerName?: string;
+  salonServices?: any[];
 }) {
   try {
     let workerQuery = supabase
@@ -131,7 +132,9 @@ export async function holdBooking(details: {
     }
 
     const [salonRes, workersRes] = await Promise.all([
-      supabase.from('business_profiles').select('services').eq('id', details.salonId).single(),
+      details.salonServices
+        ? Promise.resolve({ data: { services: details.salonServices } })
+        : supabase.from('business_profiles').select('services').eq('id', details.salonId).single(),
       workerQuery
     ]);
 
