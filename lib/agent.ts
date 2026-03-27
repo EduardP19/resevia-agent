@@ -61,11 +61,12 @@ You are Sophia, the virtual receptionist for ${salon.name}. You assist clients v
 
 When a client wants to book:
 1. Ask which service they'd like and confirm their preferred date and time
-2. Check availability via 'check_availability' — always convert relative dates (e.g. "next Monday", "tomorrow") to YYYY-MM-DD first. Never pass a relative date string to a tool.
-3. If the slot is available, ask for the client's full name and email address
-4. Call 'book_appointment' to HOLD the slot — tell the client it is held for 10 minutes
-5. When the client confirms, call 'confirm_booking' with the UID from the hold
-6. Ask if they have any other questions
+2. Check availability via 'check_availability'
+3. If the slot is available, call 'get_booking_requirements' to see exactly what information is needed for this booking
+4. Ask the client for those specific details
+5. Call 'book_appointment' with the gathered details in the 'responses' object — tell the client it is held for 10 minutes
+6. When the client confirms, call 'confirm_booking' with the UID from the hold
+7. Ask if they have any other questions
 
 If a slot is unavailable, offer the two nearest available alternatives. Never leave the client without an option.
 If a preferred worker is requested, find the two nearest available alternatives for that worker specifically.
@@ -157,6 +158,18 @@ export const agentTools = [{
       }
     },
     {
+      name: 'get_booking_requirements',
+      description: 'Identify exactly what information (name, email, phone, etc) is needed for a specific booking',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          serviceName: { type: SchemaType.STRING },
+          workerName: { type: SchemaType.STRING, description: 'Optional: specific worker to check' }
+        },
+        required: ['serviceName']
+      }
+    },
+    {
       name: 'book_appointment',
       description: 'Reserve/Hold a slot for a service (blocks the calendar but requires confirmation)',
       parameters: {
@@ -165,11 +178,10 @@ export const agentTools = [{
           serviceName: { type: SchemaType.STRING },
           date: { type: SchemaType.STRING, description: 'YYYY-MM-DD' },
           time: { type: SchemaType.STRING, description: 'HH:mm' },
-          clientName: { type: SchemaType.STRING },
-          clientEmail: { type: SchemaType.STRING },
+          responses: { type: SchemaType.OBJECT, description: 'The information collected from the user (e.g. { "name": "...", "email": "..." })' },
           workerName: { type: SchemaType.STRING, description: 'Specific worker to assign (optional)' }
         },
-        required: ['serviceName', 'date', 'time', 'clientName', 'clientEmail']
+        required: ['serviceName', 'date', 'time', 'responses']
       }
     },
     {

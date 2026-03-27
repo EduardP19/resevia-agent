@@ -4,7 +4,7 @@ import { buildSystemPrompt } from '../../../lib/agent';
 import { callAI } from '../../../lib/ai';
 import { sendSMS } from '../../../lib/twilio';
 import { isHandoff } from '../../../lib/handoff';
-import { holdBooking, confirmBooking, fetchAvailability, cancelBooking, rescheduleBooking } from '../../../lib/booking_service';
+import { holdBooking, confirmBooking, fetchAvailability, cancelBooking, rescheduleBooking, getBookingFields } from '../../../lib/booking_service';
 
 export async function POST(req: NextRequest) {
   try {
@@ -43,6 +43,25 @@ export async function POST(req: NextRequest) {
       if (name === 'check_availability') {
         const slots = await fetchAvailability(args.date, args.serviceName, salon.id, args.workerName);
         toolResult = slots.length > 0 ? `Available: ${slots.join(', ')}` : "None found.";
+      } else if (name === 'get_booking_requirements') {
+        const { data: allWorkers } = await supabase
+          .from('workers')
+          .select('id, name, cal_event_type_id, services')
+          .eq('salon_id', salon.id)
+          .eq('is_active', true);
+
+        const worker = (allWorkers || []).find(w => {
+          if (args.workerName) return w.name.toLowerCase().includes(args.workerName.toLowerCase());
+          return (w.services as string[] || []).some(s => s.toLowerCase().includes(args.serviceName.toLowerCase()));
+        });
+
+        if (worker) {
+          const fields = await getBookingFields(worker.cal_event_type_id);
+          const summary = fields.map((f: any) => `${f.name}${f.required ? ' (required)' : ''}`).join(', ');
+          toolResult = `To book ${args.serviceName}, I need: ${summary}`;
+        } else {
+          toolResult = "Service not found or no workers available.";
+        }
       } else if (name === 'book_appointment') {
         const result = await holdBooking({ ...args, salonId: salon.id, customerPhone: fromNumber, salonServices: salon.services });
         toolResult = result.success ? `Slot HELD. UID: ${result.bookingUid}` : `Failed: ${result.error}`;

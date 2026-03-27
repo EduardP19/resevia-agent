@@ -7,10 +7,12 @@ const calApiV2 = axios.create({
   baseURL: 'https://api.cal.eu/v2',
   headers: {
     'Authorization': `Bearer ${CAL_COM_API_KEY}`,
-    'cal-api-version': '2024-08-13',
     'Content-Type': 'application/json'
   }
 });
+
+const VERSION_STABLE = '2024-06-11';
+const VERSION_LATEST = '2024-08-13';
 
 function getUtcStart(date: string, time: string): string {
   const localDate = new Date(`${date}T${time}:00`);
@@ -51,18 +53,23 @@ export async function fetchAvailability(
   try {
     let query = supabase
       .from('workers')
-      .select('id, name, cal_event_type_id')
+      .select('id, name, cal_event_type_id, services')
       .eq('salon_id', salonId)
       .eq('is_active', true);
 
-    if (workerName) {
-      query = query.ilike('name', `%${workerName}%`);
-    } else {
-      query = query.contains('services', [serviceName]);
-    }
+    const { data: allWorkers } = await query;
+    if (!allWorkers || allWorkers.length === 0) return [];
 
-    const { data: workers } = await query;
-    if (!workers || workers.length === 0) return [];
+    const workers = allWorkers.filter(w => {
+      if (workerName) {
+        return w.name.toLowerCase().includes(workerName.toLowerCase());
+      }
+      return (w.services as string[] || []).some(s => 
+        s.toLowerCase().includes(serviceName.toLowerCase())
+      );
+    });
+
+    if (workers.length === 0) return [];
 
     const results = await Promise.all(
       workers.map(async (worker) => {
@@ -73,7 +80,8 @@ export async function fetchAvailability(
                 startTime: `${date}T00:00:00Z`,
                 endTime: `${date}T23:59:59Z`,
                 eventTypeId: worker.cal_event_type_id
-              }
+              },
+              headers: { 'cal-api-version': VERSION_LATEST }
             }),
             supabase
               .from('bookings')
@@ -104,6 +112,22 @@ export async function fetchAvailability(
 }
 
 /**
+ * Fetch required booking fields for an event type.
+ */
+export async function getBookingFields(eventTypeId: number) {
+  try {
+    const res = await calApiV2.get(`/event-types/${eventTypeId}`, {
+      headers: { 'cal-api-version': VERSION_STABLE }
+    });
+    // Support both { data: { bookingFields } } and { data: { eventType: { bookingFields } } }
+    return res.data.data?.eventType?.bookingFields || res.data.data?.bookingFields || [];
+  } catch (error: any) {
+    console.error('[Fields Error]', error.response?.data || error.message);
+    return [];
+  }
+}
+
+/**
  * DB-only hold — no Cal.com call. Assigns the first available worker for the slot.
  * Cal.com is only called at confirm time.
  */
@@ -111,8 +135,7 @@ export async function holdBooking(details: {
   serviceName: string;
   date: string;
   time: string;
-  clientName: string;
-  clientEmail: string;
+  responses: Record<string, any>;
   salonId: string;
   customerPhone: string;
   workerName?: string;
@@ -121,15 +144,9 @@ export async function holdBooking(details: {
   try {
     let workerQuery = supabase
       .from('workers')
-      .select('id, name, cal_event_type_id')
+      .select('id, name, cal_event_type_id, services')
       .eq('salon_id', details.salonId)
       .eq('is_active', true);
-
-    if (details.workerName) {
-      workerQuery = workerQuery.ilike('name', `%${details.workerName}%`);
-    } else {
-      workerQuery = workerQuery.contains('services', [details.serviceName]);
-    }
 
     const [salonRes, workersRes] = await Promise.all([
       details.salonServices
@@ -138,6 +155,16 @@ export async function holdBooking(details: {
       workerQuery
     ]);
 
+    const allWorkers = workersRes.data || [];
+    const workers = allWorkers.filter(w => {
+      if (details.workerName) {
+        return w.name.toLowerCase().includes(details.workerName.toLowerCase());
+      }
+      return (w.services as string[] || []).some(s => 
+        s.toLowerCase().includes(details.serviceName.toLowerCase())
+      );
+    });
+
     const service = salonRes.data?.services?.find((s: any) =>
       s.name.toLowerCase().includes(details.serviceName.toLowerCase())
     );
@@ -145,7 +172,6 @@ export async function holdBooking(details: {
     const startISO = getUtcStart(details.date, details.time);
     const endISO = new Date(new Date(startISO).getTime() + duration * 60000).toISOString();
 
-    const workers = workersRes.data || [];
     if (workers.length === 0) {
       return { success: false, error: 'No workers available for this service.' };
     }
@@ -178,8 +204,9 @@ export async function holdBooking(details: {
       salon_id: details.salonId,
       worker_id: assignedWorker.id,
       customer_phone: details.customerPhone,
-      client_name: details.clientName,
-      client_email: details.clientEmail,
+      client_name: details.responses.name || 'Client',
+      client_email: details.responses.email || 'client@example.com',
+      responses: details.responses,
       status: 'held',
       service_name: details.serviceName,
       duration_minutes: duration,
@@ -226,7 +253,8 @@ export async function cancelBooking(customerPhone: string, salonId: string, serv
     const booking = bookings[0];
 
     await calApiV2.delete(`/bookings/${booking.cal_booking_uid}`, {
-      data: { cancellationReason: 'Customer requested cancellation via SMS' }
+      data: { cancellationReason: 'Customer requested cancellation via SMS' },
+      headers: { 'cal-api-version': VERSION_LATEST }
     });
 
     await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', booking.id);
@@ -278,6 +306,8 @@ export async function rescheduleBooking(
 
     await calApiV2.patch(`/bookings/${booking.cal_booking_uid}/reschedule`, {
       start: newStartISO
+    }, {
+      headers: { 'cal-api-version': VERSION_LATEST }
     });
 
     await supabase
@@ -319,15 +349,18 @@ export async function confirmBooking(holdUid: string) {
       start: hold.start_time,
       lengthInMinutes: hold.duration_minutes,
       attendee: {
-        name: hold.client_name,
-        email: hold.client_email,
+        name: hold.responses?.name || hold.client_name,
+        email: hold.responses?.email || hold.client_email,
         timeZone: 'Europe/London',
         language: 'en'
       },
+      bookingFieldsResponses: hold.responses || {},
       metadata: {
         service_name: hold.service_name,
         status: 'confirmed'
       }
+    }, {
+      headers: { 'cal-api-version': VERSION_LATEST }
     });
 
     const newBooking = response.data.data;
@@ -345,7 +378,7 @@ export async function confirmBooking(holdUid: string) {
 
     return { success: true, bookingUid: newBooking.uid };
   } catch (error: any) {
-    console.error('[Confirm Error]', error.response?.data || error.message);
+    console.error('[Confirm Error]', JSON.stringify(error.response?.data || error.message, null, 2));
     return { success: false, error: 'Failed to confirm booking.' };
   }
 }
