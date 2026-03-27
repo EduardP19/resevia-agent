@@ -21,6 +21,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <Link href="/dashboard/search" className="flex items-center px-4 py-3 text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg transition-colors group">
             <span className="font-medium">Search</span>
           </Link>
+          <Link href="/dashboard/playground" className="flex items-center px-4 py-3 text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg transition-colors group">
+            <span className="font-medium">AI Playground</span>
+          </Link>
           <Link href="/dashboard/knowledge" className="flex items-center px-4 py-3 text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg transition-colors group">
             <span className="font-medium">Knowledge Base</span>
           </Link>
