@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSalonBySmsNumber, getOrCreateConversation, getTranscriptHistory, saveMessage, supabase } from '../../../../lib/supabase';
-import { buildSystemPrompt } from '../../../../lib/prompt';
+import { buildSystemPrompt } from '../../../../lib/agent';
 import { callAI } from '../../../../lib/ai';
 import { isHandoff } from '../../../../lib/handoff';
 import { holdBooking, confirmBooking, fetchAvailability, cancelBooking, rescheduleBooking } from '../../../../lib/booking_service';

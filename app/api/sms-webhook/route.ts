@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSalonBySmsNumber, getOrCreateConversation, getTranscriptHistory, saveMessage, supabase } from '../../../lib/supabase';
-import { buildSystemPrompt } from '../../../lib/prompt';
+import { buildSystemPrompt } from '../../../lib/agent';
 import { callAI } from '../../../lib/ai';
 import { sendSMS } from '../../../lib/twilio';
 import { isHandoff } from '../../../lib/handoff';
