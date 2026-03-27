@@ -15,6 +15,12 @@ export async function getSalonById(salonId: string) {
   return data;
 }
 
+export async function updateSalonProfile(id: string, updates: any) {
+  const { data, error } = await supabase.from('business_profiles').update(updates).eq('id', id).select().single();
+  if (error) throw error;
+  return data;
+}
+
 // Load salon by their Twilio SMS number
 export async function getSalonBySmsNumber(smsNumber: string) {
   const { data, error } = await supabase
@@ -138,20 +144,72 @@ export async function getActiveHold(customerPhone: string) {
 export async function getFAQs(salonId: string) {
   const { data } = await supabase
     .from('faqs')
-    .select('category, question, answer')
+    .select('id, category, question, answer, sort_order')
     .eq('salon_id', salonId)
     .order('category')
     .order('sort_order');
-  return data || [];
+  return (data || []) as any[];
 }
 
 // Dashboard: all sessions for a salon (for inbox/overview)
-export async function getSalonSessions(salonId: string, limit = 50) {
-  const { data } = await supabase
+export async function getSalonSessions(salonId?: string, limit = 50) {
+  let query = supabase
     .from('sessions')
-    .select('id, client_identifier, status, platform, created_at, updated_at, metadata')
-    .eq('salon_id', salonId)
+    .select('id, client_identifier, status, platform, created_at, updated_at, metadata, salon_id, business_profiles(name)')
     .order('updated_at', { ascending: false })
     .limit(limit);
+  
+  if (salonId) {
+    query = query.eq('salon_id', salonId);
+  }
+
+  const { data } = await query;
   return data || [];
+}
+
+// FAQ Management
+export async function createFAQ(faq: { salon_id: string; category: string; question: string; answer: string; sort_order?: number }) {
+  const { data, error } = await supabase.from('faqs').insert(faq).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateFAQ(id: string, faq: Partial<{ category: string; question: string; answer: string; sort_order: number }>) {
+  const { data, error } = await supabase.from('faqs').update(faq).eq('id', id).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteFAQ(id: string) {
+  const { error } = await supabase.from('faqs').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function searchSessionsByPhone(phone: string) {
+  const { data: sessions, error: sError } = await supabase
+    .from('sessions')
+    .select('id, created_at, status, salon_id, business_profiles(name)')
+    .eq('client_identifier', phone)
+    .order('created_at', { ascending: false });
+  
+  if (sError) throw sError;
+
+  // For each session, get the first user message for context
+  const results = await Promise.all((sessions || []).map(async (s: any) => {
+    const { data: firstMessage } = await supabase
+      .from('transcripts')
+      .select('content')
+      .eq('session_id', s.id)
+      .eq('role', 'user')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .single();
+    
+    return {
+      ...s,
+      context: firstMessage?.content || 'No user messages yet'
+    };
+  }));
+
+  return results;
 }

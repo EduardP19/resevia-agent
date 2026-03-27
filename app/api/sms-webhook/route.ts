@@ -102,6 +102,18 @@ export async function POST(req: NextRequest) {
     const reply = aiResponse.reply || "I'm sorry, I'm having trouble processing that.";
     const triggerHandoff = isHandoff(reply);
 
+    // Human-in-the-Loop: If salon is in approval mode, save as draft and don't send SMS
+    if (salon.approval_mode) {
+      await saveMessage(conversation.id, 'draft' as any, reply);
+      await supabase.from('sessions').update({
+        metadata: { ...conversation.metadata, tokens: aiResponse.tokens },
+        status: 'review',
+        updated_at: new Date().toISOString()
+      }).eq('id', conversation.id);
+      
+      return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
+    }
+
     await supabase.from('sessions').update({
       metadata: { ...conversation.metadata, tokens: aiResponse.tokens },
       status: triggerHandoff ? 'handed_over' : 'active',

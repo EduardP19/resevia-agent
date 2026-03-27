@@ -111,6 +111,18 @@ export async function POST(req: NextRequest) {
     const reply = aiResponse.reply || "I'm sorry, I'm having trouble processing that.";
     const triggerHandoff = isHandoff(reply);
 
+    // Human-in-the-Loop check for tests
+    if (salon.approval_mode) {
+      await saveMessage(conversation.id, 'draft' as any, reply);
+      await supabase.from('sessions').update({
+        metadata: { ...conversation.metadata, tokens: aiResponse.tokens },
+        status: 'review',
+        updated_at: new Date().toISOString()
+      }).eq('id', conversation.id);
+
+      return NextResponse.json({ reply, draft: true, status: 'review', sessionId: conversation.id });
+    }
+
     await supabase.from('sessions').update({
       metadata: { ...conversation.metadata, tokens: aiResponse.tokens },
       status: triggerHandoff ? 'handed_over' : 'active',

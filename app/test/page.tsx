@@ -57,8 +57,8 @@ export default function TestSMSPage() {
   return (
     <div style={{ maxWidth: 480, margin: '40px auto', fontFamily: 'monospace', padding: '0 16px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <h2 style={{ margin: 0, fontSize: 16 }}>SMS Test Console</h2>
-        <button onClick={reset} style={{ fontSize: 12, padding: '4px 10px', cursor: 'pointer' }}>
+        <h2 style={{ margin: 0, fontSize: 16, color: '#111' }}>SMS Test Console</h2>
+        <button onClick={reset} style={{ fontSize: 12, padding: '4px 10px', cursor: 'pointer', background: '#eee', border: '1px solid #ccc', color: '#333', borderRadius: 4 }}>
           New conversation
         </button>
       </div>
@@ -117,7 +117,7 @@ export default function TestSMSPage() {
           onKeyDown={e => e.key === 'Enter' && send()}
           placeholder="Type a message..."
           disabled={loading || handoff}
-          style={{ flex: 1, padding: '8px 12px', borderRadius: 6, border: '1px solid #ddd', fontSize: 14 }}
+          style={{ flex: 1, padding: '8px 12px', borderRadius: 6, border: '1px solid #ddd', fontSize: 14, background: '#fff', color: '#000' }}
         />
         <button
           onClick={send}
