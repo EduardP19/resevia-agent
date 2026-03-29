@@ -1,59 +1,86 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+
+interface TestMessage {
+  role: 'user' | 'assistant' | 'waiting';
+  content?: string;
+  sessionId?: string;
+  id?: string; // transcript DB id — used to dedup
+}
 
 export default function TestPage() {
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState<TestMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [phone] = useState('+447700216011');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
-  // Track the created_at of the last assistant message we've seen, to detect new ones
-  const lastAssistantAt = useRef<string | null>(null);
+  // Track the latest created_at we've synced from DB so we only fetch deltas
+  const lastSyncedAt = useRef<string | null>(null);
+  // Track DB IDs we've already rendered to avoid duplication
+  const seenIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Poll for approved message when there's a waiting bubble
-  const lastWaiting = [...messages].reverse().find(m => m.role === 'waiting');
+  // ── Continuous transcript sync ───────────────────────────────────────────
+  // Polls every 3s whenever there's a sessionId. Picks up:
+  //   - Approved drafts from dashboard
+  //   - Manual messages sent by owner from dashboard
+  //   - Any assistant message regardless of how it arrived
+  const syncTranscript = useCallback(async (sid: string) => {
+    try {
+      const url = `/api/test/poll?sessionId=${sid}${lastSyncedAt.current ? `&since=${encodeURIComponent(lastSyncedAt.current)}` : ''}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const newMsgs: any[] = data.messages || [];
+      if (!newMsgs.length) return;
 
-  useEffect(() => {
-    if (!lastWaiting || !sessionId) {
-      if (pollRef.current) clearInterval(pollRef.current);
-      return;
-    }
+      // Update our last-synced timestamp
+      lastSyncedAt.current = newMsgs[newMsgs.length - 1].created_at;
 
-    const poll = async () => {
-      try {
-        const res = await fetch(`/api/test/poll?sessionId=${sessionId}`);
-        const data = await res.json();
-        if (data.message && data.message.content) {
-          // Only surface if it's newer than the last one we already showed
-          if (!lastAssistantAt.current || data.message.created_at > lastAssistantAt.current) {
-            lastAssistantAt.current = data.message.created_at;
-            // Replace the waiting bubble with the approved assistant message
-            setMessages(prev =>
-              prev.map(m => m.role === 'waiting' ? { role: 'assistant', content: data.message.content } : m)
-            );
-            if (pollRef.current) clearInterval(pollRef.current);
+      // Filter to only messages we haven't rendered yet
+      const unseen = newMsgs.filter(m => !seenIds.current.has(m.id));
+      if (!unseen.length) return;
+
+      unseen.forEach(m => seenIds.current.add(m.id));
+
+      setMessages(prev => {
+        let updated = [...prev];
+        for (const m of unseen) {
+          if (m.role === 'assistant') {
+            // Replace the waiting bubble if present, otherwise append
+            const waitingIdx = updated.findIndex(x => x.role === 'waiting');
+            if (waitingIdx !== -1) {
+              updated[waitingIdx] = { role: 'assistant', content: m.content, id: m.id };
+            } else {
+              updated.push({ role: 'assistant', content: m.content, id: m.id });
+            }
           }
+          // user messages sent from /test are added locally already — skip to avoid duplication
+          // (they don't have an id set at local-add time, so seenIds won't catch them)
         }
-      } catch {/* silent */}
-    };
+        return updated;
+      });
+    } catch {/* silent */}
+  }, []);
 
-    pollRef.current = setInterval(poll, 3000);
+  // Start/stop polling when sessionId changes
+  useEffect(() => {
+    if (!sessionId) return;
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(() => syncTranscript(sessionId), 3000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [lastWaiting, sessionId]);
+  }, [sessionId, syncTranscript]);
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || loading) return;
 
-    const userMsg = { role: 'user', content: input };
-    setMessages(prev => [...prev, userMsg]);
+    setMessages(prev => [...prev, { role: 'user', content: input }]);
     setInput('');
     setLoading(true);
 
@@ -68,9 +95,10 @@ export default function TestPage() {
       if (data.sessionId && !sessionId) setSessionId(data.sessionId);
 
       if (data.draft) {
-        // Approval mode — show neutral dots (real customer sees nothing until approved)
+        // Approval mode — neutral waiting dots until dashboard approves
         setMessages(prev => [...prev, { role: 'waiting', sessionId: data.sessionId }]);
       } else if (data.reply) {
+        // Non-approval mode — show reply immediately
         setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
       }
     } catch (err) {
@@ -80,10 +108,7 @@ export default function TestPage() {
     }
   };
 
-  const formatTime = (iso: string) => {
-    // Explicit locale avoids server/client hydration mismatch
-    return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-  };
+  const hasWaiting = messages.some(m => m.role === 'waiting');
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
@@ -91,6 +116,11 @@ export default function TestPage() {
         <div className="p-6 bg-brand-purple text-white">
           <h1 className="text-xl font-bold italic tracking-tight">Resevia Agent Test</h1>
           <p className="text-[10px] uppercase font-black tracking-widest opacity-80 mt-1">Simulated Client: {phone}</p>
+          {sessionId && (
+            <p className="text-[9px] opacity-40 mt-0.5 font-mono tracking-tight">
+              {sessionId} {pollRef.current ? '· syncing' : ''}
+            </p>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50/50">
@@ -100,9 +130,8 @@ export default function TestPage() {
             </div>
           )}
           {messages.map((m, i) => (
-            <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div key={m.id || i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               {m.role === 'waiting' ? (
-                // Neutral dots — what the real customer would see (no reply yet)
                 <div className="flex items-center space-x-1.5 px-4 py-3 bg-white border border-gray-100 rounded-2xl rounded-tl-none shadow-sm">
                   <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: '0ms' }} />
                   <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -149,10 +178,10 @@ export default function TestPage() {
         </form>
       </div>
 
-      {/* Owner-only tip — outside the client frame, not visible to real customers */}
-      {lastWaiting ? (
+      {/* Owner-only tip — outside the simulated client frame */}
+      {hasWaiting ? (
         <a
-          href={`/dashboard/sessions/${(lastWaiting as any).sessionId || sessionId}`}
+          href={`/dashboard/sessions/${(messages.find(m => m.role === 'waiting') as any)?.sessionId || sessionId}`}
           target="_blank"
           className="mt-4 inline-flex items-center space-x-2 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3 text-xs font-black uppercase tracking-widest text-amber-700 hover:bg-amber-100 transition-colors"
         >

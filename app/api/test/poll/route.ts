@@ -1,20 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
-// Lightweight poll endpoint: returns the latest assistant message for a session
-// Used by /test page to detect when a draft has been approved and sent
+// Returns all new transcript messages since a given timestamp.
+// Used by /test page to stay in sync with what the dashboard sends.
 export async function GET(req: NextRequest) {
   const sessionId = req.nextUrl.searchParams.get('sessionId');
-  if (!sessionId) return NextResponse.json({ message: null });
+  const since = req.nextUrl.searchParams.get('since'); // ISO timestamp
 
-  const { data } = await supabase
+  if (!sessionId) return NextResponse.json({ messages: [] });
+
+  let query = supabase
     .from('transcripts')
-    .select('content, role, created_at')
+    .select('id, role, content, created_at')
     .eq('session_id', sessionId)
-    .eq('role', 'assistant')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
+    .in('role', ['user', 'assistant'])  // exclude system/draft noise
+    .order('created_at', { ascending: true });
 
-  return NextResponse.json({ message: data || null });
+  if (since) {
+    query = query.gt('created_at', since);
+  }
+
+  const { data } = await query;
+  return NextResponse.json({ messages: data || [] });
 }
