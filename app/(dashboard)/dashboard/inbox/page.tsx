@@ -4,32 +4,71 @@ import Link from 'next/link';
 
 export const revalidate = 0; // Disable caching for the inbox
 
-export default async function InboxPage() {
+export default async function InboxPage({ searchParams }: { searchParams: { filter?: string } }) {
   const allClients = await getGroupedSessions();
+  const filter = searchParams.filter || 'all';
+  
   const threeMinsAgo = new Date(Date.now() - 3 * 60 * 1000);
   
-  // Filter for active/review conversations that are NOT expired (within 3 mins)
-  const activeClients = allClients.filter((c: any) => {
+  // Categorize clients
+  const stats = {
+    all: allClients.filter((c: any) => new Date(c.updated_at) > threeMinsAgo).length,
+    needs_approval: allClients.filter((c: any) => c.has_review).length,
+    escalated: allClients.filter((c: any) => c.has_escalation).length,
+  };
+
+  const filteredClients = allClients.filter((c: any) => {
     const isRecentlyActive = new Date(c.updated_at) > threeMinsAgo;
+    if (filter === 'approval') return c.has_review;
+    if (filter === 'escalated') return c.has_escalation;
+    // Default: 'all' active/review sessions
     return (c.status === 'active' || c.status === 'review' || c.has_review) && isRecentlyActive;
   });
+
+  const Tab = ({ id, label, count, active }: { id: string; label: string; count: number; active: boolean }) => (
+    <Link 
+      href={`/dashboard/inbox${id === 'all' ? '' : `?filter=${id}`}`}
+      className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+        active 
+          ? 'bg-brand-purple text-white shadow-lg shadow-indigo-100' 
+          : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+      }`}
+    >
+      {label}
+      {count > 0 && (
+        <span className={`ml-2 px-1.5 py-0.5 rounded-md text-[10px] ${active ? 'bg-white/20' : 'bg-gray-100 text-gray-500'}`}>
+          {count}
+        </span>
+      )}
+    </Link>
+  );
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 relative">
       <AutoRefresh />
-      <div className="flex justify-between items-end mb-10">
+      <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-6">
         <div>
           <div className="flex items-center space-x-2 mb-1">
              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-sm shadow-emerald-200"></div>
              <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Live Updating</span>
           </div>
-          <h2 className="text-4xl font-extrabold text-gray-900 tracking-tight">Active Conversations</h2>
-          <p className="text-lg text-gray-500 mt-2">Sophia is currently assisting these clients.</p>
+          <h2 className="text-4xl font-extrabold text-gray-900 tracking-tight">
+            {filter === 'approval' ? 'Needs Approval' : filter === 'escalated' ? 'Escalated to Human' : 'Active Conversations'}
+          </h2>
+          <p className="text-lg text-gray-400 mt-2">
+            {filter === 'approval' ? 'Drafts waiting for your final word.' : filter === 'escalated' ? 'Clients waiting for a team member.' : 'Sophia is currently assisting these clients.'}
+          </p>
+        </div>
+
+        <div className="bg-white p-1.5 rounded-2xl border border-gray-100 shadow-sm flex flex-wrap gap-1">
+          <Tab id="all" label="Active" count={stats.all} active={filter === 'all'} />
+          <Tab id="approval" label="Needs Approval" count={stats.needs_approval} active={filter === 'approval'} />
+          <Tab id="escalated" label="Escalated" count={stats.escalated} active={filter === 'escalated'} />
         </div>
       </div>
 
       <div className="space-y-4">
-        {activeClients.map((c: any) => (
+        {filteredClients.map((c: any) => (
           <Link 
             key={c.client_identifier} 
             href={`/dashboard/client/${encodeURIComponent(c.client_identifier)}`}
@@ -44,9 +83,11 @@ export default async function InboxPage() {
                       <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
                         c.has_review 
                           ? 'bg-rose-100 text-rose-600 animate-pulse' 
+                          : c.has_escalation
+                          ? 'bg-amber-100 text-amber-700'
                           : 'bg-emerald-100 text-emerald-600'
                       }`}>
-                        {c.has_review ? 'Needs Approval' : c.status.replace('_', ' ')}
+                        {c.has_review ? 'Needs Approval' : c.has_escalation ? 'Escalated' : c.status.replace('_', ' ')}
                       </span>
                     </div>
                     <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
@@ -83,7 +124,7 @@ export default async function InboxPage() {
         ))}
       </div>
 
-      {activeClients.length === 0 && (
+      {filteredClients.length === 0 && (
         <div className="p-20 text-center flex flex-col items-center bg-white rounded-3xl border border-dashed border-gray-200">
           <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4 text-gray-300">
             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">

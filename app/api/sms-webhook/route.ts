@@ -87,6 +87,11 @@ export async function POST(req: NextRequest) {
     await saveMessage(conversation.id, 'assistant', reply);
     await sendSMS(fromNumber, reply);
 
+    if (triggerHandoff) {
+       const { notifyOwnerHandoff } = await import('../../../lib/handoff_service');
+       await notifyOwnerHandoff(conversation.id, salon.id);
+    }
+
     return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
   } catch (error: any) {
     return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });

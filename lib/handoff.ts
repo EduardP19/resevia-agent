@@ -1,13 +1,16 @@
+export const HANDOFF_PHRASE = "That's something our team handles personally. I'll make sure they're in touch soon. Thanks";
+
 export function isHandoff(replyText: string): boolean {
+  if (!replyText) return false;
+  
   const triggers = [
-    "That's something our team handles personally",
-    "Let me get the team to help",
+    HANDOFF_PHRASE.toLowerCase(),
+    "let me get the team to help",
     "someone will be in touch",
-    "I'll pass you to a human",
+    "i'll pass you to a human",
     "transfer you to support"
   ];
 
-  return triggers.some(trigger =>
-    replyText.toLowerCase().includes(trigger.toLowerCase())
-  );
+  const lowerText = replyText.toLowerCase();
+  return triggers.some(trigger => lowerText.includes(trigger));
 }

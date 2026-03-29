@@ -38,13 +38,25 @@ export async function getSalonBySmsNumber(smsNumber: string) {
 }
 
 // Load or create conversation for a customer
-export async function getOrCreateConversation(salonId: string, customerPhone: string) {
-  let { data, error } = await supabase
-    .from('sessions')
-    .select('*')
+export async function getOrCreateConversation(salonId: string, customerPhone: string, sessionId?: string) {
+  let query = supabase.from('sessions').select('*');
+
+  if (sessionId) {
+    // If an ID is provided, try to find it and ensure it's not completed
+    const { data: byId } = await query
+      .eq('id', sessionId)
+      .neq('status', 'completed')
+      .single();
+    if (byId) return byId;
+  }
+
+  // Fallback to finding existing active/review/handed_over session for this phone
+  let { data } = await query
     .eq('salon_id', salonId)
     .eq('client_identifier', customerPhone)
-    .eq('status', 'active')
+    .in('status', ['active', 'review', 'handed_over'])
+    .order('updated_at', { ascending: false })
+    .limit(1)
     .single();
 
   if (!data) {
@@ -209,6 +221,7 @@ export async function getGroupedSessions(salonId?: string) {
     }
     grouped[s.client_identifier].session_count++;
     if (s.status === 'review') grouped[s.client_identifier].has_review = true;
+    if (s.status === 'handed_over') grouped[s.client_identifier].has_escalation = true;
   }
 
   // Batch fetch transcripts for the latest sessions

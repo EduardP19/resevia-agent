@@ -15,22 +15,55 @@ export default function TestPage() {
   const [loading, setLoading] = useState(false);
   const [phone, setPhone] = useState('+447700216011');
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionStatus, setSessionStatus] = useState<string | null>(null);
   
-  const scrollRef = useRef<HTMLDivElement>(null);
+  // Ref for polling management to avoid useEffect loops
+  const isSyncingRef = useRef(false);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
-  // lastSyncedAt initialized to NOW: polls only pick up messages created after page load
-  const lastSyncedAt = useRef<string>(new Date().toISOString());
-  // Track DB IDs we've already rendered to deduplicate
+  const lastSyncedAt = useRef<string | null>(null);
   const seenIds = useRef<Set<string>>(new Set());
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Reset session when phone changes or manually requested
+  // Reset session locally
   const resetSession = useCallback(() => {
     setSessionId(null);
+    setSessionStatus(null);
+    sessionStorage.removeItem(`resevia_session_${phone}`);
     setMessages([]);
-    lastSyncedAt.current = new Date().toISOString();
+    lastSyncedAt.current = null;
     seenIds.current = new Set();
     if (pollRef.current) clearInterval(pollRef.current);
+  }, [phone]);
+
+  // Restore from storage on mount
+  useEffect(() => {
+    const savedPhone = localStorage.getItem('resevia_test_phone');
+    if (savedPhone) {
+      setPhone(savedPhone);
+      const savedSid = sessionStorage.getItem(`resevia_session_${savedPhone}`);
+      if (savedSid) setSessionId(savedSid);
+    }
   }, []);
+
+  const findActiveSession = useCallback(async (p: string) => {
+    if (sessionId) return;
+    try {
+      const res = await fetch(`/api/test/session?phone=${encodeURIComponent(p)}`);
+      const data = await res.json();
+      if (data.sessionId) {
+        setSessionId(data.sessionId);
+        setSessionStatus(data.status);
+        sessionStorage.setItem(`resevia_session_${p}`, data.sessionId);
+      }
+    } catch {/* silent */}
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (phone) {
+      localStorage.setItem('resevia_test_phone', phone);
+      findActiveSession(phone);
+    }
+  }, [phone, findActiveSession]);
 
   const handlePhoneChange = (newPhone: string) => {
     setPhone(newPhone);
@@ -41,51 +74,92 @@ export default function TestPage() {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // ── Continuous transcript sync ───────────────────────────────────────────
+  // ── 🔄 Continuous Sync Logic ──────────────────────────────────────────────
   const syncTranscript = useCallback(async (sid: string) => {
+    if (isSyncingRef.current) return;
+    isSyncingRef.current = true;
     try {
-      const url = `/api/test/poll?sessionId=${sid}${lastSyncedAt.current ? `&since=${encodeURIComponent(lastSyncedAt.current)}` : ''}`;
+      const url = `/api/test/poll?sessionId=${sid}${lastSyncedAt.current ? `&since=${encodeURIComponent(lastSyncedAt.current)}` : ''}&t=${Date.now()}`;
       const res = await fetch(url);
       const data = await res.json();
-      const newMsgs: any[] = data.messages || [];
-      if (!newMsgs.length) return;
-
-      lastSyncedAt.current = newMsgs[newMsgs.length - 1].created_at;
-
-      const unseen = newMsgs.filter(m => !seenIds.current.has(m.id));
-      if (!unseen.length) return;
-
-      unseen.forEach(m => seenIds.current.add(m.id));
+      if (data.status) setSessionStatus(data.status);
+      
+      const newPollMsgs: any[] = data.messages || [];
+      const hasNewMessages = newPollMsgs.length > 0;
+      if (hasNewMessages) {
+        lastSyncedAt.current = newPollMsgs[newPollMsgs.length - 1].created_at;
+      }
 
       setMessages(prev => {
         let updated = [...prev];
-        for (const m of unseen) {
-          if (m.role === 'assistant') {
-            const waitingIdx = updated.findIndex(x => x.role === 'waiting');
-            if (waitingIdx !== -1) {
-              updated[waitingIdx] = { role: 'assistant', content: m.content, id: m.id };
-            } else {
-              updated.push({ role: 'assistant', content: m.content, id: m.id });
+        let changed = false;
+
+        if (hasNewMessages) {
+          for (const m of newPollMsgs) {
+            if (seenIds.current.has(m.id)) continue;
+            seenIds.current.add(m.id);
+            changed = true;
+
+            if (m.role === 'assistant') {
+              // Replace ONE waiting bubble if present
+              const waitingIdx = updated.findIndex(x => x.role === 'waiting');
+              if (waitingIdx !== -1) {
+                updated[waitingIdx] = { role: 'assistant', content: m.content, id: m.id };
+              } else {
+                updated.push({ role: 'assistant', content: m.content, id: m.id });
+              }
+            } else if (m.role === 'user') {
+              // Deduplicate: find local version and update ID
+              const localMatchIdx = updated.findIndex(x => x.role === 'user' && x.content === m.content && x.id?.startsWith('local-'));
+              if (localMatchIdx !== -1) {
+                updated[localMatchIdx] = { ...updated[localMatchIdx], id: m.id };
+              } else {
+                updated.push({ role: 'user', content: m.content, id: m.id });
+              }
             }
           }
         }
-        return updated;
-      });
-    } catch {/* silent */}
-  }, []);
 
+        // Handle waiting bubble based on hasDraft
+        const currentlyHasWaiting = updated.some(m => m.role === 'waiting');
+        if (data.hasDraft && !currentlyHasWaiting) {
+          updated.push({ role: 'waiting', sessionId: sid });
+          changed = true;
+        } else if (!data.hasDraft && currentlyHasWaiting) {
+          // Only remove waiting bubble if we just received a new assistant message effectively
+          // (The assistant message logic above already handles the replacement, so this is for drafts deleted without approval)
+          updated = updated.filter(m => m.role !== 'waiting');
+          changed = true;
+        }
+
+        return changed ? updated : prev;
+      });
+    } catch {/* silent */} finally {
+      isSyncingRef.current = false;
+    }
+  }, []); // Ref dependency means this stays stable
+
+  // Centralized Poll Timer
   useEffect(() => {
     if (!sessionId) return;
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(() => syncTranscript(sessionId), 3000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [sessionId, syncTranscript]);
+    
+    // Initial fetch
+    syncTranscript(sessionId);
+    
+    // Dynamic heartbeat
+    const interval = messages.some(m => m.role === 'waiting') ? 1500 : 3000;
+    const pid = setInterval(() => syncTranscript(sessionId), interval);
+    
+    return () => clearInterval(pid);
+  }, [sessionId, syncTranscript, messages.some(m => m.role === 'waiting')]);
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || loading) return;
 
-    setMessages(prev => [...prev, { role: 'user', content: input }]);
+    const tempId = `local-${Date.now()}`;
+    setMessages(prev => [...prev, { role: 'user', content: input, id: tempId }]);
+    
     setInput('');
     setLoading(true);
 
@@ -97,10 +171,22 @@ export default function TestPage() {
       });
       const data = await res.json();
 
-      if (data.sessionId && !sessionId) setSessionId(data.sessionId);
+      if (data.sessionId && data.sessionId !== sessionId) {
+        console.log(`[Test] Switching session: ${sessionId} -> ${data.sessionId}`);
+        setSessionId(data.sessionId);
+        setSessionStatus(data.status || 'active');
+        sessionStorage.setItem(`resevia_session_${phone}`, data.sessionId);
+        // Clear history for the new session
+        setMessages([{ role: 'user', content: input }]); // Keep the current user message as first
+        lastSyncedAt.current = null;
+        seenIds.current = new Set();
+      }
 
       if (data.draft) {
-        setMessages(prev => [...prev, { role: 'waiting', sessionId: data.sessionId }]);
+        setMessages(prev => {
+          if (prev.some(m => m.role === 'waiting')) return prev;
+          return [...prev, { role: 'waiting', sessionId: data.sessionId }];
+        });
       } else if (data.reply) {
         setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
       }
@@ -120,41 +206,65 @@ export default function TestPage() {
           <div className="flex justify-between items-start mb-4">
             <div>
               <h1 className="text-xl font-bold italic tracking-tight">Resevia Agent Test</h1>
-              <p className="text-[10px] uppercase font-black tracking-widest opacity-80 mt-1">Simulated Client Activity</p>
+              <p className="text-[10px] uppercase font-black tracking-widest opacity-80 mt-1">Live Simulation</p>
             </div>
-            <button 
-              onClick={resetSession}
-              className="text-[9px] font-black uppercase tracking-widest bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg transition-colors"
-            >
-              Reset Session
-            </button>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => sessionId && syncTranscript(sessionId)}
+                className="text-[9px] font-black uppercase tracking-widest bg-white/10 hover:bg-white/20 p-2 rounded-lg transition-colors border border-white/10"
+                title="Force Sync"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+              <button 
+                onClick={resetSession}
+                className="text-[9px] font-black uppercase tracking-widest bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg transition-colors"
+              >
+                Reset
+              </button>
+            </div>
           </div>
           
           <div className="space-y-2">
-            <label className="text-[10px] uppercase font-black tracking-widest opacity-60">Client Phone Number</label>
-            <div className="flex gap-2">
-              <input 
-                type="text" 
-                value={phone}
-                onChange={(e) => handlePhoneChange(e.target.value)}
-                className="flex-1 bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-sm outline-none focus:bg-white/20 transition-all font-mono"
-                placeholder="+44..."
-              />
-            </div>
+            <label className="text-[10px] uppercase font-black tracking-widest opacity-60">Simulated Client Phone</label>
+            <input 
+              type="text" 
+              value={phone}
+              onChange={(e) => handlePhoneChange(e.target.value)}
+              className="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2.5 text-sm outline-none focus:bg-white/20 transition-all font-mono"
+              placeholder="+44..."
+            />
           </div>
 
           {sessionId && (
-            <p className="text-[9px] opacity-40 mt-3 font-mono tracking-tight flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-              Session ID: {sessionId}
-            </p>
+            <div className="flex items-center justify-between mt-3">
+              <p className="text-[9px] opacity-40 font-mono tracking-tight flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                Connected: {sessionId.substring(0,8)}...
+              </p>
+              {sessionStatus && (
+                <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border shadow-sm ${
+                  sessionStatus === 'review' 
+                    ? 'bg-amber-100 text-amber-700 border-amber-200 animate-pulse' 
+                    : sessionStatus === 'handed_over'
+                    ? 'bg-rose-100 text-rose-700 border-rose-200'
+                    : sessionStatus === 'completed'
+                    ? 'bg-gray-100 text-gray-500 border-gray-200'
+                    : 'bg-white/10 text-white border-white/5 opacity-80'
+                }`}>
+                   {sessionStatus === 'review' ? 'Approval Needed' : sessionStatus === 'handed_over' ? 'Escalated' : sessionStatus.replace('_', ' ')}
+                </span>
+              )}
+            </div>
           )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50/50">
           {messages.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center opacity-20 text-gray-400 italic text-sm text-center px-8">
-              Sophia is ready to help.<br/>Send a message to start the simulation.
+              Send a message to start or enter a phone number to resume.
             </div>
           )}
           {messages.map((m, i) => (
@@ -179,7 +289,7 @@ export default function TestPage() {
           {loading && (
             <div className="flex justify-start">
               <div className="bg-white border border-gray-100 px-4 py-2 rounded-2xl animate-pulse text-xs text-gray-400 italic">
-                Sophia is thinking...
+                Thinking...
               </div>
             </div>
           )}
@@ -213,11 +323,11 @@ export default function TestPage() {
           className="mt-4 inline-flex items-center space-x-2 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3 text-xs font-black uppercase tracking-widest text-amber-700 hover:bg-amber-100 transition-colors shadow-sm"
         >
           <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-          <span>Review & Approve Sophia's Draft in Dashboard →</span>
+          <span>Review & ApproveSophia's Draft →</span>
         </a>
       ) : (
         <p className="mt-6 text-[10px] text-gray-400 uppercase font-black tracking-widest text-center">
-          Stand-alone Testing Harness
+          Unified Testing Harness • Bypasses Twilio
         </p>
       )}
     </div>

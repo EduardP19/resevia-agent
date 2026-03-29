@@ -8,7 +8,7 @@ import { executeToolCall, ToolContext } from '../../../../lib/tool-handler';
 // Same logic as /api/sms-webhook but returns JSON instead of sending via Twilio
 export async function POST(req: NextRequest) {
   try {
-    const { message, from, salonId } = await req.json();
+    const { message, from, salonId, id: sessionId } = await req.json();
 
     if (!message || !from) {
       return NextResponse.json({ error: 'message and from are required' }, { status: 400 });
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
 
     if (!salon) return NextResponse.json({ error: 'No salon found' }, { status: 404 });
 
-    const conversation = await getOrCreateConversation(salon.id, from);
+    const conversation = await getOrCreateConversation(salon.id, from, sessionId);
     await saveMessage(conversation.id, 'user', message);
 
     const [workers, faqs, activeHold, history] = await Promise.all([
@@ -94,6 +94,11 @@ export async function POST(req: NextRequest) {
     }).eq('id', conversation.id);
 
     await saveMessage(conversation.id, 'assistant', reply);
+
+    if (triggerHandoff) {
+       const { notifyOwnerHandoff } = await import('../../../../lib/handoff_service');
+       await notifyOwnerHandoff(conversation.id, salon.id);
+    }
 
     return NextResponse.json({ reply, handoff: triggerHandoff, sessionId: conversation.id });
   } catch (error: any) {
