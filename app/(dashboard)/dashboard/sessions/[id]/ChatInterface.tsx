@@ -175,7 +175,7 @@ export default function ChatInterface({
                   )}
                   <div className="whitespace-pre-wrap">{msg.content}</div>
                   <div className={`text-[10px] mt-2 opacity-40 ${isUser ? 'text-right' : 'text-left'}`}>
-                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(msg.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                   </div>
                 </div>
               </div>

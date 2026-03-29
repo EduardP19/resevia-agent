@@ -6,13 +6,47 @@ export default function TestPage() {
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [phone] = useState('+447700216011'); // Default test phone
+  const [phone] = useState('+447700216011');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pollRef = useRef<NodeJS.Timeout | null>(null);
+  // Track the created_at of the last assistant message we've seen, to detect new ones
+  const lastAssistantAt = useRef<string | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Poll for approved message when there's a waiting bubble
+  const lastWaiting = [...messages].reverse().find(m => m.role === 'waiting');
+
+  useEffect(() => {
+    if (!lastWaiting || !sessionId) {
+      if (pollRef.current) clearInterval(pollRef.current);
+      return;
+    }
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/test/poll?sessionId=${sessionId}`);
+        const data = await res.json();
+        if (data.message && data.message.content) {
+          // Only surface if it's newer than the last one we already showed
+          if (!lastAssistantAt.current || data.message.created_at > lastAssistantAt.current) {
+            lastAssistantAt.current = data.message.created_at;
+            // Replace the waiting bubble with the approved assistant message
+            setMessages(prev =>
+              prev.map(m => m.role === 'waiting' ? { role: 'assistant', content: data.message.content } : m)
+            );
+            if (pollRef.current) clearInterval(pollRef.current);
+          }
+        }
+      } catch {/* silent */}
+    };
+
+    pollRef.current = setInterval(poll, 3000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [lastWaiting, sessionId]);
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,21 +61,14 @@ export default function TestPage() {
       const res = await fetch('/api/test/sms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          message: input, 
-          from: phone,
-          id: sessionId 
-        })
+        body: JSON.stringify({ message: input, from: phone, id: sessionId })
       });
       const data = await res.json();
-      
-      if (data.sessionId && !sessionId) {
-        setSessionId(data.sessionId);
-      }
+
+      if (data.sessionId && !sessionId) setSessionId(data.sessionId);
 
       if (data.draft) {
-        // Approval mode — the real SMS customer sees nothing yet.
-        // Show neutral waiting dots. Internal draft stays in the dashboard only.
+        // Approval mode — show neutral dots (real customer sees nothing until approved)
         setMessages(prev => [...prev, { role: 'waiting', sessionId: data.sessionId }]);
       } else if (data.reply) {
         setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
@@ -53,8 +80,10 @@ export default function TestPage() {
     }
   };
 
-  // Find the last waiting message to show the dashboard tip
-  const lastWaiting = [...messages].reverse().find(m => m.role === 'waiting');
+  const formatTime = (iso: string) => {
+    // Explicit locale avoids server/client hydration mismatch
+    return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
@@ -81,8 +110,8 @@ export default function TestPage() {
                 </div>
               ) : (
                 <div className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
-                  m.role === 'user' 
-                    ? 'bg-brand-purple text-white rounded-tr-none shadow-indigo-100 shadow-lg' 
+                  m.role === 'user'
+                    ? 'bg-brand-purple text-white rounded-tr-none shadow-indigo-100 shadow-lg'
                     : 'bg-white border border-gray-100 text-gray-800 rounded-tl-none shadow-md'
                 }`}>
                   {m.content}
@@ -102,15 +131,15 @@ export default function TestPage() {
 
         <form onSubmit={sendMessage} className="p-4 border-t border-gray-100 bg-white">
           <div className="flex gap-2">
-            <input 
+            <input
               type="text"
               value={input}
               onChange={e => setInput(e.target.value)}
               placeholder="Type your message..."
               className="flex-1 bg-gray-50 border-none rounded-2xl px-5 py-4 text-sm focus:ring-2 focus:ring-brand-purple/20 outline-none text-black"
             />
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               disabled={loading || !input.trim()}
               className="bg-brand-purple text-white px-6 rounded-2xl font-bold disabled:opacity-50 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
             >
@@ -119,11 +148,11 @@ export default function TestPage() {
           </div>
         </form>
       </div>
-      
-      {/* Owner-only tip — below the widget, not visible to the simulated client */}
+
+      {/* Owner-only tip — outside the client frame, not visible to real customers */}
       {lastWaiting ? (
         <a
-          href={`/dashboard/sessions/${lastWaiting.sessionId || sessionId}`}
+          href={`/dashboard/sessions/${(lastWaiting as any).sessionId || sessionId}`}
           target="_blank"
           className="mt-4 inline-flex items-center space-x-2 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3 text-xs font-black uppercase tracking-widest text-amber-700 hover:bg-amber-100 transition-colors"
         >
