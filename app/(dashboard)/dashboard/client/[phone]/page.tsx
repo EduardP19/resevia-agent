@@ -26,11 +26,19 @@ export default async function ClientHistoryPage({ params }: { params: { phone: s
     );
   }
 
-  const liveSessions = sessions.filter(s => s.status === 'active' || s.status === 'review');
-  const archivedSessions = sessions.filter(s => s.status !== 'active' && s.status !== 'review');
+  const liveSessions = sessions.filter((s: any) => {
+    const threeMinsAgo = new Date(Date.now() - 3 * 60 * 1000);
+    const isRecentlyActive = new Date(s.updated_at) > threeMinsAgo;
+    return (s.status === 'active' || s.status === 'review') && isRecentlyActive;
+  });
+  const archivedSessions = sessions.filter((s: any) => {
+    const threeMinsAgo = new Date(Date.now() - 3 * 60 * 1000);
+    const isRecentlyActive = new Date(s.updated_at) > threeMinsAgo;
+    return !(( s.status === 'active' || s.status === 'review') && isRecentlyActive);
+  });
 
   const statusConfig: Record<string, { label: string; classes: string }> = {
-    active:      { label: 'Live',         classes: 'bg-emerald-100 text-emerald-700' },
+    active:      { label: 'Active',       classes: 'bg-emerald-100 text-emerald-700' },
     review:      { label: 'Needs Approval', classes: 'bg-amber-100 text-amber-700 animate-pulse' },
     completed:   { label: 'Completed',    classes: 'bg-gray-100 text-gray-500' },
     handed_over: { label: 'Escalated',    classes: 'bg-rose-100 text-rose-600' },
@@ -72,9 +80,12 @@ export default async function ClientHistoryPage({ params }: { params: { phone: s
                     <span>Live</span>
                   </span>
                 )}
-                <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${cfg.classes}`}>
-                  {cfg.label}
-                </span>
+                {/* Only show status badge for non-active statuses — avoid duplicate Live tag */}
+                {session.status !== 'active' && (
+                  <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${cfg.classes}`}>
+                    {cfg.label}
+                  </span>
+                )}
               </div>
             </div>
 

@@ -40,12 +40,9 @@ export default function TestPage() {
       }
 
       if (data.draft) {
-        // Approval mode: Sophia drafted a reply but hasn't sent it yet
-        setMessages(prev => [...prev, { 
-          role: 'pending', 
-          content: data.reply,
-          sessionId: data.sessionId
-        }]);
+        // Approval mode — the real SMS customer sees nothing yet.
+        // Show neutral waiting dots. Internal draft stays in the dashboard only.
+        setMessages(prev => [...prev, { role: 'waiting', sessionId: data.sessionId }]);
       } else if (data.reply) {
         setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
       }
@@ -55,6 +52,9 @@ export default function TestPage() {
       setLoading(false);
     }
   };
+
+  // Find the last waiting message to show the dashboard tip
+  const lastWaiting = [...messages].reverse().find(m => m.role === 'waiting');
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
@@ -72,22 +72,12 @@ export default function TestPage() {
           )}
           {messages.map((m, i) => (
             <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              {m.role === 'pending' ? (
-                <div className="max-w-[85%] w-full">
-                  <div className="bg-amber-50 border-2 border-amber-300 border-dashed rounded-2xl rounded-tl-none px-5 py-4 text-sm">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                      <span className="text-[10px] font-black uppercase tracking-widest text-amber-600">Awaiting Your Approval — Not Sent Yet</span>
-                    </div>
-                    <p className="text-amber-900 leading-relaxed mb-3">{m.content}</p>
-                    <a 
-                      href={`/dashboard/sessions/${m.sessionId || sessionId}`}
-                      target="_blank"
-                      className="inline-flex items-center space-x-1 text-[10px] font-black uppercase tracking-widest text-brand-purple hover:underline"
-                    >
-                      <span>Review in Dashboard →</span>
-                    </a>
-                  </div>
+              {m.role === 'waiting' ? (
+                // Neutral dots — what the real customer would see (no reply yet)
+                <div className="flex items-center space-x-1.5 px-4 py-3 bg-white border border-gray-100 rounded-2xl rounded-tl-none shadow-sm">
+                  <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
               ) : (
                 <div className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
@@ -130,9 +120,21 @@ export default function TestPage() {
         </form>
       </div>
       
-      <p className="mt-6 text-[10px] text-gray-400 uppercase font-black tracking-widest text-center">
-        This is a standalone testing harness bypassing twilio
-      </p>
+      {/* Owner-only tip — below the widget, not visible to the simulated client */}
+      {lastWaiting ? (
+        <a
+          href={`/dashboard/sessions/${lastWaiting.sessionId || sessionId}`}
+          target="_blank"
+          className="mt-4 inline-flex items-center space-x-2 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3 text-xs font-black uppercase tracking-widest text-amber-700 hover:bg-amber-100 transition-colors"
+        >
+          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+          <span>Sophia drafted a reply — Review &amp; Approve in Dashboard →</span>
+        </a>
+      ) : (
+        <p className="mt-6 text-[10px] text-gray-400 uppercase font-black tracking-widest text-center">
+          This is a standalone testing harness bypassing twilio
+        </p>
+      )}
     </div>
   );
 }
