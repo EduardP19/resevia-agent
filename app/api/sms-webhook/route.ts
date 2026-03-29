@@ -4,7 +4,7 @@ import { buildSystemPrompt } from '../../../lib/agent';
 import { callAI } from '../../../lib/ai';
 import { sendSMS } from '../../../lib/twilio';
 import { isHandoff } from '../../../lib/handoff';
-import { holdBooking, confirmBooking, fetchAvailability, cancelBooking, rescheduleBooking, getBookingFields, bookDirect } from '../../../lib/booking_service';
+import { executeToolCall, ToolContext } from '../../../lib/tool-handler';
 
 export async function POST(req: NextRequest) {
   try {
@@ -38,80 +38,28 @@ export async function POST(req: NextRequest) {
       systemPrompt += `\n\n[SYSTEM REMINDER] The service is ALREADY LOCKED as "${updatedBookingState.service}". Do NOT ask for it. Do NOT mention other services. Focus ONLY on date and time.`;
     }
 
+    const toolCtx: ToolContext = {
+      salonId: salon.id,
+      customerPhone: fromNumber,
+      salon,
+      workers,
+      faqs,
+      salonServices: salon.services
+    };
+
     let aiResponse = await callAI(systemPrompt, history.map((h: any) => ({ role: h.role, content: h.content })));
 
     let toolCallCount = 0;
     while (aiResponse.tool_call && toolCallCount < 5) {
       toolCallCount++;
       const { name, args } = aiResponse.tool_call;
-      let toolResult: string;
 
-      if (name === 'check_availability') {
-        const slots = await fetchAvailability(args.date, args.serviceName, salon.id, args.workerName);
-        toolResult = slots.length > 0 ? `Available: ${slots.join(', ')}` : "None found.";
-      } else if (name === 'get_booking_requirements') {
-        const { data: allWorkers } = await supabase
-          .from('workers')
-          .select('id, name, cal_event_type_id, services')
-          .eq('salon_id', salon.id)
-          .eq('is_active', true);
+      const result = await executeToolCall(name, args, toolCtx, updatedBookingState);
 
-        const worker = (allWorkers || []).find(w => {
-          if (args.workerName) return w.name.toLowerCase().includes(args.workerName.toLowerCase());
-          return (w.services as string[] || []).some(s => s.toLowerCase().includes(args.serviceName.toLowerCase()));
-        });
+      if (result.updatedBookingState) updatedBookingState = result.updatedBookingState;
+      if (result.updatedSystemPrompt) systemPrompt = result.updatedSystemPrompt;
 
-        if (worker) {
-          const fields = await getBookingFields(worker.cal_event_type_id);
-          const summary = fields.map((f: any) => `${f.name}${f.required ? ' (required)' : ''}`).join(', ');
-          toolResult = `To book ${args.serviceName}, I need: ${summary}`;
-        } else {
-          toolResult = "Service not found or no workers available.";
-        }
-      } else if (name === 'book_direct') {
-        const directRes = await bookDirect({
-          serviceName: args.serviceName,
-          date: args.date,
-          time: args.time,
-          responses: args.responses || {},
-          salonId: salon.id,
-          customerPhone: fromNumber,
-          workerName: args.workerName,
-          salonServices: salon.services
-        });
-        toolResult = JSON.stringify(directRes);
-      } else if (name === 'book_appointment') {
-        const result = await holdBooking({ ...args, salonId: salon.id, customerPhone: fromNumber, salonServices: salon.services });
-        toolResult = result.success ? `Slot HELD. UID: ${result.bookingUid}` : `Failed: ${result.error}`;
-      } else if (name === 'confirm_booking') {
-        const result = await confirmBooking(args.holdUid);
-        toolResult = result.success ? "Booking confirmed!" : `Failed: ${result.error}`;
-      } else if (name === 'cancel_booking') {
-        const result = await cancelBooking(fromNumber, salon.id, args.serviceName);
-        toolResult = result.success
-          ? `Cancelled: ${result.serviceName} on ${result.startTime}`
-          : `Failed: ${result.error}`;
-      } else if (name === 'reschedule_booking') {
-        const result = await rescheduleBooking(fromNumber, salon.id, args.newDate, args.newTime, args.serviceName);
-        toolResult = result.success
-          ? `Rescheduled: ${result.serviceName} to ${result.newDate} at ${result.newTime}`
-          : `Failed: ${result.error}`;
-      } else if (name === 'update_booking_state') {
-        updatedBookingState = {
-          ...updatedBookingState,
-          service: args.serviceName || updatedBookingState?.service,
-          date: args.date || updatedBookingState?.date,
-          time: args.time || updatedBookingState?.time,
-          worker: args.workerName || updatedBookingState?.worker
-        };
-        // Rebuild prompt with new state so AI knows it has been saved
-        systemPrompt = buildSystemPrompt(salon, workers, faqs, updatedBookingState);
-        toolResult = "Memory updated. I will remember these details.";
-      } else {
-        toolResult = 'Unknown tool.';
-      }
-
-      await saveMessage(conversation.id, 'system' as any, `Tool (${name}): ${toolResult}`);
+      await saveMessage(conversation.id, 'system' as any, `Tool (${name}): ${result.toolResult}`);
       const updatedHistory = await getTranscriptHistory(conversation.id);
       aiResponse = await callAI(systemPrompt, updatedHistory.map((h: any) => ({ role: h.role, content: h.content })));
     }

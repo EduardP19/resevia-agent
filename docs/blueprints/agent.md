@@ -11,7 +11,7 @@
 ## System Prompt Rules (what works)
 
 ### Inject at runtime, not hardcoded
-The system prompt is built in `lib/prompt.ts` using live DB data:
+The system prompt is built in `lib/agent.ts` using live DB data:
 - Salon name, hours, location
 - Full services list with price and duration
 - Workers list with their specialisms
@@ -88,12 +88,12 @@ The `callAI` function is called twice when a tool is used:
 | Passing relative dates to tools | Cal.com and DB queries fail silently — date format invalid. Agent gets empty results and loops. |
 | Cal.com holds at hold-time | No reliable hold API. Orphaned bookings on ghost. DB-only hold is cleaner. |
 | Not listing workers in prompt | Agent refuses to answer staff questions or invents staff members. |
-| Minutes as raw numbers (e.g. "150 minutes") | Unnatural for SMS. Should say "2 hours 30 minutes". Not yet fixed in prompt. |
+| Minutes as raw numbers (e.g. "150 minutes") | Unnatural for SMS. Should say "2 hours 30 minutes". **Fixed** — Rule #2 in Critical Formatting Rules. |
 
 ---
 
 ## Pending Prompt Improvements (2026-03-27)
 
-- **Check availability before collecting name/email** — Currently agent asks date → time → name → email → then holds. Should be date → time → check availability → confirm slot exists → name → email → hold. Avoids collecting personal data for unavailable slots.
-- **Duration formatting** — Convert raw minutes to "X hours Y minutes" in system prompt rules or post-process in the route.
+- ~~**Check availability before collecting name/email**~~ — **FIXED 2026-03-29**. Booking flow now explicitly prohibits collecting personal data before slot confirmation.
+- ~~**Duration formatting**~~ — **FIXED 2026-03-29**. Rule #2 in Critical Formatting Rules: "Say '2 hours 30 minutes', never '150 minutes'".
 - **Handoff notification** — Agent says the phrase but no outbound alert is sent to the team. Decision pending: Slack, email, or dashboard flag.

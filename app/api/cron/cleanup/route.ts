@@ -54,9 +54,26 @@ export async function GET() {
       await supabase.from('sessions').update({ metadata: newMetadata }).eq('id', session.id);
     }
 
+    // 3. Expire stale booking holds (SKILL §6 Round 2)
+    // Holds with expires_at in the past are cleaned up to free blocked slots
+    const { data: expiredHolds } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('status', 'held')
+      .lt('expires_at', now.toISOString());
+
+    if (expiredHolds && expiredHolds.length > 0) {
+      const holdIds = expiredHolds.map(h => h.id);
+      await supabase
+        .from('bookings')
+        .update({ status: 'expired' })
+        .in('id', holdIds);
+    }
+
     return NextResponse.json({ 
       expired: toExpire?.length || 0, 
-      warned: toWarn?.filter(s => !s.metadata?.warned_at).length || 0 
+      warned: toWarn?.filter(s => !s.metadata?.warned_at).length || 0,
+      holdsExpired: expiredHolds?.length || 0
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
