@@ -68,24 +68,44 @@ export default function ChatInterface({
 
   const handleSend = async () => {
     if (!input.trim() || isSending) return;
+
+    const sentContent = input;
+    const optimisticMsg: Message = {
+      id: `optimistic-${Date.now()}`,
+      role: 'assistant',
+      content: sentContent,
+      created_at: new Date().toISOString(),
+    };
+
+    // Optimistic update: show instantly, remove drafts
+    setTranscript(prev => [
+      ...prev.filter(m => m.role !== 'draft'),
+      optimisticMsg,
+    ]);
+    setInput('');
+    setSendMode('approve');
     setIsSending(true);
 
     try {
       const res = await fetch('/api/dashboard/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, content: input }),
+        body: JSON.stringify({ sessionId, content: sentContent }),
       });
 
       if (res.ok) {
-        setInput('');
-        setSendMode('approve');
+        // Background refresh to sync real DB state (replaces optimistic with real message)
         router.refresh();
       } else {
+        // Rollback optimistic update on failure
+        setTranscript(prev => prev.filter(m => m.id !== optimisticMsg.id));
+        setInput(sentContent);
         alert('Failed to send message');
       }
     } catch (err) {
       console.error(err);
+      setTranscript(prev => prev.filter(m => m.id !== optimisticMsg.id));
+      setInput(sentContent);
       alert('Error sending message');
     } finally {
       setIsSending(false);
