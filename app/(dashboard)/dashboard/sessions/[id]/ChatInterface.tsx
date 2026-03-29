@@ -34,7 +34,15 @@ export default function ChatInterface({
   const isArchived = sessionStatus !== 'active' && sessionStatus !== 'review';
   const isReview = !isArchived && (sessionStatus === 'review' || !!latestDraft);
 
-  // Pre-fill textarea with draft on load
+  // Sync transcript when RSC refreshes (e.g. new draft arrives via AutoRefresh)
+  // Skip during active sends to avoid overwriting optimistic messages mid-flight
+  useEffect(() => {
+    if (!isSending) {
+      setTranscript(initialTranscript);
+    }
+  }, [initialTranscript]);
+
+  // Pre-fill textarea with draft on load or when draft changes
   useEffect(() => {
     if (latestDraft && sendMode === 'approve') {
       setInput(latestDraft.content);
