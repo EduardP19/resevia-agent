@@ -17,9 +17,9 @@ export default function TestPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
-  // Track the latest created_at we've synced from DB so we only fetch deltas
-  const lastSyncedAt = useRef<string | null>(null);
-  // Track DB IDs we've already rendered to avoid duplication
+  // lastSyncedAt initialized to NOW: polls only pick up messages created after page load
+  const lastSyncedAt = useRef<string>(new Date().toISOString());
+  // Track DB IDs we've already rendered to deduplicate
   const seenIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {

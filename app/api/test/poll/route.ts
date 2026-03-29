@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
-// Returns all new transcript messages since a given timestamp.
-// Used by /test page to stay in sync with what the dashboard sends.
+// Returns new assistant messages since a given timestamp.
+// Used by /test page to pick up approved drafts and manual dashboard messages.
+// NOTE: user messages are excluded — they are always added locally by the test page.
 export async function GET(req: NextRequest) {
   const sessionId = req.nextUrl.searchParams.get('sessionId');
-  const since = req.nextUrl.searchParams.get('since'); // ISO timestamp
+  const since = req.nextUrl.searchParams.get('since');
 
   if (!sessionId) return NextResponse.json({ messages: [] });
 
@@ -13,7 +14,7 @@ export async function GET(req: NextRequest) {
     .from('transcripts')
     .select('id, role, content, created_at')
     .eq('session_id', sessionId)
-    .in('role', ['user', 'assistant'])  // exclude system/draft noise
+    .eq('role', 'assistant')   // only assistant — user messages are handled client-side
     .order('created_at', { ascending: true });
 
   if (since) {
