@@ -110,7 +110,7 @@ export async function getSessionTranscript(sessionId: string) {
 export async function getClientSessions(salonId: string, clientIdentifier: string) {
   const { data } = await supabase
     .from('sessions')
-    .select('id, status, platform, created_at, updated_at, metadata')
+    .select('id, status, platform, created_at, updated_at, metadata, summary')
     .eq('salon_id', salonId)
     .eq('client_identifier', clientIdentifier)
     .order('created_at', { ascending: false });
@@ -155,7 +155,7 @@ export async function getFAQs(salonId: string) {
 export async function getSalonSessions(salonId?: string, limit = 50) {
   let query = supabase
     .from('sessions')
-    .select('id, client_identifier, status, platform, created_at, updated_at, metadata, salon_id, business_profiles(name)')
+    .select('id, client_identifier, status, platform, created_at, updated_at, metadata, salon_id, summary, business_profiles(name)')
     .order('updated_at', { ascending: false })
     .limit(limit);
   
@@ -165,6 +165,74 @@ export async function getSalonSessions(salonId?: string, limit = 50) {
 
   const { data } = await query;
   return data || [];
+}
+
+/**
+ * Dashboard: Unique clients (phone numbers) across all salons.
+ * It returns the latest session for each unique client_identifier.
+ */
+export async function getGroupedSessions(salonId?: string) {
+  // Use a raw query or RPC to get the latest session per client.
+  // For simplicity using JS-side grouping for MVP.
+  let query = supabase
+    .from('sessions')
+    .select(`
+      id, 
+      client_identifier, 
+      status, 
+      updated_at, 
+      salon_id,
+      business_profiles(name)
+    `)
+    .order('updated_at', { ascending: false });
+
+  if (salonId) {
+    query = query.eq('salon_id', salonId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  const grouped: Record<string, any> = {};
+  const sessionIds: string[] = [];
+
+  for (const s of (data || [])) {
+    if (!grouped[s.client_identifier]) {
+      grouped[s.client_identifier] = {
+        ...s,
+        session_count: 0,
+        has_review: false,
+        last_question: null,
+        draft_response: null
+      };
+      sessionIds.push(s.id);
+    }
+    grouped[s.client_identifier].session_count++;
+    if (s.status === 'review') grouped[s.client_identifier].has_review = true;
+  }
+
+  // Batch fetch transcripts for the latest sessions
+  if (sessionIds.length > 0) {
+    const { data: transcripts } = await supabase
+      .from('transcripts')
+      .select('session_id, content, role, created_at')
+      .in('session_id', sessionIds)
+      .order('created_at', { ascending: false });
+
+    for (const t of (transcripts || [])) {
+      const client = Object.values(grouped).find(g => g.id === t.session_id);
+      if (!client) continue;
+
+      if (t.role === 'user' && !client.last_question) {
+        client.last_question = t.content;
+      }
+      if (t.role === 'draft' && !client.draft_response) {
+        client.draft_response = t.content;
+      }
+    }
+  }
+
+  return Object.values(grouped);
 }
 
 // FAQ Management

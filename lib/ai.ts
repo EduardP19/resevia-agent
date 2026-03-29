@@ -99,3 +99,21 @@ export async function callAI(systemInstruction: string, messages: AIMessage[]): 
     }
   };
 }
+
+export async function generateSummary(transcript: { role: string; content: string }[]): Promise<string> {
+  const model = genAI.getGenerativeModel({
+    model: process.env.AI_MODEL_NAME || 'gemini-2.5-flash',
+    systemInstruction: "You are an assistant that summarizes salon customer conversations. Provide a concise, 1-sentence summary of what the client wanted or the outcome of the chat. Example: 'Client inquired about hair coloring prices and availability.'",
+  });
+
+  const chatHistory = transcript.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
+  const prompt = `Summarize this salon conversation in 1 sentence:\n\n${chatHistory}`;
+
+  try {
+    const result = await model.generateContent(prompt);
+    return result.response.text().trim();
+  } catch (err) {
+    console.error('Summarization failed', err);
+    return 'Summary not available.';
+  }
+}

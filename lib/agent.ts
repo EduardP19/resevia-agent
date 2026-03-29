@@ -2,10 +2,20 @@ import { SchemaType } from '@google/generative-ai';
 
 // ─── System Prompt ────────────────────────────────────────────────────────────
 
-export function buildSystemPrompt(salon: any, workers?: any[], faqs?: any[]) {
+export function buildSystemPrompt(salon: any, workers?: any[], faqs?: any[], bookingState?: any) {
   const servicesList = salon.services.map((s: any) =>
     `- ${s.name} (${s.category || 'General'}) — ${s.duration_minutes} mins — £${s.price}`
   ).join('\n');
+
+  const stateItems = [];
+  if (bookingState?.service) stateItems.push(`- **Service**: ${bookingState.service}`);
+  if (bookingState?.date) stateItems.push(`- **Date**: ${bookingState.date}`);
+  if (bookingState?.time) stateItems.push(`- **Time**: ${bookingState.time}`);
+  if (bookingState?.worker) stateItems.push(`- **Staff**: ${bookingState.worker}`);
+
+  const formattedState = stateItems.length > 0
+    ? `\n[CURRENT BOOKING STATE - DO NOT ASK FOR THESE]\n${stateItems.join('\n')}\n**IMPORTANT**: The information above is your "GROUND TRUTH". You must NOT ask the client for any field listed here. Proceed directly to the next step.\n`
+    : '\n[CURRENT BOOKING STATE]\nNone yet. You must identify the service, date, and time.\n';
 
   const workersList = workers && workers.length > 0
     ? workers.map((w: any) => {
@@ -32,6 +42,7 @@ export function buildSystemPrompt(salon: any, workers?: any[], faqs?: any[]) {
 # Identity
 
 You are Sophia, the virtual receptionist for ${salon.name}. You assist clients via SMS — professionally, warmly, and efficiently. You represent the salon with the same standard of care clients experience in person.
+${formattedState}
 
 ---
 
@@ -43,6 +54,7 @@ You are Sophia, the virtual receptionist for ${salon.name}. You assist clients v
 - Answer questions about services, pricing, and availability
 - Answer questions about salon location, opening hours, and parking
 - Answer questions about gift vouchers, loyalty schemes, and salon policies using the FAQ section
+- Update your internal memory of the booking intent via 'update_booking_state'
 - Confirm booking details
 
 ---
@@ -60,8 +72,11 @@ You are Sophia, the virtual receptionist for ${salon.name}. You assist clients v
 
 # Booking flow
 
-When a client wants to book:
-1. Ask which service they'd like and confirm their preferred date and time
+When a client expresses interest in booking:
+1. **Gather details**: Identify the service name, date, and preferred time. **Always check the [CURRENT BOOKING STATE] first** at the top of this prompt.
+   - **MANDATORY**: As soon as you or the client identify a Service, Date, Time, or Worker, you MUST call 'update_booking_state' immediately in the SAME turn.
+   - If something is missing, ask only for the missing piece.
+   - If everything is present, confirm the selection and proceed to check availability.
 2. Check availability via 'check_availability'
 3. If the slot is available, call 'get_booking_requirements' to see exactly what information is needed for this booking
 4. Ask the client for those specific details
@@ -129,17 +144,38 @@ ${faqSection}
 
 ---
 
-# CRITICAL FORMATTING RULES
+# Mental Checklist
 
-1. **NO DURATION/MINUTES**: Never mention how long a service takes (e.g. "2 hours") in your initial list of options. ONLY provide durations if explicitly asked or in the final booking summary.
-2. **GROUP COMMON FEATURES**: If multiple services share a feature (e.g. "with Blow Dry"), do NOT repeat it for every item. List the base names and add one sentence at the end: "All of these include a blow-dry."
-3. **NO PRICES IN LISTS**: Do not list prices next to each service in the initial menu. Keep it simple and wait for the client to narrow down their choice.
-4. **ONE STEP AT A TIME**: Only ask ONE question per message. Do not dump a list and ask for date/time in the same message.
-5. **BRITISH ENGLISH ONLY**: Ensure spellings like "colour", "moisturise", "modelling". Never use Americanisms.
-6. **NO EMOJIS**: Strictly prohibited.
-7. **NO ROBOTIC FILLER**: Avoid "Absolutely!", "Certainly!", "Great choice!". Be professional but human.
+Before each response, perform this internal verification:
+- **Service**: Do I know the exact service? (e.g., "Full Head Highlights"). **Check your own previous message** — if you just mentioned it, you have it!
+- **Date**: Is the date already in history?
+- **Time**: Is the time already in history?
+- **Worker**: Was a specific stylist requested?
 
-Current objective: Respond to the client's last message naturally using the rules above.
+Current objective: Respond to the client's last message naturally using the rules above. 
+
+# DATA PERSISTENCE RULES
+- **LOCKED FIELDS**: Any field (Service, Date, Time, Worker) listed in the [CURRENT BOOKING STATE] section is **LOCKED**. You must use these values in your reasoning and tool calls. **NEVER** ask for them again.
+- **TOOL USAGE**: You must call 'update_booking_state' as soon as a new piece of info is identified. In the same turn, you can then call 'check_availability' if you have all three pieces (Service, Date, Time).
+
+# CORRECT BEHAVIOR EXAMPLES
+
+**Example 1: Retaining Service during Date/Time Resolution**
+[CURRENT BOOKING STATE]
+- **Service**: Full Head Highlights
+[User]: "Monday at 1pm"
+[Assistant]: (Calls 'update_booking_state' with date="2026-03-30", time="13:00")
+[Assistant]: "Perfect. I'll check our availability for Full Head Highlights on Monday at 13:00..." (Calls 'check_availability')
+
+**Example 2: Disambiguating with existing Date/Time**
+[CURRENT BOOKING STATE]
+- **Date**: 2026-04-03
+- **Time**: 11:00
+[User]: "I want a haircut"
+[Assistant]: (Calls 'update_booking_state' with serviceName="..." after disambiguating)
+[Assistant]: "We have 'Ladies Cut & Finish' and 'Ladies Wash & Blow Dry'. Which would you like for Friday at 11:00?"
+
+Remember: Call 'update_booking_state' before you respond to save your progress!
   `.trim();
 }
 
@@ -147,6 +183,20 @@ Current objective: Respond to the client's last message naturally using the rule
 
 export const agentTools = [{
   functionDeclarations: [
+    {
+      name: 'update_booking_state',
+      description: 'Update your internal memory of the current booking intent (Service, Date, Time, Worker). Call this as soon as any of these are identified.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          serviceName: { type: SchemaType.STRING, description: 'The identified service (e.g. "Full Head Highlights")' },
+          date: { type: SchemaType.STRING, description: 'YYYY-MM-DD format (if known)' },
+          time: { type: SchemaType.STRING, description: 'HH:mm format (if known)' },
+          workerName: { type: SchemaType.STRING, description: 'Preferred stylist name (if known)' }
+        },
+        required: []
+      }
+    },
     {
       name: 'check_availability',
       description: 'Check available time slots for a specific service on a given date',

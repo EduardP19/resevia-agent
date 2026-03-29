@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation';
 
 export default function ProfileEditor({ salon }: { salon: any }) {
   const [formData, setFormData] = useState({
-    name: salon.name,
-    tone_of_voice: salon.tone_of_voice,
-    approval_mode: salon.approval_mode,
+    name: salon.name || '',
+    tone_of_voice: salon.tone_of_voice || '',
+    approval_mode: salon.approval_mode || false,
+    opening_hours: salon.opening_hours || '',
+    twilio_number: salon.twilio_number || '',
   });
   const [isSaving, setIsSaving] = useState(false);
   const router = useRouter();
@@ -38,6 +40,26 @@ export default function ProfileEditor({ salon }: { salon: any }) {
               value={formData.name} 
               onChange={e => setFormData({...formData, name: e.target.value})}
               className="w-full border border-gray-200 rounded-lg px-4 py-3 text-black"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Twilio Number</label>
+            <input 
+              type="text" 
+              value={formData.twilio_number} 
+              onChange={e => setFormData({...formData, twilio_number: e.target.value})}
+              className="w-full border border-gray-200 rounded-lg px-4 py-3 text-black font-mono bg-gray-50"
+              placeholder="+44..."
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Opening Hours</label>
+            <textarea 
+              rows={4}
+              value={formData.opening_hours} 
+              onChange={e => setFormData({...formData, opening_hours: e.target.value})}
+              className="w-full border border-gray-200 rounded-lg px-4 py-3 text-black"
+              placeholder="Mon: 9am-6pm&#10;Tue: 9am-6pm..."
             />
           </div>
           <div>
