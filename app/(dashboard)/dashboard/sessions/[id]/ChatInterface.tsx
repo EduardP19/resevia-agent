@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface Message {
@@ -12,26 +12,60 @@ interface Message {
 
 export default function ChatInterface({ 
   sessionId, 
-  initialTranscript 
+  initialTranscript,
+  clientPhone,
+  sessionStatus,
 }: { 
   sessionId: string; 
-  initialTranscript: Message[] 
+  initialTranscript: Message[];
+  clientPhone: string;
+  sessionStatus: string;
 }) {
   const [transcript, setTranscript] = useState(initialTranscript);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [sendMode, setSendMode] = useState<'approve' | 'manual'>('approve');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  // Find the latest draft if any
+  // Find the latest draft
   const latestDraft = [...transcript].reverse().find(m => m.role === 'draft');
+  const isReview = sessionStatus === 'review' || !!latestDraft;
 
+  // Pre-fill textarea with draft on load
   useEffect(() => {
-    if (latestDraft) {
+    if (latestDraft && sendMode === 'approve') {
       setInput(latestDraft.content);
     }
-  }, [latestDraft]);
+  }, [latestDraft?.id]);
 
-  const handleApprove = async () => {
+  // Scroll to bottom on new messages
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [transcript]);
+
+  // Expose focus method for parent
+  useEffect(() => {
+    (window as any).__focusApprovalInput = () => {
+      textareaRef.current?.focus();
+      textareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+  }, []);
+
+  const switchToManual = () => {
+    setSendMode('manual');
+    setInput('');
+    setTimeout(() => textareaRef.current?.focus(), 50);
+  };
+
+  const switchToApprove = () => {
+    setSendMode('approve');
+    setInput(latestDraft?.content || '');
+    setTimeout(() => textareaRef.current?.focus(), 50);
+  };
+
+  const handleSend = async () => {
     if (!input.trim() || isSending) return;
     setIsSending(true);
 
@@ -44,7 +78,8 @@ export default function ChatInterface({
 
       if (res.ok) {
         setInput('');
-        router.refresh(); // Refresh RSC data
+        setSendMode('approve');
+        router.refresh();
       } else {
         alert('Failed to send message');
       }
@@ -56,66 +91,140 @@ export default function ChatInterface({
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      handleSend();
+    }
+  };
+
+  const roleLabel: Record<string, string> = {
+    user: 'Client',
+    assistant: 'Sophia',
+    draft: "Sophia's Draft",
+    system: 'System',
+  };
+
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-[600px]">
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col" style={{ height: '620px' }}>
+      
+      {/* Approval Banner */}
+      {isReview && (
+        <div className="bg-amber-50 border-b border-amber-200 px-5 py-3 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+            <span className="text-xs font-black uppercase tracking-widest text-amber-700">
+              Awaiting Your Approval — Sophia has NOT sent this yet
+            </span>
+          </div>
+          <div className="flex space-x-2">
+            <button
+              onClick={switchToApprove}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${sendMode === 'approve' ? 'bg-brand-purple text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-brand-purple hover:text-brand-purple'}`}
+            >
+              Use Sophia's Draft
+            </button>
+            <button
+              onClick={switchToManual}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${sendMode === 'manual' ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-900 hover:text-gray-900'}`}
+            >
+              Write My Own
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Scrollable Transcript */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50/30">
+      <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50/30">
         {transcript.map((msg) => {
-          const isSystem = msg.role === 'system';
-          const isAssistant = msg.role === 'assistant';
           const isUser = msg.role === 'user';
           const isDraft = msg.role === 'draft';
+          const isSystem = msg.role === 'system';
+          const isAssistant = msg.role === 'assistant';
+
+          if (isSystem) {
+            return (
+              <div key={msg.id} className="flex justify-center">
+                <div className="bg-orange-50 border border-orange-100 text-orange-700 text-[10px] font-mono px-3 py-1.5 rounded-lg italic max-w-[90%] text-center">
+                  {msg.content.replace(/^Tool \([^)]+\): /, '[Tool] ')}
+                </div>
+              </div>
+            );
+          }
 
           return (
             <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[80%] rounded-2xl px-5 py-3 shadow-sm ${
-                isUser 
-                  ? 'bg-brand-purple text-white rounded-tr-none' 
-                  : isAssistant 
-                    ? 'bg-white border border-gray-100 text-gray-800 rounded-tl-none' 
+              <div className={`max-w-[78%] ${isDraft ? 'w-full max-w-[90%]' : ''}`}>
+                <div className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${isUser ? 'text-right text-gray-400' : 'text-left text-gray-400'}`}>
+                  {roleLabel[msg.role] || msg.role}
+                </div>
+                <div className={`rounded-2xl px-5 py-3 shadow-sm text-sm leading-relaxed ${
+                  isUser
+                    ? 'bg-brand-purple text-white rounded-tr-none'
                     : isDraft
-                      ? 'bg-purple-50 border-2 border-brand-purple border-dashed text-brand-purple rounded-tl-none'
-                      : 'bg-orange-50 border border-orange-100 text-orange-800 text-xs font-mono rounded-lg italic'
-              }`}>
-                {isSystem && <div className="text-[10px] font-bold uppercase mb-1 opacity-60">System Log</div>}
-                {isDraft && <div className="text-[10px] font-bold uppercase mb-1">Sophia's Draft (Awaiting Approval)</div>}
-                <div className="whitespace-pre-wrap">{msg.content}</div>
-                <div className={`text-[10px] mt-2 opacity-50 ${isUser ? 'text-right' : 'text-left'}`}>
-                  {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      ? 'bg-amber-50 border-2 border-amber-300 border-dashed text-amber-900 rounded-tl-none'
+                      : isAssistant
+                        ? 'bg-white border border-gray-100 text-gray-800 rounded-tl-none'
+                        : 'bg-gray-100 text-gray-500 text-xs font-mono'
+                }`}>
+                  {isDraft && (
+                    <div className="text-[10px] font-black uppercase tracking-widest text-amber-600 mb-2 flex items-center space-x-1">
+                      <span>⏳</span>
+                      <span>Awaiting your approval before sending</span>
+                    </div>
+                  )}
+                  <div className="whitespace-pre-wrap">{msg.content}</div>
+                  <div className={`text-[10px] mt-2 opacity-40 ${isUser ? 'text-right' : 'text-left'}`}>
+                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </div>
                 </div>
               </div>
             </div>
           );
         })}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Action Bar */}
-      <div className="p-4 bg-white border-t border-gray-100 flex flex-col space-y-3">
-        {latestDraft && (
-            <div className="px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-lg text-xs text-indigo-700 font-medium">
-                💡 Sophia is waiting for you to approve or edit the response below.
-            </div>
-        )}
-        <div className="flex items-center space-x-4">
-          <textarea 
+      <div className="p-4 bg-white border-t border-gray-100 space-y-3">
+        {/* Mode label */}
+        <div className="flex items-center justify-between px-1">
+          <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+            {sendMode === 'manual' ? '✏️ Manual Override' : isReview ? "✅ Sophia's Draft (edit to override)" : '✏️ Send manual message'}
+          </span>
+          <span className="text-[10px] text-gray-300 font-mono">⌘+Enter to send</span>
+        </div>
+
+        <div className="flex items-end space-x-3">
+          <textarea
+            ref={textareaRef}
             rows={2}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={latestDraft ? "Edit Sophia's draft..." : "Type a manual response to override Sophia..."}
-            className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-purple/20 transition-all text-black resize-none"
+            onKeyDown={handleKeyDown}
+            placeholder={
+              sendMode === 'manual'
+                ? 'Type your own message to the client...'
+                : latestDraft
+                  ? "Edit Sophia's draft, or send as-is..."
+                  : 'Type a message to send directly to the client...'
+            }
+            className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-purple/30 transition-all text-gray-900 resize-none bg-gray-50 focus:bg-white"
           />
-          <button 
-            onClick={handleApprove}
+          <button
+            onClick={handleSend}
             disabled={isSending || !input.trim()}
-            className={`bg-brand-purple text-white p-4 rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-100`}
+            className="bg-brand-purple text-white px-5 py-3 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-indigo-100 whitespace-nowrap flex items-center space-x-2"
           >
-             {isSending ? (
-                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-             ) : (
-                <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+            {isSending ? (
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : (
+              <>
+                <span>{sendMode === 'approve' && latestDraft ? 'Approve & Send' : 'Send'}</span>
+                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
                 </svg>
-             )}
+              </>
+            )}
           </button>
         </div>
       </div>

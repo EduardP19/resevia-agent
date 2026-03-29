@@ -26,98 +26,135 @@ export default async function ClientHistoryPage({ params }: { params: { phone: s
     );
   }
 
+  const liveSessions = sessions.filter(s => s.status === 'active' || s.status === 'review');
+  const archivedSessions = sessions.filter(s => s.status !== 'active' && s.status !== 'review');
+
+  const statusConfig: Record<string, { label: string; classes: string }> = {
+    active:      { label: 'Live',         classes: 'bg-emerald-100 text-emerald-700' },
+    review:      { label: 'Needs Approval', classes: 'bg-amber-100 text-amber-700 animate-pulse' },
+    completed:   { label: 'Completed',    classes: 'bg-gray-100 text-gray-500' },
+    handed_over: { label: 'Escalated',    classes: 'bg-rose-100 text-rose-600' },
+  };
+
+  const SessionCard = ({ session }: { session: any }) => {
+    const isLive = session.status === 'active' || session.status === 'review';
+    const cfg = statusConfig[session.status] || { label: session.status, classes: 'bg-gray-100 text-gray-500' };
+    const date = new Date(session.created_at);
+
+    return (
+      <Link href={`/dashboard/sessions/${session.id}`} className="block group">
+        <div className={`relative bg-white rounded-2xl border overflow-hidden flex flex-col transition-all duration-300 hover:shadow-xl h-full ${
+          isLive ? 'border-emerald-400 shadow-lg shadow-emerald-50/50' : 'border-gray-100 shadow-sm hover:border-indigo-100'
+        }`}>
+          {/* Live top band */}
+          {isLive && (
+            <div className="h-1 w-full bg-emerald-500" />
+          )}
+
+          <div className="p-6 flex flex-col flex-1">
+            {/* Header row */}
+            <div className="flex items-start justify-between mb-4">
+              <div className="space-y-1">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                  {session.business_profiles?.name || 'Salon'}
+                </p>
+                <p className="text-sm font-semibold text-gray-700">
+                  {date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </p>
+                <p className="text-xs text-gray-400">
+                  {date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                </p>
+              </div>
+              <div className="flex flex-col items-end space-y-1.5">
+                {isLive && (
+                  <span className="flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-700 text-[9px] font-black uppercase tracking-widest rounded-full">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" />
+                    <span>Live</span>
+                  </span>
+                )}
+                <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${cfg.classes}`}>
+                  {cfg.label}
+                </span>
+              </div>
+            </div>
+
+            {/* Summary / body */}
+            <div className={`flex-1 rounded-xl px-4 py-3 text-sm leading-relaxed mb-5 ${
+              isLive ? 'bg-emerald-50/50 border border-emerald-100 text-emerald-900' : 'bg-gray-50/60 border border-gray-100 text-gray-600'
+            }`}>
+              <p className="italic line-clamp-3">
+                {session.summary || 'Conversation summary pending...'}
+              </p>
+            </div>
+
+            {/* Permanent CTA */}
+            <div className={`flex items-center justify-between text-xs font-black uppercase tracking-widest ${
+              isLive ? 'text-emerald-600' : 'text-brand-purple'
+            }`}>
+              <span>View Full Transcript</span>
+              <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+              </svg>
+            </div>
+          </div>
+        </div>
+      </Link>
+    );
+  };
+
   return (
-    <div className="max-w-4xl mx-auto px-4 py-12">
-      <div className="mb-12">
+    <div className="max-w-6xl mx-auto px-4 py-12">
+      {/* Header */}
+      <div className="mb-10">
         <Link href="/dashboard/inbox" className="inline-flex items-center text-xs font-black uppercase tracking-widest text-brand-purple hover:translate-x-[-4px] transition-transform mb-6">
           <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7" />
           </svg>
           Back to Inbox
         </Link>
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
           <div>
             <h2 className="text-4xl font-extrabold text-gray-900 tracking-tight">Conversation History</h2>
             <p className="text-lg text-gray-400 font-mono mt-2 tracking-tight">{decodedPhone}</p>
           </div>
-          <div className="bg-gray-50 px-4 py-2 rounded-2xl border border-gray-100 text-xs font-bold text-gray-500 uppercase tracking-widest">
-            {sessions.length} total sessions
+          <div className="flex space-x-3">
+            {liveSessions.length > 0 && (
+              <div className="bg-emerald-50 px-4 py-2 rounded-2xl border border-emerald-100 text-xs font-bold text-emerald-700 uppercase tracking-widest flex items-center space-x-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>{liveSessions.length} Live</span>
+              </div>
+            )}
+            <div className="bg-gray-50 px-4 py-2 rounded-2xl border border-gray-100 text-xs font-bold text-gray-500 uppercase tracking-widest">
+              {sessions.length} total sessions
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="space-y-6">
-        {sessions.map((session) => {
-          const isLive = session.status === 'active' || session.status === 'review';
-          return (
-            <Link 
-              key={session.id} 
-              href={`/dashboard/sessions/${session.id}`}
-              className="block group"
-            >
-              <div className={`bg-white rounded-[2rem] border transition-all duration-300 overflow-hidden relative ${
-                isLive 
-                  ? 'border-indigo-100 shadow-xl shadow-indigo-50/50 hover:shadow-indigo-100/50' 
-                  : 'border-gray-100 shadow-sm hover:shadow-md'
-              }`}>
-                {isLive && (
-                  <div className="absolute top-0 left-0 w-full h-1.5 bg-brand-purple" />
-                )}
-                
-                <div className="p-8">
-                  <div className="flex justify-between items-start mb-6">
-                    <div className="space-y-1">
-                      <div className="flex items-center space-x-3">
-                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">
-                          {session.business_profiles?.name}
-                        </span>
-                        <span className="text-gray-200">/</span>
-                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                          {new Date(session.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} • {new Date(session.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                      <h3 className="text-xl font-extrabold text-gray-900 tracking-tight group-hover:text-brand-purple transition-colors">
-                        {isLive ? 'Active Session' : 'Archived Chat'}
-                      </h3>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                       {isLive && (
-                         <span className="px-2 py-1 bg-brand-purple text-white text-[9px] font-black uppercase tracking-widest rounded-md animate-pulse">
-                           Live
-                         </span>
-                       )}
-                       <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                         session.status === 'review' 
-                           ? 'bg-rose-100 text-rose-600' 
-                           : session.status === 'active' 
-                             ? 'bg-indigo-100 text-indigo-700' 
-                             : 'bg-gray-100 text-gray-500'
-                       }`}>
-                         {session.status}
-                       </span>
-                    </div>
-                  </div>
+      {/* Live Sessions */}
+      {liveSessions.length > 0 && (
+        <div className="mb-10">
+          <div className="flex items-center space-x-2 mb-4">
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <h3 className="text-xs font-black uppercase tracking-widest text-emerald-600">Active Now</h3>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {liveSessions.map(s => <SessionCard key={s.id} session={s} />)}
+          </div>
+        </div>
+      )}
 
-                  <div className={`rounded-2xl p-5 border italic text-sm leading-relaxed transition-colors ${
-                    isLive 
-                      ? 'bg-indigo-50/30 border-indigo-50 text-indigo-900' 
-                      : 'bg-gray-50/50 border-gray-50 text-gray-600'
-                  }`}>
-                    {session.summary || "Conversation pending summary..."}
-                  </div>
-
-                  <div className="mt-6 flex items-center text-xs font-bold text-indigo-600 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
-                    View full transcript
-                    <svg className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-            </Link>
-          );
-        })}
-      </div>
+      {/* Archived Sessions */}
+      {archivedSessions.length > 0 && (
+        <div>
+          {liveSessions.length > 0 && (
+            <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-4">Past Conversations</h3>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {archivedSessions.map(s => <SessionCard key={s.id} session={s} />)}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

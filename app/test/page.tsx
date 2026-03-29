@@ -39,7 +39,14 @@ export default function TestPage() {
         setSessionId(data.sessionId);
       }
 
-      if (data.reply) {
+      if (data.draft) {
+        // Approval mode: Sophia drafted a reply but hasn't sent it yet
+        setMessages(prev => [...prev, { 
+          role: 'pending', 
+          content: data.reply,
+          sessionId: data.sessionId
+        }]);
+      } else if (data.reply) {
         setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
       }
     } catch (err) {
@@ -65,13 +72,32 @@ export default function TestPage() {
           )}
           {messages.map((m, i) => (
             <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
-                m.role === 'user' 
-                  ? 'bg-brand-purple text-white rounded-tr-none shadow-indigo-100 shadow-lg' 
-                  : 'bg-white border border-gray-100 text-gray-800 rounded-tl-none shadow-md'
-              }`}>
-                {m.content}
-              </div>
+              {m.role === 'pending' ? (
+                <div className="max-w-[85%] w-full">
+                  <div className="bg-amber-50 border-2 border-amber-300 border-dashed rounded-2xl rounded-tl-none px-5 py-4 text-sm">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                      <span className="text-[10px] font-black uppercase tracking-widest text-amber-600">Awaiting Your Approval — Not Sent Yet</span>
+                    </div>
+                    <p className="text-amber-900 leading-relaxed mb-3">{m.content}</p>
+                    <a 
+                      href={`/dashboard/sessions/${m.sessionId || sessionId}`}
+                      target="_blank"
+                      className="inline-flex items-center space-x-1 text-[10px] font-black uppercase tracking-widest text-brand-purple hover:underline"
+                    >
+                      <span>Review in Dashboard →</span>
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                <div className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
+                  m.role === 'user' 
+                    ? 'bg-brand-purple text-white rounded-tr-none shadow-indigo-100 shadow-lg' 
+                    : 'bg-white border border-gray-100 text-gray-800 rounded-tl-none shadow-md'
+                }`}>
+                  {m.content}
+                </div>
+              )}
             </div>
           ))}
           {loading && (
