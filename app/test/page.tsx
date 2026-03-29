@@ -35,8 +35,8 @@ export default function TestPage() {
       });
       const data = await res.json();
       
-      if (data.id && !sessionId) {
-        setSessionId(data.id);
+      if (data.sessionId && !sessionId) {
+        setSessionId(data.sessionId);
       }
 
       if (data.reply) {
