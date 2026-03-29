@@ -31,7 +31,8 @@ export default function ChatInterface({
 
   // Find the latest draft
   const latestDraft = [...transcript].reverse().find(m => m.role === 'draft');
-  const isReview = sessionStatus === 'review' || !!latestDraft;
+  const isArchived = sessionStatus !== 'active' && sessionStatus !== 'review';
+  const isReview = !isArchived && (sessionStatus === 'review' || !!latestDraft);
 
   // Pre-fill textarea with draft on load
   useEffect(() => {
@@ -107,8 +108,8 @@ export default function ChatInterface({
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col" style={{ height: '620px' }}>
       
-      {/* Approval Banner */}
-      {isReview && (
+      {/* Approval Banner — only for live sessions with a pending draft */}
+      {isReview && !isArchived && (
         <div className="bg-amber-50 border-b border-amber-200 px-5 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
@@ -185,49 +186,59 @@ export default function ChatInterface({
       </div>
 
       {/* Action Bar */}
-      <div className="p-4 bg-white border-t border-gray-100 space-y-3">
-        {/* Mode label */}
-        <div className="flex items-center justify-between px-1">
-          <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-            {sendMode === 'manual' ? '✏️ Manual Override' : isReview ? "✅ Sophia's Draft (edit to override)" : '✏️ Send manual message'}
-          </span>
-          <span className="text-[10px] text-gray-300 font-mono">⌘+Enter to send</span>
+      {isArchived ? (
+        /* Read-only notice for archived/completed sessions */
+        <div className="p-4 bg-gray-50 border-t border-gray-100 flex items-center space-x-3">
+          <div className="w-2 h-2 rounded-full bg-gray-300 flex-shrink-0" />
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+            This session is archived — no further messages can be sent
+          </p>
         </div>
+      ) : (
+        <div className="p-4 bg-white border-t border-gray-100 space-y-3">
+          {/* Mode label */}
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+              {sendMode === 'manual' ? '✏️ Manual Override' : isReview ? "✅ Sophia's Draft (edit to override)" : '✏️ Send manual message'}
+            </span>
+            <span className="text-[10px] text-gray-300 font-mono">⌘+Enter to send</span>
+          </div>
 
-        <div className="flex items-end space-x-3">
-          <textarea
-            ref={textareaRef}
-            rows={2}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              sendMode === 'manual'
-                ? 'Type your own message to the client...'
-                : latestDraft
-                  ? "Edit Sophia's draft, or send as-is..."
-                  : 'Type a message to send directly to the client...'
-            }
-            className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-purple/30 transition-all text-gray-900 resize-none bg-gray-50 focus:bg-white"
-          />
-          <button
-            onClick={handleSend}
-            disabled={isSending || !input.trim()}
-            className="bg-brand-purple text-white px-5 py-3 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-indigo-100 whitespace-nowrap flex items-center space-x-2"
-          >
-            {isSending ? (
-              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : (
-              <>
-                <span>{sendMode === 'approve' && latestDraft ? 'Approve & Send' : 'Send'}</span>
-                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-                </svg>
-              </>
-            )}
-          </button>
+          <div className="flex items-end space-x-3">
+            <textarea
+              ref={textareaRef}
+              rows={2}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                sendMode === 'manual'
+                  ? 'Type your own message to the client...'
+                  : latestDraft
+                    ? "Edit Sophia's draft, or send as-is..."
+                    : 'Type a message to send directly to the client...'
+              }
+              className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-purple/30 transition-all text-gray-900 resize-none bg-gray-50 focus:bg-white"
+            />
+            <button
+              onClick={handleSend}
+              disabled={isSending || !input.trim()}
+              className="bg-brand-purple text-white px-5 py-3 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-indigo-100 whitespace-nowrap flex items-center space-x-2"
+            >
+              {isSending ? (
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  <span>{sendMode === 'approve' && latestDraft ? 'Approve & Send' : 'Send'}</span>
+                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                  </svg>
+                </>
+              )}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

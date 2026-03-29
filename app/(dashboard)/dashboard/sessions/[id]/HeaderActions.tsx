@@ -1,6 +1,9 @@
 'use client';
 
 export default function HeaderActions({ isReview }: { isReview: boolean }) {
+  // Don't show action buttons for archived sessions
+  if (!isReview) return null;
+
   const focusInput = () => {
     (window as any).__focusApprovalInput?.();
   };
@@ -17,7 +20,7 @@ export default function HeaderActions({ isReview }: { isReview: boolean }) {
         onClick={focusInput}
         className="bg-brand-purple text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition-colors"
       >
-        {isReview ? 'Review & Approve' : 'Send Manual Message'}
+        Review & Approve
       </button>
     </div>
   );
