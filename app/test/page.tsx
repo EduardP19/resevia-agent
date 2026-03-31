@@ -85,8 +85,13 @@ export default function TestPage() {
       if (data.status) setSessionStatus(data.status);
       
       const newPollMsgs: any[] = data.messages || [];
-      const hasNewMessages = newPollMsgs.length > 0;
-      if (hasNewMessages) {
+
+      // Filter and mark seen BEFORE setMessages to avoid side effects inside the updater
+      // (React StrictMode double-invokes updaters, which would mark IDs as seen without displaying them)
+      const unprocessed = newPollMsgs.filter(m => !seenIds.current.has(m.id));
+      unprocessed.forEach(m => seenIds.current.add(m.id));
+
+      if (unprocessed.length > 0) {
         lastSyncedAt.current = newPollMsgs[newPollMsgs.length - 1].created_at;
       }
 
@@ -94,40 +99,38 @@ export default function TestPage() {
         let updated = [...prev];
         let changed = false;
 
-        if (hasNewMessages) {
-          for (const m of newPollMsgs) {
-            if (seenIds.current.has(m.id)) continue;
-            seenIds.current.add(m.id);
-            changed = true;
+        for (const m of unprocessed) {
+          changed = true;
 
-            if (m.role === 'assistant') {
-              // Replace ONE waiting bubble if present
-              const waitingIdx = updated.findIndex(x => x.role === 'waiting');
-              if (waitingIdx !== -1) {
-                updated[waitingIdx] = { role: 'assistant', content: m.content, id: m.id };
-              } else {
-                updated.push({ role: 'assistant', content: m.content, id: m.id });
-              }
-            } else if (m.role === 'user') {
-              // Deduplicate: find local version and update ID
-              const localMatchIdx = updated.findIndex(x => x.role === 'user' && x.content === m.content && x.id?.startsWith('local-'));
-              if (localMatchIdx !== -1) {
-                updated[localMatchIdx] = { ...updated[localMatchIdx], id: m.id };
-              } else {
-                updated.push({ role: 'user', content: m.content, id: m.id });
-              }
+          if (m.role === 'assistant') {
+            // Replace ONE waiting bubble if present
+            const waitingIdx = updated.findIndex(x => x.role === 'waiting');
+            if (waitingIdx !== -1) {
+              updated[waitingIdx] = { role: 'assistant', content: m.content, id: m.id };
+            } else {
+              updated.push({ role: 'assistant', content: m.content, id: m.id });
+            }
+          } else if (m.role === 'user') {
+            // Deduplicate: find local version and update ID
+            const localMatchIdx = updated.findIndex(x => x.role === 'user' && x.content === m.content && x.id?.startsWith('local-'));
+            if (localMatchIdx !== -1) {
+              updated[localMatchIdx] = { ...updated[localMatchIdx], id: m.id };
+            } else {
+              updated.push({ role: 'user', content: m.content, id: m.id });
             }
           }
         }
 
-        // Handle waiting bubble based on hasDraft
+        // Handle waiting bubble based on hasDraft.
+        // Don't re-add a waiting bubble if an assistant message just arrived in this same poll
+        // (handles the race window between saveMessage and DELETE draft in the approve route).
+        const justGotAssistant = unprocessed.some(m => m.role === 'assistant');
         const currentlyHasWaiting = updated.some(m => m.role === 'waiting');
-        if (data.hasDraft && !currentlyHasWaiting) {
+
+        if (data.hasDraft && !currentlyHasWaiting && !justGotAssistant) {
           updated.push({ role: 'waiting', sessionId: sid });
           changed = true;
         } else if (!data.hasDraft && currentlyHasWaiting) {
-          // Only remove waiting bubble if we just received a new assistant message effectively
-          // (The assistant message logic above already handles the replacement, so this is for drafts deleted without approval)
           updated = updated.filter(m => m.role !== 'waiting');
           changed = true;
         }
