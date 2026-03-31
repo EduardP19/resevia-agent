@@ -71,8 +71,23 @@ export async function getOrCreateConversation(salonId: string, customerPhone: st
       })
       .select()
       .single();
-    
-    if (nsError) throw nsError;
+
+    if (nsError) {
+      // Race condition: another request already created the session — fetch it
+      if (nsError.code === '23505') {
+        const { data: raceData } = await supabase
+          .from('sessions')
+          .select('*')
+          .eq('salon_id', salonId)
+          .eq('client_identifier', customerPhone)
+          .in('status', ['active', 'review', 'handed_over'])
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .single();
+        if (raceData) return raceData;
+      }
+      throw nsError;
+    }
     data = newData;
   }
   return data;

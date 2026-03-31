@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface Message {
@@ -25,22 +25,90 @@ export default function ChatInterface({
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [sendMode, setSendMode] = useState<'approve' | 'manual'>('approve');
+  const [currentStatus, setCurrentStatus] = useState(sessionStatus);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
+  // Polling state
+  const isSyncingRef = useRef(false);
+  const lastSyncedAt = useRef<string | null>(null);
+  const seenIds = useRef<Set<string>>(new Set(initialTranscript.map(m => m.id)));
+  const isSendingRef = useRef(false);
+
+  // Keep refs in sync so the poll callback (stable ref) sees current values
+  useEffect(() => { isSendingRef.current = isSending; }, [isSending]);
+  const hasDraftRef = useRef(initialTranscript.some(m => m.role === 'draft'));
+
   // Find the latest draft
   const latestDraft = [...transcript].reverse().find(m => m.role === 'draft');
-  const isArchived = sessionStatus !== 'active' && sessionStatus !== 'review';
-  const isReview = !isArchived && (sessionStatus === 'review' || !!latestDraft);
+  hasDraftRef.current = !!latestDraft;
+  const isArchived = currentStatus !== 'active' && currentStatus !== 'review';
+  const isReview = !isArchived && (currentStatus === 'review' || !!latestDraft);
 
-  // Sync transcript when RSC refreshes (e.g. new draft arrives via AutoRefresh)
-  // Skip during active sends to avoid overwriting optimistic messages mid-flight
-  useEffect(() => {
-    if (!isSending) {
-      setTranscript(initialTranscript);
+  // Poll for new messages every 3s — same dedup logic as test page
+  const syncTranscript = useCallback(async () => {
+    if (isSyncingRef.current || isSendingRef.current) return;
+    isSyncingRef.current = true;
+    try {
+      const since = lastSyncedAt.current;
+      const url = `/api/test/poll?sessionId=${sessionId}${since ? `&since=${encodeURIComponent(since)}` : ''}&t=${Date.now()}`;
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data.status) setCurrentStatus(data.status);
+
+      const newMsgs: Message[] = data.messages || [];
+      const unprocessed = newMsgs.filter(m => !seenIds.current.has(m.id));
+      unprocessed.forEach(m => seenIds.current.add(m.id));
+
+      if (newMsgs.length > 0) {
+        lastSyncedAt.current = newMsgs[newMsgs.length - 1].created_at;
+      }
+
+      if (unprocessed.length > 0) {
+        setTranscript(prev => {
+          const updated = [...prev];
+          for (const m of unprocessed) {
+            // Replace optimistic message if same role+content, otherwise append
+            const optimisticIdx = updated.findIndex(
+              x => x.id.startsWith('optimistic-') && x.role === m.role && x.content === m.content
+            );
+            if (optimisticIdx !== -1) {
+              updated[optimisticIdx] = m;
+            } else {
+              updated.push(m);
+            }
+          }
+          return updated;
+        });
+      }
+
+      // Draft sync: if server says there's a draft but we don't have one locally,
+      // trigger an RSC refresh to fetch it. Use ref to avoid stale closure.
+      if (data.hasDraft && !hasDraftRef.current) {
+        router.refresh();
+      }
+      // If draft was cleared (approved), remove it locally immediately
+      if (!data.hasDraft && hasDraftRef.current) {
+        setTranscript(prev => prev.filter(m => m.role !== 'draft'));
+        hasDraftRef.current = false;
+      }
+    } catch {/* silent */} finally {
+      isSyncingRef.current = false;
     }
-  }, [initialTranscript]);
+  }, [sessionId, router]);
+
+  // Start polling on mount
+  useEffect(() => {
+    // Seed lastSyncedAt from the latest message we already have
+    if (initialTranscript.length > 0) {
+      lastSyncedAt.current = initialTranscript[initialTranscript.length - 1].created_at;
+    }
+    const pid = setInterval(syncTranscript, 3000);
+    return () => clearInterval(pid);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]); // Only re-run if sessionId changes
 
   // Pre-fill textarea with draft on load or when draft changes
   useEffect(() => {
@@ -86,6 +154,7 @@ export default function ChatInterface({
     };
 
     // Optimistic update: show instantly, remove drafts
+    seenIds.current.add(optimisticMsg.id);
     setTranscript(prev => [
       ...prev.filter(m => m.role !== 'draft'),
       optimisticMsg,

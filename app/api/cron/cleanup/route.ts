@@ -27,7 +27,9 @@ export async function GET() {
 
       const msg = "Session expired. Please start a new one by saying Hi if you still need assistance.";
       await sendSMS(session.client_identifier!, msg);
-      await saveMessage(session.id, 'system', msg);
+      // Save as 'assistant' so test window shows what the client would receive via SMS.
+      // In production this is sent via Twilio; in test mode it appears in the chat.
+      await saveMessage(session.id, 'assistant', msg);
       await supabase.from('sessions').update({ 
         status: 'completed',
         summary 
@@ -48,7 +50,8 @@ export async function GET() {
 
       const msg = "Just checking if you're still there! In 1 minute this session will expire and you'll have to start a new one by saying Hi.";
       await sendSMS(session.client_identifier!, msg);
-      await saveMessage(session.id, 'system', msg);
+      // Save as 'assistant' so test window shows what the client would receive via SMS.
+      await saveMessage(session.id, 'assistant', msg);
       
       const newMetadata = { ...session.metadata, warned_at: now.toISOString() };
       await supabase.from('sessions').update({ metadata: newMetadata }).eq('id', session.id);

@@ -1,4 +1,3 @@
-import AutoRefresh from '../../inbox/AutoRefresh';
 import { getSessionTranscript, supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import ChatInterface from './ChatInterface';
@@ -21,7 +20,6 @@ export default async function SessionTranscriptPage({ params }: { params: { id: 
 
   return (
     <div className="max-w-4xl mx-auto relative">
-      <AutoRefresh intervalMs={4000} />
       <div className="mb-8 flex justify-between items-end">
         <div>
           <Link href="/dashboard/inbox" className="text-sm font-bold text-brand-purple hover:underline flex items-center mb-2">
