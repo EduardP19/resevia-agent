@@ -22,6 +22,7 @@ export default function TestPage() {
   const pollRef = useRef<NodeJS.Timeout | null>(null);
   const lastSyncedAt = useRef<string | null>(null);
   const seenIds = useRef<Set<string>>(new Set());
+  const hadDraftRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Reset session locally
@@ -83,7 +84,16 @@ export default function TestPage() {
       const res = await fetch(url);
       const data = await res.json();
       if (data.status) setSessionStatus(data.status);
-      
+
+      // If draft just disappeared, roll back lastSyncedAt by 5s to catch the
+      // approved assistant message which may have been written just before the draft was deleted.
+      const hasDraftNow = !!data.hasDraft;
+      if (hadDraftRef.current && !hasDraftNow && lastSyncedAt.current) {
+        const rolledBack = new Date(new Date(lastSyncedAt.current).getTime() - 5000).toISOString();
+        lastSyncedAt.current = rolledBack;
+      }
+      hadDraftRef.current = hasDraftNow;
+
       const newPollMsgs: any[] = data.messages || [];
 
       // Filter and mark seen BEFORE setMessages to avoid side effects inside the updater
