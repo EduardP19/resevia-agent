@@ -137,6 +137,7 @@ export async function holdBooking(details: {
   time: string;
   responses: Record<string, any>;
   salonId: string;
+  salonName?: string;
   customerPhone: string;
   workerName?: string;
   salonServices?: any[];
@@ -150,8 +151,8 @@ export async function holdBooking(details: {
 
     const [salonRes, workersRes] = await Promise.all([
       details.salonServices
-        ? Promise.resolve({ data: { services: details.salonServices } })
-        : supabase.from('business_profiles').select('services').eq('id', details.salonId).single(),
+        ? Promise.resolve({ data: { services: details.salonServices, name: details.salonName || 'Salon' } })
+        : supabase.from('business_profiles').select('name, services').eq('id', details.salonId).single(),
       workerQuery
     ]);
 
@@ -168,6 +169,13 @@ export async function holdBooking(details: {
     const service = salonRes.data?.services?.find((s: any) =>
       s.name.toLowerCase().includes(details.serviceName.toLowerCase())
     );
+    const resolvedSalonName = salonRes.data?.name || details.salonName || 'Salon';
+
+    const normalizedResponses = { ...(details.responses || {}) };
+    if (!normalizedResponses.title || !String(normalizedResponses.title).trim()) {
+      normalizedResponses.title = `${resolvedSalonName} - ${details.serviceName}`;
+    }
+
     const duration = service?.duration_minutes || 60;
     const startISO = getUtcStart(details.date, details.time);
     const endISO = new Date(new Date(startISO).getTime() + duration * 60000).toISOString();
@@ -204,9 +212,9 @@ export async function holdBooking(details: {
       salon_id: details.salonId,
       worker_id: assignedWorker.id,
       customer_phone: details.customerPhone,
-      client_name: details.responses.name || 'Client',
-      client_email: details.responses.email || 'client@example.com',
-      responses: details.responses,
+      client_name: normalizedResponses.name || 'Client',
+      client_email: normalizedResponses.email || 'client@example.com',
+      responses: normalizedResponses,
       status: 'held',
       service_name: details.serviceName,
       duration_minutes: duration,
@@ -392,6 +400,7 @@ export async function bookDirect(details: {
   time: string;
   responses: Record<string, any>;
   salonId: string;
+  salonName?: string;
   customerPhone: string;
   workerName?: string;
   salonServices?: any[];

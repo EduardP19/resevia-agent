@@ -1,33 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { unstable_noStore as noStore } from 'next/cache';
 import { supabase } from '@/lib/supabase';
 
-// Returns assistant messages for a session.
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+// Returns user/assistant messages for a session.
 // If 'since' is provided, returns only messages newer than that.
-// If 'since' is missing, returns the latest 20 assistant messages to sync history.
+// If 'since' is missing, returns the latest 50 messages to sync recent history.
 export async function GET(req: NextRequest) {
+  noStore();
+
   const sessionId = req.nextUrl.searchParams.get('sessionId');
   const since = req.nextUrl.searchParams.get('since');
 
   if (!sessionId) return NextResponse.json({ messages: [] });
 
-  let query = supabase
+  const baseQuery = supabase
     .from('transcripts')
     .select('id, role, content, created_at')
     .eq('session_id', sessionId)
-    .in('role', ['user', 'assistant'])
-    .order('created_at', { ascending: true });
+    .in('role', ['user', 'assistant']);
 
-  if (since) {
-    // Greater than or equal to avoid missing messages created in the same millisecond.
-    // deduplication is handled by ID on the client.
-    query = query.gte('created_at', since);
-  } else {
-    // On first load, grab recent context
-    query = query.limit(50);
-  }
+  const { data: rawMessages, error } = since
+    ? await baseQuery
+        // Greater than or equal to avoid missing messages created in the same millisecond.
+        // deduplication is handled by ID on the client.
+        .gte('created_at', since)
+        .order('created_at', { ascending: true })
+    : await baseQuery
+        // On first load, grab recent context, then restore chronological order.
+        .order('created_at', { ascending: false })
+        .limit(50);
 
-  const { data: messages, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const messages = since ? (rawMessages || []) : (rawMessages || []).reverse();
 
   // Fetch current session status and draft flag
   const { data: session } = await supabase
