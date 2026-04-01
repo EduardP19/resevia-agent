@@ -46,6 +46,17 @@ export default function ChatInterface({
   const isArchived = currentStatus !== 'active' && currentStatus !== 'review';
   const isReview = !isArchived && (currentStatus === 'review' || !!latestDraft);
 
+  // Keep local state aligned with refreshed server props after router.refresh().
+  useEffect(() => {
+    setTranscript(initialTranscript);
+    setCurrentStatus(sessionStatus);
+    seenIds.current = new Set(initialTranscript.map(m => m.id));
+    lastSyncedAt.current = initialTranscript.length > 0
+      ? initialTranscript[initialTranscript.length - 1].created_at
+      : null;
+    hasDraftRef.current = initialTranscript.some(m => m.role === 'draft');
+  }, [initialTranscript, sessionStatus]);
+
   // Poll for new messages every 3s — same dedup logic as test page
   const syncTranscript = useCallback(async () => {
     if (isSyncingRef.current || isSendingRef.current) return;
@@ -53,7 +64,7 @@ export default function ChatInterface({
     try {
       const since = lastSyncedAt.current;
       const url = `/api/test/poll?sessionId=${sessionId}${since ? `&since=${encodeURIComponent(since)}` : ''}&t=${Date.now()}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { cache: 'no-store' });
       const data = await res.json();
 
       if (data.status) setCurrentStatus(data.status);
@@ -105,6 +116,7 @@ export default function ChatInterface({
     if (initialTranscript.length > 0) {
       lastSyncedAt.current = initialTranscript[initialTranscript.length - 1].created_at;
     }
+    void syncTranscript();
     const pid = setInterval(syncTranscript, 3000);
     return () => clearInterval(pid);
   // eslint-disable-next-line react-hooks/exhaustive-deps

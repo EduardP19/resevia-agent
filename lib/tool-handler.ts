@@ -57,7 +57,10 @@ export async function executeToolCall(
 
     if (worker) {
       const fields = await getBookingFields(worker.cal_event_type_id);
-      const summary = fields.map((f: any) => `${f.name}${f.required ? ' (required)' : ''}`).join(', ');
+      // Internal/system fields are auto-filled server-side and should never be asked from clients.
+      const hiddenFields = new Set(['title']);
+      const clientFacingFields = fields.filter((f: any) => !hiddenFields.has(String(f.name || '').toLowerCase()));
+      const summary = clientFacingFields.map((f: any) => `${f.name}${f.required ? ' (required)' : ''}`).join(', ');
       toolResult = `To book ${args.serviceName}, I need: ${summary}`;
     } else {
       toolResult = 'Service not found or no workers available.';
@@ -70,6 +73,7 @@ export async function executeToolCall(
       time: args.time,
       responses: args.responses || {},
       salonId: ctx.salonId,
+      salonName: ctx.salon?.name,
       customerPhone: ctx.customerPhone,
       workerName: args.workerName,
       salonServices: ctx.salonServices

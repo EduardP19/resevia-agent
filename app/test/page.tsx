@@ -46,7 +46,7 @@ export default function TestPage() {
   const findActiveSession = useCallback(async (p: string) => {
     if (sessionId) return;
     try {
-      const res = await fetch(`/api/test/session?phone=${encodeURIComponent(p)}`);
+      const res = await fetch(`/api/test/session?phone=${encodeURIComponent(p)}`, { cache: 'no-store' });
       const data = await res.json();
       if (data.sessionId) {
         setSessionId(data.sessionId);
@@ -77,7 +77,7 @@ export default function TestPage() {
     isSyncingRef.current = true;
     try {
       const url = `/api/test/poll?sessionId=${sid}${lastSyncedAt.current ? `&since=${encodeURIComponent(lastSyncedAt.current)}` : ''}&t=${Date.now()}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { cache: 'no-store' });
       const data = await res.json();
 
       // If draft just disappeared, roll back lastSyncedAt by 5s to catch the
