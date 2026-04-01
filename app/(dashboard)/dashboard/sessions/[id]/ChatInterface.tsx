@@ -215,18 +215,18 @@ export default function ChatInterface({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col" style={{ height: '620px' }}>
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-[calc(100dvh-250px)] min-h-[460px] max-h-[620px] md:h-[620px]">
       
       {/* Approval Banner — only for live sessions with a pending draft */}
       {isReview && !isArchived && (
-        <div className="bg-amber-50 border-b border-amber-200 px-5 py-3 flex items-center justify-between">
+        <div className="bg-amber-50 border-b border-amber-200 px-5 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center space-x-2">
             <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
             <span className="text-xs font-black uppercase tracking-widest text-amber-700">
               Awaiting Your Approval — Sophia has NOT sent this yet
             </span>
           </div>
-          <div className="flex space-x-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={switchToApprove}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${sendMode === 'approve' ? 'bg-brand-purple text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-brand-purple hover:text-brand-purple'}`}
@@ -306,7 +306,7 @@ export default function ChatInterface({
       ) : (
         <div className="p-4 bg-white border-t border-gray-100 space-y-3">
           {/* Mode label */}
-          <div className="flex items-center justify-between px-1">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
             <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">
               {sendMode === 'manual' ? '✏️ Manual Override' : isReview ? "✅ Sophia's Draft (edit to override)" : '✏️ Send manual message'}
             </span>

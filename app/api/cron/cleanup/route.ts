@@ -5,6 +5,24 @@ import { generateSummary } from '@/lib/ai';
 
 export const dynamic = 'force-dynamic';
 
+async function getLastTranscriptRoles(sessionIds: string[]): Promise<Record<string, string>> {
+  if (sessionIds.length === 0) return {};
+
+  const { data } = await supabase
+    .from('transcripts')
+    .select('session_id, role, created_at')
+    .in('session_id', sessionIds)
+    .order('created_at', { ascending: false });
+
+  const bySession: Record<string, string> = {};
+  for (const row of (data || [])) {
+    if (!bySession[row.session_id]) {
+      bySession[row.session_id] = row.role;
+    }
+  }
+  return bySession;
+}
+
 export async function GET() {
   const now = new Date();
   const nowIso = now.toISOString();
@@ -21,8 +39,14 @@ export async function GET() {
       .lt('updated_at', threeMinsAgo)
       .gt('updated_at', twoDaysAgo);
 
+    const expireRoles = await getLastTranscriptRoles((toExpire || []).map(s => s.id));
+
     let expiredCount = 0;
     for (const session of (toExpire || [])) {
+      // Only expire sessions where the latest message is from the agent.
+      // If the client is still waiting for us (last message is user/draft/system), do not terminate.
+      if (expireRoles[session.id] !== 'assistant') continue;
+
       const currentMetadata = (session.metadata && typeof session.metadata === 'object') ? session.metadata : {};
       if ((currentMetadata as any).expired_at) continue;
 
@@ -63,8 +87,13 @@ export async function GET() {
       .gt('updated_at', threeMinsAgo)
       .gt('updated_at', twoDaysAgo);
 
+    const warnRoles = await getLastTranscriptRoles((toWarn || []).map(s => s.id));
+
     let warnedCount = 0;
     for (const session of (toWarn || [])) {
+      // Warn only when we are waiting for the client's reply.
+      if (warnRoles[session.id] !== 'assistant') continue;
+
       const currentMetadata = (session.metadata && typeof session.metadata === 'object') ? session.metadata : {};
       if ((currentMetadata as any).warned_at) continue;
 

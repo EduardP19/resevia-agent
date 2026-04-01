@@ -211,8 +211,8 @@ export default function TestPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100 flex flex-col h-[750px]">
+    <div className="min-h-[100dvh] bg-gray-50 flex flex-col items-center justify-center p-2 sm:p-4">
+      <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100 flex flex-col h-[calc(100dvh-6.5rem)] min-h-[560px] sm:h-[750px]">
 
         {/* Header — dev controls only, no internal status badges */}
         <div className="p-6 bg-brand-purple text-white">
