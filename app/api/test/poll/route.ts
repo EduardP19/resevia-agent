@@ -50,9 +50,29 @@ export async function GET(req: NextRequest) {
     .eq('session_id', sessionId)
     .eq('role', 'draft');
 
+  const { data: draftMessages } = await supabase
+    .from('transcripts')
+    .select('id, role, content, created_at')
+    .eq('session_id', sessionId)
+    .eq('role', 'draft')
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  const { data: reviewMessages } = await supabase
+    .from('transcripts')
+    .select('id, role, content, created_at')
+    .eq('session_id', sessionId)
+    .in('role', ['user', 'assistant', 'draft', 'system'])
+    .order('created_at', { ascending: false })
+    .limit(8);
+
+  const latestDraft = draftMessages?.[0] || null;
+
   return NextResponse.json({ 
     messages, 
     status: session?.status || 'active',
-    hasDraft: (draftCount || 0) > 0
+    hasDraft: (draftCount || 0) > 0,
+    draft: latestDraft,
+    reviewMessages: (reviewMessages || []).reverse()
   });
 }

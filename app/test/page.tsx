@@ -316,21 +316,9 @@ export default function TestPage() {
         </form>
       </div>
 
-      {/* Dev shortcut — outside the customer UI frame */}
-      {hasWaiting && sessionId ? (
-        <a
-          href={`/dashboard/sessions/${sessionId}`}
-          target="_blank"
-          className="mt-4 inline-flex items-center space-x-2 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3 text-xs font-black uppercase tracking-widest text-amber-700 hover:bg-amber-100 transition-colors shadow-sm"
-        >
-          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-          <span>Review & Approve Sophia's Draft →</span>
-        </a>
-      ) : (
-        <p className="mt-6 text-[10px] text-gray-400 uppercase font-black tracking-widest text-center">
-          Customer Simulation • Bypasses Twilio
-        </p>
-      )}
+      <p className="mt-6 text-[10px] text-gray-400 uppercase font-black tracking-widest text-center">
+        Customer Simulation • Bypasses Twilio
+      </p>
     </div>
   );
 }

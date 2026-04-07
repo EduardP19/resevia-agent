@@ -4,6 +4,10 @@ const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!;
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
+export const TEST_UI_TRANSCRIPTS_TABLE = 'transcripts-test-ui';
+
+type TranscriptTableName = 'transcripts' | typeof TEST_UI_TRANSCRIPTS_TABLE;
+type TranscriptRole = 'user' | 'assistant' | 'system' | 'draft';
 
 // Load salon by ID
 export async function getSalonById(salonId: string) {
@@ -11,6 +15,15 @@ export async function getSalonById(salonId: string) {
     .from('business_profiles')
     .select('*')
     .eq('id', salonId)
+    .single();
+  return data;
+}
+
+export async function getDefaultSalon() {
+  const { data } = await supabase
+    .from('business_profiles')
+    .select('*')
+    .limit(1)
     .single();
   return data;
 }
@@ -95,8 +108,15 @@ export async function getOrCreateConversation(salonId: string, customerPhone: st
 
 // Load all messages for a session
 export async function getTranscriptHistory(sessionId: string) {
+  return getTranscriptHistoryFromTable(sessionId, 'transcripts');
+}
+
+export async function getTranscriptHistoryFromTable(
+  sessionId: string,
+  table: TranscriptTableName = 'transcripts'
+) {
   const { data, error } = await supabase
-    .from('transcripts')
+    .from(table)
     .select('*')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true });
@@ -106,11 +126,91 @@ export async function getTranscriptHistory(sessionId: string) {
 
 // Save message to transcript
 export async function saveMessage(sessionId: string, role: 'user' | 'assistant' | 'system', content: string) {
-  await supabase.from('transcripts').insert({
+  await saveMessageToTable(sessionId, role, content, 'transcripts');
+}
+
+export async function saveMessageToTable(
+  sessionId: string,
+  role: TranscriptRole,
+  content: string,
+  table: TranscriptTableName = 'transcripts'
+) {
+  await supabase.from(table).insert({
     session_id: sessionId,
     role,
     content
   });
+}
+
+export async function deleteMessagesByRoleFromTable(
+  sessionId: string,
+  role: TranscriptRole,
+  table: TranscriptTableName = 'transcripts'
+) {
+  await supabase.from(table).delete().eq('session_id', sessionId).eq('role', role);
+}
+
+async function fallbackAllocateTestUiPhone() {
+  const { data } = await supabase
+    .from('sessions')
+    .select('client_identifier')
+    .contains('metadata', { source: 'test-ui' })
+    .like('client_identifier', '07%')
+    .order('client_identifier', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const latest = data?.client_identifier || '0699999999';
+  const nextValue = String(Number(latest) + 1).padStart(10, '0');
+  return nextValue;
+}
+
+export async function allocateTestUiPhone() {
+  const { data, error } = await supabase.rpc('allocate_test_ui_phone');
+
+  if (!error && typeof data === 'string' && data.length > 0) {
+    return data;
+  }
+
+  return fallbackAllocateTestUiPhone();
+}
+
+export async function createTestUiConversation(salonId: string, sessionId?: string) {
+  if (sessionId) {
+    const { data: existingSession } = await supabase
+      .from('sessions')
+      .select('*')
+      .eq('id', sessionId)
+      .neq('status', 'completed')
+      .contains('metadata', { source: 'test-ui' })
+      .maybeSingle();
+
+    if (existingSession) {
+      return existingSession;
+    }
+  }
+
+  const clientPhone = await allocateTestUiPhone();
+  const { data, error } = await supabase
+    .from('sessions')
+    .insert({
+      platform: 'web',
+      salon_id: salonId,
+      client_identifier: clientPhone,
+      status: 'active',
+      metadata: {
+        source: 'test-ui',
+        allocated_phone: clientPhone,
+      },
+    })
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
 }
 
 // Mark a session as completed
