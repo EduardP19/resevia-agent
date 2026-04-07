@@ -1023,7 +1023,7 @@ export default function TestUiPageClient() {
                         key={message.id || `${message.role}-${index}`}
                         className={cx(
                           "flex",
-                          isAssistant || isWaiting ? "justify-start" : "justify-end"
+                          isAssistant || isWaiting ? "justify-end" : "justify-start"
                         )}
                       >
                         {isWaiting ? (
@@ -1049,8 +1049,8 @@ export default function TestUiPageClient() {
                             className={cx(
                               "max-w-[88%] rounded-[1.15rem] border px-3 py-3 text-sm leading-6",
                               isAssistant
-                                ? "rounded-bl-md border border-[#8e73ff]/35 bg-[#7a63d8] text-white"
-                                : "rounded-br-md border border-white/10 bg-white/12 text-white"
+                                ? "rounded-br-md border border-[#8e73ff]/35 bg-[#7a63d8] text-white"
+                                : "rounded-bl-md border border-white/10 bg-white/12 text-white"
                             )}
                           >
                             <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/35">
