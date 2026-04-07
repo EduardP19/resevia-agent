@@ -102,6 +102,8 @@ function IconAlert() {
 export default function TestUiPageClient() {
   const customerScrollRef = useRef<HTMLDivElement>(null);
   const reviewScrollRef = useRef<HTMLDivElement>(null);
+  const customerTranscriptRef = useRef<HTMLDivElement>(null);
+  const reviewTranscriptRef = useRef<HTMLDivElement>(null);
   const isSyncingRef = useRef(false);
   const isExpiringRef = useRef(false);
   const lastSyncedAt = useRef<string | null>(null);
@@ -128,6 +130,7 @@ export default function TestUiPageClient() {
   const [showExpiryWarning, setShowExpiryWarning] = useState(false);
   const [secondsUntilExpiry, setSecondsUntilExpiry] = useState(SESSION_WARNING_SECONDS);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [mobileScreen, setMobileScreen] = useState<"customer" | "salon" | null>(null);
 
   const hasWaiting = messages.some((message) => message.role === "waiting");
   const customerComposerLocked = sessionExpired || (manualApproval && Boolean(reviewDraft));
@@ -139,6 +142,8 @@ export default function TestUiPageClient() {
   const customerNeedsAction = !sessionExpired && !salonNeedsAction && !loading && !isApproving;
   const customerScreenDisabled = !customerNeedsAction;
   const salonScreenDisabled = !salonNeedsAction;
+  const customerNeedsAttention = customerNeedsAction && !sessionExpired;
+  const salonNeedsAttention = salonNeedsAction && !sessionExpired;
 
   const clearExpiryTimers = useCallback(() => {
     if (warningTimeoutRef.current) {
@@ -304,8 +309,12 @@ export default function TestUiPageClient() {
   }, [manualApproval]);
 
   useEffect(() => {
-    customerScrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-    reviewScrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (customerTranscriptRef.current) {
+      customerTranscriptRef.current.scrollTop = customerTranscriptRef.current.scrollHeight;
+    }
+    if (reviewTranscriptRef.current) {
+      reviewTranscriptRef.current.scrollTop = reviewTranscriptRef.current.scrollHeight;
+    }
   }, [messages, reviewFeed, reviewDraft, loading, isApproving]);
 
   useEffect(() => () => clearExpiryTimers(), [clearExpiryTimers]);
@@ -872,11 +881,48 @@ export default function TestUiPageClient() {
           </div>
         ) : null}
 
+        <div className="mt-6 grid grid-cols-2 gap-3 lg:hidden">
+          <button
+            type="button"
+            onClick={() =>
+              setMobileScreen((current) => (current === "customer" ? null : "customer"))
+            }
+            className={cx(
+              "rounded-full border px-4 py-2.5 text-sm font-semibold transition",
+              mobileScreen === "customer"
+                ? "border-[#c9a96e] bg-[#c9a96e]/20 text-[#f7dfb6]"
+                : "border-white/20 bg-white/5 text-white/80",
+              customerNeedsAttention &&
+                "animate-pulse border-amber-300 shadow-[0_0_0_1px_rgba(252,211,77,0.45),0_0_26px_rgba(252,211,77,0.22)]"
+            )}
+          >
+            Customer Screen
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setMobileScreen((current) => (current === "salon" ? null : "salon"))
+            }
+            className={cx(
+              "rounded-full border px-4 py-2.5 text-sm font-semibold transition",
+              mobileScreen === "salon"
+                ? "border-[#6f56dd] bg-[#6f56dd]/22 text-[#d9d2ff]"
+                : "border-white/20 bg-white/5 text-white/80",
+              salonNeedsAttention &&
+                "animate-pulse border-emerald-300 shadow-[0_0_0_1px_rgba(110,231,183,0.5),0_0_26px_rgba(52,211,153,0.2)]"
+            )}
+          >
+            Salon Screen
+          </button>
+        </div>
+
         <div className="mt-10 grid gap-6 lg:grid-cols-2 lg:items-start">
           <div
             className={cx(
-              "rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(25,21,38,0.95),rgba(18,15,28,0.96))] p-6 text-white shadow-[0_24px_90px_rgba(0,0,0,0.26)] transition duration-200",
-              customerScreenDisabled && "grayscale opacity-45"
+              "relative rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(25,21,38,0.98),rgba(18,15,28,1))] p-6 text-white shadow-[0_24px_90px_rgba(0,0,0,0.26)] transition duration-200",
+              customerScreenDisabled && "grayscale opacity-45",
+              mobileScreen === "customer" ? "block" : "hidden",
+              "lg:block"
             )}
           >
             <div className="flex min-h-[112px] items-start justify-between gap-4">
@@ -897,7 +943,10 @@ export default function TestUiPageClient() {
                 Live transcript
               </p>
 
-              <div className="mt-3 h-[340px] space-y-3 overflow-y-auto rounded-[1.5rem] border border-white/20 bg-[#0f1320] p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
+              <div
+                ref={customerTranscriptRef}
+                className="mt-3 h-[340px] space-y-3 overflow-y-auto rounded-[1.5rem] border border-white/20 bg-[#0f1320] p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
+              >
                 {messages.length === 0 ? (
                   <div className="flex h-full items-center justify-center px-6 text-center text-sm text-white/45">
                     No messages yet.
@@ -1010,7 +1059,9 @@ export default function TestUiPageClient() {
 
           <div
             className={cx(
-              "rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(25,21,38,0.95),rgba(18,15,28,0.96))] p-6 text-white shadow-[0_24px_90px_rgba(0,0,0,0.26)] transition duration-200"
+              "relative rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(25,21,38,0.98),rgba(18,15,28,1))] p-6 text-white shadow-[0_24px_90px_rgba(0,0,0,0.26)] transition duration-200",
+              mobileScreen === "salon" ? "block" : "hidden",
+              "lg:block"
             )}
           >
             <div className="flex min-h-[112px] items-start justify-between gap-4">
@@ -1064,7 +1115,10 @@ export default function TestUiPageClient() {
                 </div>
               </div>
 
-              <div className="mt-3 h-[340px] space-y-3 overflow-y-auto rounded-[1.5rem] border border-white/20 bg-[#0f1320] p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
+              <div
+                ref={reviewTranscriptRef}
+                className="mt-3 h-[340px] space-y-3 overflow-y-auto rounded-[1.5rem] border border-white/20 bg-[#0f1320] p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
+              >
                 {reviewFeed.length === 0 ? (
                   <div className="flex h-full items-center justify-center px-6 text-center text-sm text-white/45">
                     No messages yet.
