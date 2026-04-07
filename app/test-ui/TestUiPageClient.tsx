@@ -183,6 +183,7 @@ export default function TestUiPageClient() {
     sessionStorage.removeItem(TEST_UI_SESSION_KEY);
     sessionIdRef.current = null;
     setSessionId(null);
+    setManualApproval(true);
     setMessages([]);
     setReviewFeed([]);
     setReviewDraft(null);
@@ -288,25 +289,17 @@ export default function TestUiPageClient() {
   }, [closeSessionOnServer, resetLocalSession]);
 
   useEffect(() => {
-    const savedManualApproval = localStorage.getItem("resevia_test_ui_manual_approval");
     const savedSessionId = sessionStorage.getItem(TEST_UI_SESSION_KEY);
 
     if (savedSessionId) {
       setSessionId(savedSessionId);
     }
 
-    if (savedManualApproval) {
-      setManualApproval(savedManualApproval === "true");
-    }
   }, []);
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
   }, [sessionId]);
-
-  useEffect(() => {
-    localStorage.setItem("resevia_test_ui_manual_approval", String(manualApproval));
-  }, [manualApproval]);
 
   useEffect(() => {
     if (customerTranscriptRef.current) {
@@ -858,12 +851,22 @@ export default function TestUiPageClient() {
             Sophia Sandbox
           </div>
           <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-            Test Sophia before going live
+            Type as Client Respond as Manager
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-white/68 sm:text-lg">
-            Send messages as the customer, then review and approve Sophia&apos;s reply in the
-            salon panel. Toggle manual approval off to see the fully autonomous flow.
+            Use Customer Screen to type client messages, then use Salon Screen to approve or auto-send Sophia&apos;s reply.
           </p>
+          <details className="mx-auto mt-4 max-w-2xl rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm text-white/78">
+            <summary className="cursor-pointer font-semibold text-white/90">
+              How to test step by step
+            </summary>
+            <div className="mt-3 space-y-1.5">
+              <p>1. Open Customer Screen and send a realistic client message.</p>
+              <p>2. In Manual Approval mode, open Salon Screen and review Sophia&apos;s draft.</p>
+              <p>3. Edit if needed, then press Approve &amp; Send to publish the response.</p>
+              <p>4. Toggle to Agent Autonomous to test fully automatic replies end-to-end.</p>
+            </div>
+          </details>
         </div>
 
         {showExpiryWarning || sessionExpired ? (
@@ -916,10 +919,11 @@ export default function TestUiPageClient() {
           </button>
         </div>
 
-        <div className="mt-10 grid gap-6 lg:grid-cols-2 lg:items-start">
+        <div className="mt-4 rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(25,21,38,0.98),rgba(18,15,28,1))] p-6 text-white shadow-[0_24px_90px_rgba(0,0,0,0.26)] lg:mt-10 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none">
+        <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
           <div
             className={cx(
-              "relative rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(25,21,38,0.98),rgba(18,15,28,1))] p-6 text-white shadow-[0_24px_90px_rgba(0,0,0,0.26)] transition duration-200",
+              "relative p-0 text-white transition duration-200 lg:rounded-[2rem] lg:border lg:border-white/10 lg:bg-[linear-gradient(180deg,rgba(25,21,38,0.98),rgba(18,15,28,1))] lg:p-6 lg:shadow-[0_24px_90px_rgba(0,0,0,0.26)]",
               customerScreenDisabled && "grayscale opacity-45",
               mobileScreen === "customer" ? "block" : "hidden",
               "lg:block"
@@ -1059,7 +1063,7 @@ export default function TestUiPageClient() {
 
           <div
             className={cx(
-              "relative rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(25,21,38,0.98),rgba(18,15,28,1))] p-6 text-white shadow-[0_24px_90px_rgba(0,0,0,0.26)] transition duration-200",
+              "relative p-0 text-white transition duration-200 lg:rounded-[2rem] lg:border lg:border-white/10 lg:bg-[linear-gradient(180deg,rgba(25,21,38,0.98),rgba(18,15,28,1))] lg:p-6 lg:shadow-[0_24px_90px_rgba(0,0,0,0.26)]",
               mobileScreen === "salon" ? "block" : "hidden",
               "lg:block"
             )}
@@ -1206,6 +1210,12 @@ export default function TestUiPageClient() {
             </div>
             </div>
           </div>
+          {mobileScreen === null ? (
+            <div className="rounded-[1.25rem] border border-white/10 bg-white/[0.02] px-4 py-6 text-center text-sm text-white/65 lg:hidden">
+              Select Customer Screen or Salon Screen to continue.
+            </div>
+          ) : null}
+        </div>
         </div>
 
         {(messages.length > 0 || reviewFeed.length > 0 || sessionId) && !loading && !isApproving ? (
