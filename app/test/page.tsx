@@ -1,13 +1,17 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 interface TestMessage {
   role: 'user' | 'assistant' | 'waiting';
   content?: string;
   sessionId?: string;
-  id?: string; // transcript DB id — used to dedup
+  id?: string;
 }
+
+const SESSION_WARNING_MS = 2 * 60 * 1000;
+const SESSION_EXPIRY_MS = 3 * 60 * 1000;
+const SESSION_WARNING_SECONDS = Math.ceil((SESSION_EXPIRY_MS - SESSION_WARNING_MS) / 1000);
 
 export default function TestPage() {
   const [messages, setMessages] = useState<TestMessage[]>([]);
@@ -15,215 +19,476 @@ export default function TestPage() {
   const [loading, setLoading] = useState(false);
   const [phone, setPhone] = useState('+447700216011');
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [autoResumeEnabled, setAutoResumeEnabled] = useState(true);
+  const [showExpiryWarning, setShowExpiryWarning] = useState(false);
+  const [secondsUntilExpiry, setSecondsUntilExpiry] = useState(SESSION_WARNING_SECONDS);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
-  // Ref for polling management to avoid useEffect loops
   const isSyncingRef = useRef(false);
+  const isExpiringRef = useRef(false);
   const lastSyncedAt = useRef<string | null>(null);
   const seenIds = useRef<Set<string>>(new Set());
   const hadDraftRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const phoneRef = useRef(phone);
+  const warningTimeoutRef = useRef<number | null>(null);
+  const expiryTimeoutRef = useRef<number | null>(null);
+  const countdownIntervalRef = useRef<number | null>(null);
 
-  // Reset session locally
-  const resetSession = useCallback(() => {
-    setSessionId(null);
-    sessionStorage.removeItem(`resevia_session_${phone}`);
-    setMessages([]);
-    lastSyncedAt.current = null;
-    seenIds.current = new Set();
-    hadDraftRef.current = false;
-  }, [phone]);
+  const clearExpiryTimers = useCallback(() => {
+    if (warningTimeoutRef.current) {
+      window.clearTimeout(warningTimeoutRef.current);
+      warningTimeoutRef.current = null;
+    }
 
-  // Restore from storage on mount
-  useEffect(() => {
-    const savedPhone = localStorage.getItem('resevia_test_phone');
-    if (savedPhone) {
-      setPhone(savedPhone);
-      const savedSid = sessionStorage.getItem(`resevia_session_${savedPhone}`);
-      if (savedSid) setSessionId(savedSid);
+    if (expiryTimeoutRef.current) {
+      window.clearTimeout(expiryTimeoutRef.current);
+      expiryTimeoutRef.current = null;
+    }
+
+    if (countdownIntervalRef.current) {
+      window.clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
     }
   }, []);
 
-  const findActiveSession = useCallback(async (p: string) => {
-    if (sessionId) return;
+  const closeSessionOnServer = useCallback(async (sid: string, from: string) => {
     try {
-      const res = await fetch(`/api/test/session?phone=${encodeURIComponent(p)}`, { cache: 'no-store' });
-      const data = await res.json();
-      if (data.sessionId) {
-        setSessionId(data.sessionId);
-        sessionStorage.setItem(`resevia_session_${p}`, data.sessionId);
+      const response = await fetch('/api/test/expire', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: sid,
+          from,
+        }),
+      });
+      const payload = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Unable to expire the test session.');
       }
-    } catch {/* silent */}
+    } catch (error) {
+      console.error('[Test Session Expire Error]', error);
+    }
+  }, []);
+
+  const resetLocalSession = useCallback(() => {
+    const currentPhone = phoneRef.current;
+
+    sessionStorage.removeItem(`resevia_session_${currentPhone}`);
+    setSessionId(null);
+    setMessages([]);
+    setInput('');
+    setLoading(false);
+    setShowExpiryWarning(false);
+    setSecondsUntilExpiry(SESSION_WARNING_SECONDS);
+    setSessionExpired(false);
+    lastSyncedAt.current = null;
+    seenIds.current = new Set();
+    hadDraftRef.current = false;
+    isExpiringRef.current = false;
+    clearExpiryTimers();
+  }, [clearExpiryTimers]);
+
+  const expireSessionLocally = useCallback(async () => {
+    const activeSessionId = sessionIdRef.current;
+    const activePhone = phoneRef.current;
+
+    if (!activeSessionId || isExpiringRef.current) {
+      return;
+    }
+
+    isExpiringRef.current = true;
+    clearExpiryTimers();
+    setLoading(false);
+    setShowExpiryWarning(false);
+    setSecondsUntilExpiry(0);
+    setSessionExpired(true);
+    setAutoResumeEnabled(false);
+    setSessionId(null);
+    sessionStorage.removeItem(`resevia_session_${activePhone}`);
+    setMessages((currentMessages) => currentMessages.filter((message) => message.role !== 'waiting'));
+    lastSyncedAt.current = null;
+    seenIds.current = new Set();
+    hadDraftRef.current = false;
+
+    await closeSessionOnServer(activeSessionId, activePhone);
+    isExpiringRef.current = false;
+  }, [clearExpiryTimers, closeSessionOnServer]);
+
+  const noteSessionActivity = useCallback(() => {
+    if (!sessionIdRef.current || sessionExpired) {
+      return;
+    }
+
+    clearExpiryTimers();
+    setShowExpiryWarning(false);
+    setSecondsUntilExpiry(SESSION_WARNING_SECONDS);
+
+    warningTimeoutRef.current = window.setTimeout(() => {
+      setShowExpiryWarning(true);
+      setSecondsUntilExpiry(SESSION_WARNING_SECONDS);
+
+      countdownIntervalRef.current = window.setInterval(() => {
+        setSecondsUntilExpiry((current) => (current > 0 ? current - 1 : 0));
+      }, 1000);
+    }, SESSION_WARNING_MS);
+
+    expiryTimeoutRef.current = window.setTimeout(() => {
+      void expireSessionLocally();
+    }, SESSION_EXPIRY_MS);
+  }, [clearExpiryTimers, expireSessionLocally, sessionExpired]);
+
+  const resetSession = useCallback(() => {
+    const activeSessionId = sessionIdRef.current;
+    const activePhone = phoneRef.current;
+
+    if (activeSessionId) {
+      void closeSessionOnServer(activeSessionId, activePhone);
+    }
+
+    setAutoResumeEnabled(false);
+    resetLocalSession();
+  }, [closeSessionOnServer, resetLocalSession]);
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
   }, [sessionId]);
 
   useEffect(() => {
-    if (phone) {
-      localStorage.setItem('resevia_test_phone', phone);
-      findActiveSession(phone);
-    }
-  }, [phone, findActiveSession]);
+    phoneRef.current = phone;
+  }, [phone]);
 
-  const handlePhoneChange = (newPhone: string) => {
-    setPhone(newPhone);
-    resetSession();
-  };
+  useEffect(() => {
+    const savedPhone = localStorage.getItem('resevia_test_phone');
+    const restoredPhone = savedPhone || '+447700216011';
+    const savedSessionId = sessionStorage.getItem(`resevia_session_${restoredPhone}`);
+
+    setPhone(restoredPhone);
+
+    if (savedSessionId) {
+      setSessionId(savedSessionId);
+      setAutoResumeEnabled(false);
+    }
+  }, []);
+
+  const findActiveSession = useCallback(async (currentPhone: string) => {
+    if (!autoResumeEnabled || sessionIdRef.current) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `/api/test/session?phone=${encodeURIComponent(currentPhone)}`,
+        { cache: 'no-store' }
+      );
+      const data = (await response.json()) as { sessionId?: string | null };
+
+      if (data.sessionId) {
+        setSessionId(data.sessionId);
+        sessionStorage.setItem(`resevia_session_${currentPhone}`, data.sessionId);
+        setSessionExpired(false);
+      }
+    } catch (error) {
+      console.error('[Test Session Resume Error]', error);
+    }
+  }, [autoResumeEnabled]);
+
+  useEffect(() => {
+    if (!phone) {
+      return;
+    }
+
+    localStorage.setItem('resevia_test_phone', phone);
+    void findActiveSession(phone);
+  }, [findActiveSession, phone]);
+
+  const handlePhoneChange = useCallback((nextPhone: string) => {
+    const activeSessionId = sessionIdRef.current;
+    const currentPhone = phoneRef.current;
+
+    if (activeSessionId) {
+      void closeSessionOnServer(activeSessionId, currentPhone);
+    }
+
+    resetLocalSession();
+    setPhone(nextPhone);
+    setAutoResumeEnabled(true);
+  }, [closeSessionOnServer, resetLocalSession]);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // ── 🔄 Continuous Sync Logic ──────────────────────────────────────────────
   const syncTranscript = useCallback(async (sid: string) => {
-    if (isSyncingRef.current) return;
-    isSyncingRef.current = true;
-    try {
-      const url = `/api/test/poll?sessionId=${sid}${lastSyncedAt.current ? `&since=${encodeURIComponent(lastSyncedAt.current)}` : ''}&t=${Date.now()}`;
-      const res = await fetch(url, { cache: 'no-store' });
-      const data = await res.json();
+    if (isSyncingRef.current || sessionExpired) {
+      return;
+    }
 
-      // If draft just disappeared, roll back lastSyncedAt by 5s to catch the
-      // approved assistant message which may have been written just before the draft was deleted.
-      const hasDraftNow = !!data.hasDraft;
-      if (hadDraftRef.current && !hasDraftNow && lastSyncedAt.current) {
-        lastSyncedAt.current = new Date(new Date(lastSyncedAt.current).getTime() - 5000).toISOString();
+    isSyncingRef.current = true;
+
+    try {
+      const query = new URLSearchParams({
+        sessionId: sid,
+        t: String(Date.now()),
+      });
+
+      if (lastSyncedAt.current) {
+        query.set('since', lastSyncedAt.current);
       }
+
+      const response = await fetch(`/api/test/poll?${query.toString()}`, { cache: 'no-store' });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Unable to sync transcript.');
+      }
+
+      const hadDraftBefore = hadDraftRef.current;
+      const hasDraftNow = Boolean(data.hasDraft);
+
+      if (hadDraftBefore && !hasDraftNow && lastSyncedAt.current) {
+        lastSyncedAt.current = new Date(
+          new Date(lastSyncedAt.current).getTime() - 5000
+        ).toISOString();
+      }
+
       hadDraftRef.current = hasDraftNow;
 
-      const newPollMsgs: any[] = data.messages || [];
+      const newPollMessages: Array<{
+        id: string;
+        role: 'user' | 'assistant';
+        content: string;
+        created_at: string;
+      }> = data.messages || [];
+      const unprocessed = newPollMessages.filter((message) => !seenIds.current.has(message.id));
 
-      // Filter and mark seen BEFORE setMessages to avoid side effects inside the updater
-      // (React StrictMode double-invokes updaters, which would mark IDs as seen without displaying them)
-      const unprocessed = newPollMsgs.filter(m => !seenIds.current.has(m.id));
-      unprocessed.forEach(m => seenIds.current.add(m.id));
+      unprocessed.forEach((message) => seenIds.current.add(message.id));
 
-      if (newPollMsgs.length > 0) {
-        lastSyncedAt.current = newPollMsgs[newPollMsgs.length - 1].created_at;
+      if (newPollMessages.length > 0) {
+        lastSyncedAt.current = newPollMessages[newPollMessages.length - 1].created_at;
       }
 
-      setMessages(prev => {
-        let updated = [...prev];
+      const sawServerActivity = unprocessed.length > 0 || hasDraftNow !== hadDraftBefore;
+      if (sawServerActivity) {
+        noteSessionActivity();
+      }
+
+      setMessages((currentMessages) => {
+        let nextMessages = [...currentMessages];
         let changed = false;
 
-        for (const m of unprocessed) {
+        for (const message of unprocessed) {
           changed = true;
 
-          if (m.role === 'assistant') {
-            // Replace ONE waiting bubble if present, otherwise append
-            const waitingIdx = updated.findIndex(x => x.role === 'waiting');
-            if (waitingIdx !== -1) {
-              updated[waitingIdx] = { role: 'assistant', content: m.content, id: m.id };
-            } else {
-              updated.push({ role: 'assistant', content: m.content, id: m.id });
-            }
-          } else if (m.role === 'user') {
-            // Deduplicate against any local optimistic message with same content
-            const localMatchIdx = updated.findIndex(
-              x => x.role === 'user' && x.content === m.content && (!x.id || x.id.startsWith('local-'))
+          if (message.role === 'assistant') {
+            const waitingIndex = nextMessages.findIndex((entry) => entry.role === 'waiting');
+            const localAssistantIndex = nextMessages.findIndex(
+              (entry) =>
+                entry.role === 'assistant' &&
+                entry.content === message.content &&
+                (!entry.id || entry.id.startsWith('local-assistant-'))
             );
-            if (localMatchIdx !== -1) {
-              updated[localMatchIdx] = { role: 'user', content: m.content, id: m.id };
+
+            if (waitingIndex !== -1) {
+              nextMessages[waitingIndex] = {
+                role: 'assistant',
+                content: message.content,
+                id: message.id,
+              };
+            } else if (localAssistantIndex !== -1) {
+              nextMessages[localAssistantIndex] = {
+                role: 'assistant',
+                content: message.content,
+                id: message.id,
+              };
             } else {
-              updated.push({ role: 'user', content: m.content, id: m.id });
+              nextMessages.push({
+                role: 'assistant',
+                content: message.content,
+                id: message.id,
+              });
+            }
+          }
+
+          if (message.role === 'user') {
+            const localMatchIndex = nextMessages.findIndex(
+              (entry) =>
+                entry.role === 'user' &&
+                entry.content === message.content &&
+                (!entry.id || entry.id.startsWith('local-user-'))
+            );
+
+            if (localMatchIndex !== -1) {
+              nextMessages[localMatchIndex] = {
+                role: 'user',
+                content: message.content,
+                id: message.id,
+              };
+            } else {
+              nextMessages.push({
+                role: 'user',
+                content: message.content,
+                id: message.id,
+              });
             }
           }
         }
 
-        // Manage waiting bubble based on hasDraft flag.
-        // Don't re-add if an assistant message just arrived (race window between approve write and draft delete).
-        const justGotAssistant = unprocessed.some(m => m.role === 'assistant');
-        const currentlyHasWaiting = updated.some(m => m.role === 'waiting');
+        const justGotAssistant = unprocessed.some((message) => message.role === 'assistant');
+        const currentlyHasWaiting = nextMessages.some((message) => message.role === 'waiting');
 
         if (data.hasDraft && !currentlyHasWaiting && !justGotAssistant) {
-          updated.push({ role: 'waiting', sessionId: sid });
+          nextMessages.push({ role: 'waiting', sessionId: sid });
           changed = true;
         } else if (!data.hasDraft && currentlyHasWaiting) {
-          updated = updated.filter(m => m.role !== 'waiting');
+          nextMessages = nextMessages.filter((message) => message.role !== 'waiting');
           changed = true;
         }
 
-        return changed ? updated : prev;
+        return changed ? nextMessages : currentMessages;
       });
-    } catch {/* silent */} finally {
+    } catch (error) {
+      console.error('[Test Poll Error]', error);
+    } finally {
       isSyncingRef.current = false;
     }
-  }, []);
+  }, [noteSessionActivity, sessionExpired]);
 
-  // Centralized Poll Timer — fast when waiting for draft approval, normal otherwise
-  const hasWaiting = messages.some(m => m.role === 'waiting');
+  const hasWaiting = messages.some((message) => message.role === 'waiting');
+
   useEffect(() => {
-    if (!sessionId) return;
-    syncTranscript(sessionId);
-    const interval = hasWaiting ? 1500 : 3000;
-    const pid = setInterval(() => syncTranscript(sessionId), interval);
-    return () => clearInterval(pid);
-  }, [sessionId, syncTranscript, hasWaiting]);
+    if (!sessionId || sessionExpired) {
+      clearExpiryTimers();
+      return;
+    }
 
-  const sendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || loading) return;
+    noteSessionActivity();
+    void syncTranscript(sessionId);
 
-    const text = input;
-    const tempId = `local-${Date.now()}`;
-    setMessages(prev => [...prev, { role: 'user', content: text, id: tempId }]);
+    const interval = window.setInterval(() => {
+      void syncTranscript(sessionId);
+    }, hasWaiting ? 1500 : 3000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [clearExpiryTimers, hasWaiting, noteSessionActivity, sessionExpired, sessionId, syncTranscript]);
+
+  useEffect(() => () => clearExpiryTimers(), [clearExpiryTimers]);
+
+  const sendMessage = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!input.trim() || loading || sessionExpired) {
+      return;
+    }
+
+    const text = input.trim();
+    const localUserId = `local-user-${Date.now()}`;
+
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      { role: 'user', content: text, id: localUserId },
+    ]);
     setInput('');
     setLoading(true);
+    setSessionExpired(false);
+    noteSessionActivity();
 
     try {
-      const res = await fetch('/api/test/sms', {
+      const response = await fetch('/api/test/sms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, from: phone, id: sessionId })
+        body: JSON.stringify({
+          message: text,
+          from: phoneRef.current,
+          id: sessionIdRef.current,
+        }),
       });
-      const data = await res.json();
+      const data = await response.json();
 
-      if (data.sessionId && data.sessionId !== sessionId) {
-        // New session created — reset local state but keep the user message
-        // Use tempId so the poll dedup can match it when it fetches from DB
-        setSessionId(data.sessionId);
-        sessionStorage.setItem(`resevia_session_${phone}`, data.sessionId);
+      if (!response.ok) {
+        throw new Error(data.error || 'Unable to send the message.');
+      }
+
+      const resolvedSessionId = data.sessionId || sessionIdRef.current || null;
+
+      if (resolvedSessionId && resolvedSessionId !== sessionIdRef.current) {
+        setSessionId(resolvedSessionId);
+        sessionStorage.setItem(`resevia_session_${phoneRef.current}`, resolvedSessionId);
         lastSyncedAt.current = null;
         seenIds.current = new Set();
         hadDraftRef.current = false;
-        // Keep the optimistic user message; poll will upgrade it with the real DB id
+        setAutoResumeEnabled(false);
+      }
+
+      if (resolvedSessionId) {
+        noteSessionActivity();
       }
 
       if (data.draft) {
-        setMessages(prev => {
-          if (prev.some(m => m.role === 'waiting')) return prev;
-          return [...prev, { role: 'waiting', sessionId: data.sessionId || sessionId }];
+        setMessages((currentMessages) => {
+          if (currentMessages.some((message) => message.role === 'waiting')) {
+            return currentMessages;
+          }
+
+          return [
+            ...currentMessages,
+            { role: 'waiting', sessionId: resolvedSessionId || undefined },
+          ];
         });
       } else if (data.reply) {
-        setMessages(prev => {
-          // Replace waiting if present, otherwise append
-          const waitingIdx = prev.findIndex(m => m.role === 'waiting');
-          if (waitingIdx !== -1) {
-            const updated = [...prev];
-            updated[waitingIdx] = { role: 'assistant', content: data.reply };
-            return updated;
+        const localAssistantId = `local-assistant-${Date.now()}`;
+
+        setMessages((currentMessages) => {
+          const waitingIndex = currentMessages.findIndex((message) => message.role === 'waiting');
+
+          if (waitingIndex !== -1) {
+            const nextMessages = [...currentMessages];
+            nextMessages[waitingIndex] = {
+              role: 'assistant',
+              content: data.reply,
+              id: localAssistantId,
+            };
+            return nextMessages;
           }
-          return [...prev, { role: 'assistant', content: data.reply }];
+
+          return [
+            ...currentMessages,
+            { role: 'assistant', content: data.reply, id: localAssistantId },
+          ];
         });
       }
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      console.error('[Test Send Error]', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [input, loading, noteSessionActivity, sessionExpired]);
+
+  const bannerTone = sessionExpired
+    ? 'border-rose-200 bg-rose-50 text-rose-700'
+    : showExpiryWarning
+      ? 'border-amber-200 bg-amber-50 text-amber-700'
+      : '';
+  const inputDisabled = loading || sessionExpired;
 
   return (
     <div className="min-h-[100dvh] bg-gray-50 flex flex-col items-center justify-center p-2 sm:p-4">
       <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100 flex flex-col h-[calc(100dvh-6.5rem)] min-h-[560px] sm:h-[750px]">
-
-        {/* Header — dev controls only, no internal status badges */}
         <div className="p-6 bg-brand-purple text-white">
           <div className="flex justify-between items-start mb-4">
             <div>
               <h1 className="text-xl font-bold italic tracking-tight">Resevia Agent Test</h1>
-              <p className="text-[10px] uppercase font-black tracking-widest opacity-80 mt-1">Customer Simulation</p>
+              <p className="text-[10px] uppercase font-black tracking-widest opacity-80 mt-1">
+                Customer Simulation
+              </p>
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => sessionId && syncTranscript(sessionId)}
+                onClick={() => sessionId && void syncTranscript(sessionId)}
                 className="text-[9px] font-black uppercase tracking-widest bg-white/10 hover:bg-white/20 p-2 rounded-lg transition-colors border border-white/10"
                 title="Force Sync"
               >
@@ -241,73 +506,94 @@ export default function TestPage() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-[10px] uppercase font-black tracking-widest opacity-60">Simulated Client Phone</label>
+            <label className="text-[10px] uppercase font-black tracking-widest opacity-60">
+              Simulated Client Phone
+            </label>
             <input
               type="text"
               value={phone}
-              onChange={(e) => handlePhoneChange(e.target.value)}
+              onChange={(event) => handlePhoneChange(event.target.value)}
               className="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2.5 text-sm outline-none focus:bg-white/20 transition-all font-mono"
               placeholder="+44..."
             />
           </div>
 
-          {sessionId && (
+          {sessionId ? (
             <p className="text-[9px] opacity-40 font-mono tracking-tight flex items-center gap-1.5 mt-3">
               <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
               Session: {sessionId.substring(0, 8)}...
             </p>
-          )}
+          ) : null}
         </div>
 
-        {/* Chat area */}
+        {showExpiryWarning || sessionExpired ? (
+          <div className={`border-b px-4 py-3 text-sm ${bannerTone}`}>
+            {sessionExpired
+              ? 'This test session expired after 3 minutes of inactivity. Reset to start a new one.'
+              : `This session will expire in ${secondsUntilExpiry}s unless there is new activity.`}
+          </div>
+        ) : null}
+
         <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50/50">
-          {messages.length === 0 && (
+          {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center opacity-20 text-gray-400 italic text-sm text-center px-8">
               Send a message to start, or enter a phone number to resume a session.
             </div>
+          ) : (
+            messages.map((message, index) => (
+              <div
+                key={message.id || index}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                {message.role === 'waiting' ? (
+                  <div className="flex items-center space-x-1.5 px-4 py-3 bg-white border border-gray-100 rounded-2xl rounded-tl-none shadow-sm">
+                    <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                ) : (
+                  <div
+                    className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
+                      message.role === 'user'
+                        ? 'bg-brand-purple text-white rounded-tr-none shadow-indigo-100 shadow-lg'
+                        : 'bg-white border border-gray-100 text-gray-800 rounded-tl-none shadow-md'
+                    }`}
+                  >
+                    {message.content}
+                  </div>
+                )}
+              </div>
+            ))
           )}
-          {messages.map((m, i) => (
-            <div key={m.id || i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              {m.role === 'waiting' ? (
-                <div className="flex items-center space-x-1.5 px-4 py-3 bg-white border border-gray-100 rounded-2xl rounded-tl-none shadow-sm">
-                  <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: '300ms' }} />
-                </div>
-              ) : (
-                <div className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
-                  m.role === 'user'
-                    ? 'bg-brand-purple text-white rounded-tr-none shadow-indigo-100 shadow-lg'
-                    : 'bg-white border border-gray-100 text-gray-800 rounded-tl-none shadow-md'
-                }`}>
-                  {m.content}
-                </div>
-              )}
-            </div>
-          ))}
-          {loading && (
+
+          {loading ? (
             <div className="flex justify-start">
               <div className="bg-white border border-gray-100 px-4 py-2 rounded-2xl animate-pulse text-xs text-gray-400 italic">
                 Thinking...
               </div>
             </div>
-          )}
+          ) : null}
+
           <div ref={scrollRef} />
         </div>
 
-        {/* Input */}
         <form onSubmit={sendMessage} className="p-4 border-t border-gray-100 bg-white">
           <div className="flex gap-2">
             <input
               type="text"
               value={input}
-              onChange={e => setInput(e.target.value)}
-              placeholder="Type your message..."
-              className="flex-1 bg-gray-50 border-none rounded-2xl px-5 py-4 text-sm focus:ring-2 focus:ring-brand-purple/20 outline-none text-black"
+              onChange={(event) => setInput(event.target.value)}
+              placeholder={
+                sessionExpired
+                  ? 'Reset the session to continue testing.'
+                  : 'Type your message...'
+              }
+              disabled={inputDisabled}
+              className="flex-1 bg-gray-50 border-none rounded-2xl px-5 py-4 text-sm focus:ring-2 focus:ring-brand-purple/20 outline-none text-black disabled:cursor-not-allowed disabled:opacity-60"
             />
             <button
               type="submit"
-              disabled={loading || !input.trim()}
+              disabled={inputDisabled || !input.trim()}
               className="bg-brand-purple text-white px-6 rounded-2xl font-bold disabled:opacity-50 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
             >
               Send

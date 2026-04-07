@@ -49,6 +49,9 @@ type PollResponse = {
 };
 
 const TEST_UI_SESSION_KEY = "resevia_test_ui_session";
+const SESSION_WARNING_MS = 2 * 60 * 1000;
+const SESSION_EXPIRY_MS = 3 * 60 * 1000;
+const SESSION_WARNING_SECONDS = Math.ceil((SESSION_EXPIRY_MS - SESSION_WARNING_MS) / 1000);
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -112,10 +115,15 @@ export default function TestUiPageClient() {
   const customerScrollRef = useRef<HTMLDivElement>(null);
   const reviewScrollRef = useRef<HTMLDivElement>(null);
   const isSyncingRef = useRef(false);
+  const isExpiringRef = useRef(false);
   const lastSyncedAt = useRef<string | null>(null);
   const seenIds = useRef<Set<string>>(new Set());
   const hadDraftRef = useRef(false);
   const currentDraftIdRef = useRef<string | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const warningTimeoutRef = useRef<number | null>(null);
+  const expiryTimeoutRef = useRef<number | null>(null);
+  const countdownIntervalRef = useRef<number | null>(null);
 
   const [messages, setMessages] = useState<TestMessage[]>([]);
   const [reviewFeed, setReviewFeed] = useState<ReviewMessage[]>([]);
@@ -129,12 +137,126 @@ export default function TestUiPageClient() {
   const [manualApproval, setManualApproval] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [showExpiryWarning, setShowExpiryWarning] = useState(false);
+  const [secondsUntilExpiry, setSecondsUntilExpiry] = useState(SESSION_WARNING_SECONDS);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   const hasWaiting = messages.some((message) => message.role === "waiting");
-  const customerComposerLocked = manualApproval && Boolean(reviewDraft);
-  const toggleDisabled = Boolean(reviewDraft) || loading || isApproving;
+  const customerComposerLocked = sessionExpired || (manualApproval && Boolean(reviewDraft));
+  const toggleDisabled = sessionExpired || Boolean(reviewDraft) || loading || isApproving;
   const modeLabel = manualApproval ? "Manual" : "Auto";
   const draftReady = Boolean(reviewDraft && reviewComposer.trim());
+
+  const clearExpiryTimers = useCallback(() => {
+    if (warningTimeoutRef.current) {
+      window.clearTimeout(warningTimeoutRef.current);
+      warningTimeoutRef.current = null;
+    }
+
+    if (expiryTimeoutRef.current) {
+      window.clearTimeout(expiryTimeoutRef.current);
+      expiryTimeoutRef.current = null;
+    }
+
+    if (countdownIntervalRef.current) {
+      window.clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+  }, []);
+
+  const closeSessionOnServer = useCallback(async (nextSessionId: string) => {
+    try {
+      const response = await fetch("/api/test-ui/expire", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: nextSessionId }),
+      });
+      const payload = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to expire the demo session.");
+      }
+    } catch (nextError) {
+      console.error("[Test UI Session Expire Error]", nextError);
+    }
+  }, []);
+
+  const resetLocalSession = useCallback(() => {
+    sessionStorage.removeItem(TEST_UI_SESSION_KEY);
+    setSessionId(null);
+    setMessages([]);
+    setReviewFeed([]);
+    setReviewDraft(null);
+    setReviewComposer("");
+    setDraftStatus("No draft yet.");
+    setInput("");
+    setError(null);
+    setReviewError(null);
+    setLoading(false);
+    setIsApproving(false);
+    setShowExpiryWarning(false);
+    setSecondsUntilExpiry(SESSION_WARNING_SECONDS);
+    setSessionExpired(false);
+    lastSyncedAt.current = null;
+    seenIds.current = new Set();
+    hadDraftRef.current = false;
+    currentDraftIdRef.current = null;
+    isExpiringRef.current = false;
+    clearExpiryTimers();
+  }, [clearExpiryTimers]);
+
+  const expireSessionLocally = useCallback(async () => {
+    const activeSessionId = sessionIdRef.current;
+
+    if (!activeSessionId || isExpiringRef.current) {
+      return;
+    }
+
+    isExpiringRef.current = true;
+    clearExpiryTimers();
+    setLoading(false);
+    setIsApproving(false);
+    setShowExpiryWarning(false);
+    setSecondsUntilExpiry(0);
+    setSessionExpired(true);
+    setDraftStatus("Session expired after 3 minutes of inactivity. Start a fresh demo.");
+    setSessionId(null);
+    sessionStorage.removeItem(TEST_UI_SESSION_KEY);
+    setMessages((currentMessages) => currentMessages.filter((message) => message.role !== "waiting"));
+    setReviewDraft(null);
+    setReviewComposer("");
+    setReviewError(null);
+    currentDraftIdRef.current = null;
+    lastSyncedAt.current = null;
+    seenIds.current = new Set();
+    hadDraftRef.current = false;
+
+    await closeSessionOnServer(activeSessionId);
+    isExpiringRef.current = false;
+  }, [clearExpiryTimers, closeSessionOnServer]);
+
+  const noteSessionActivity = useCallback(() => {
+    if (!sessionIdRef.current || sessionExpired) {
+      return;
+    }
+
+    clearExpiryTimers();
+    setShowExpiryWarning(false);
+    setSecondsUntilExpiry(SESSION_WARNING_SECONDS);
+
+    warningTimeoutRef.current = window.setTimeout(() => {
+      setShowExpiryWarning(true);
+      setSecondsUntilExpiry(SESSION_WARNING_SECONDS);
+
+      countdownIntervalRef.current = window.setInterval(() => {
+        setSecondsUntilExpiry((current) => (current > 0 ? current - 1 : 0));
+      }, 1000);
+    }, SESSION_WARNING_MS);
+
+    expiryTimeoutRef.current = window.setTimeout(() => {
+      void expireSessionLocally();
+    }, SESSION_EXPIRY_MS);
+  }, [clearExpiryTimers, expireSessionLocally, sessionExpired]);
 
   const applyReviewSnapshot = useCallback((data: PollResponse) => {
     setReviewFeed(data.reviewMessages || []);
@@ -157,21 +279,14 @@ export default function TestUiPageClient() {
   }, []);
 
   const resetSession = useCallback(() => {
-    setSessionId(null);
-    sessionStorage.removeItem(TEST_UI_SESSION_KEY);
-    setMessages([]);
-    setReviewFeed([]);
-    setReviewDraft(null);
-    setReviewComposer("");
-    setDraftStatus("No draft yet.");
-    setInput("");
-    setError(null);
-    setReviewError(null);
-    lastSyncedAt.current = null;
-    seenIds.current = new Set();
-    hadDraftRef.current = false;
-    currentDraftIdRef.current = null;
-  }, []);
+    const activeSessionId = sessionIdRef.current;
+
+    if (activeSessionId) {
+      void closeSessionOnServer(activeSessionId);
+    }
+
+    resetLocalSession();
+  }, [closeSessionOnServer, resetLocalSession]);
 
   useEffect(() => {
     const savedManualApproval = localStorage.getItem("resevia_test_ui_manual_approval");
@@ -187,6 +302,10 @@ export default function TestUiPageClient() {
   }, []);
 
   useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  useEffect(() => {
     localStorage.setItem("resevia_test_ui_manual_approval", String(manualApproval));
   }, [manualApproval]);
 
@@ -195,9 +314,11 @@ export default function TestUiPageClient() {
     reviewScrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, reviewFeed, reviewDraft, loading, isApproving]);
 
+  useEffect(() => () => clearExpiryTimers(), [clearExpiryTimers]);
+
   const syncTranscript = useCallback(
     async (nextSessionId: string) => {
-      if (isSyncingRef.current) {
+      if (isSyncingRef.current || sessionExpired) {
         return;
       }
 
@@ -224,6 +345,7 @@ export default function TestUiPageClient() {
 
         applyReviewSnapshot(data);
 
+        const hadDraftBefore = hadDraftRef.current;
         const hasDraftNow = Boolean(data.hasDraft);
         if (hadDraftRef.current && !hasDraftNow && lastSyncedAt.current) {
           lastSyncedAt.current = new Date(
@@ -234,6 +356,11 @@ export default function TestUiPageClient() {
 
         const newPollMessages = data.messages || [];
         const unprocessed = newPollMessages.filter((message) => !seenIds.current.has(message.id));
+        const sawServerActivity = unprocessed.length > 0 || hadDraftBefore !== hasDraftNow;
+
+        if (sawServerActivity) {
+          noteSessionActivity();
+        }
 
         unprocessed.forEach((message) => seenIds.current.add(message.id));
 
@@ -321,14 +448,16 @@ export default function TestUiPageClient() {
         isSyncingRef.current = false;
       }
     },
-    [applyReviewSnapshot]
+    [applyReviewSnapshot, noteSessionActivity, sessionExpired]
   );
 
   useEffect(() => {
-    if (!sessionId) {
+    if (!sessionId || sessionExpired) {
+      clearExpiryTimers();
       return;
     }
 
+    noteSessionActivity();
     void syncTranscript(sessionId);
 
     const interval = window.setInterval(() => {
@@ -338,34 +467,40 @@ export default function TestUiPageClient() {
     return () => {
       window.clearInterval(interval);
     };
-  }, [hasWaiting, reviewDraft, sessionId, syncTranscript]);
+  }, [clearExpiryTimers, hasWaiting, noteSessionActivity, reviewDraft, sessionExpired, sessionId, syncTranscript]);
 
   const handleManualApprovalToggle = useCallback(() => {
     if (toggleDisabled) {
       return;
     }
 
+    noteSessionActivity();
     setManualApproval((current) => !current);
     setReviewError(null);
     setDraftStatus("No draft yet.");
-  }, [toggleDisabled]);
+  }, [noteSessionActivity, toggleDisabled]);
 
   const handleRefreshDraft = useCallback(() => {
+    if (sessionExpired) {
+      return;
+    }
+
     if (reviewDraft) {
       setReviewComposer(reviewDraft.content);
       setDraftStatus("Draft refreshed.");
     }
 
     if (sessionId) {
+      noteSessionActivity();
       void syncTranscript(sessionId);
     }
-  }, [reviewDraft, sessionId, syncTranscript]);
+  }, [noteSessionActivity, reviewDraft, sessionExpired, sessionId, syncTranscript]);
 
   const sendMessage = useCallback(
     async (event?: FormEvent<HTMLFormElement>) => {
       event?.preventDefault();
 
-      if (!input.trim() || loading || customerComposerLocked) {
+      if (!input.trim() || loading || customerComposerLocked || sessionExpired) {
         return;
       }
 
@@ -394,11 +529,13 @@ export default function TestUiPageClient() {
       );
       setInput("");
       setLoading(true);
+      setSessionExpired(false);
       setError(null);
       setReviewError(null);
       setDraftStatus(
         manualApproval ? "Sophia is drafting a reply..." : "Sophia is sending the reply..."
       );
+      noteSessionActivity();
 
       try {
         const response = await fetch("/api/test-ui/message", {
@@ -424,6 +561,10 @@ export default function TestUiPageClient() {
           lastSyncedAt.current = null;
           seenIds.current = new Set();
           hadDraftRef.current = false;
+        }
+
+        if (resolvedSessionId) {
+          noteSessionActivity();
         }
 
         if (data.draft) {
@@ -513,11 +654,11 @@ export default function TestUiPageClient() {
         setLoading(false);
       }
     },
-    [customerComposerLocked, input, loading, manualApproval, sessionId, syncTranscript]
+    [customerComposerLocked, input, loading, manualApproval, noteSessionActivity, sessionExpired, sessionId, syncTranscript]
   );
 
   const handleApprove = useCallback(async () => {
-    if (!sessionId || !reviewDraft || !reviewComposer.trim() || isApproving) {
+    if (!sessionId || !reviewDraft || !reviewComposer.trim() || isApproving || sessionExpired) {
       return;
     }
 
@@ -527,6 +668,7 @@ export default function TestUiPageClient() {
     setIsApproving(true);
     setReviewError(null);
     setError(null);
+    noteSessionActivity();
 
     try {
       const response = await fetch("/api/test-ui/approve", {
@@ -581,6 +723,7 @@ export default function TestUiPageClient() {
       setDraftStatus("Approved and sent.");
       currentDraftIdRef.current = null;
       hadDraftRef.current = false;
+      noteSessionActivity();
 
       await syncTranscript(sessionId);
     } catch (nextError) {
@@ -591,15 +734,17 @@ export default function TestUiPageClient() {
     } finally {
       setIsApproving(false);
     }
-  }, [isApproving, reviewComposer, reviewDraft, sessionId, syncTranscript]);
+  }, [isApproving, noteSessionActivity, reviewComposer, reviewDraft, sessionExpired, sessionId, syncTranscript]);
 
-  const reviewStatusTone = loading && manualApproval
-    ? "bg-[#c9a96e]"
-    : draftReady
-      ? "bg-emerald-400"
-      : manualApproval
-        ? "bg-white/30"
-        : "bg-sky-400";
+  const reviewStatusTone = sessionExpired
+    ? "bg-rose-400"
+    : loading && manualApproval
+      ? "bg-[#c9a96e]"
+      : draftReady
+        ? "bg-emerald-400"
+        : manualApproval
+          ? "bg-white/30"
+          : "bg-sky-400";
 
   return (
     <section className="relative min-h-[100dvh] overflow-hidden bg-[#0b0911] px-4 pb-16 pt-20 text-white sm:px-6 sm:pt-24">
@@ -619,6 +764,21 @@ export default function TestUiPageClient() {
             salon panel. Toggle manual approval off to see the fully autonomous flow.
           </p>
         </div>
+
+        {showExpiryWarning || sessionExpired ? (
+          <div
+            className={cx(
+              "mx-auto mt-8 max-w-3xl rounded-[1.4rem] border px-5 py-4 text-sm",
+              sessionExpired
+                ? "border-rose-400/25 bg-rose-400/12 text-rose-100"
+                : "border-amber-300/25 bg-amber-300/12 text-amber-50"
+            )}
+          >
+            {sessionExpired
+              ? "This demo session expired after 3 minutes of inactivity. Start a fresh demo to continue."
+              : `This demo session will expire in ${secondsUntilExpiry}s unless there is new activity.`}
+          </div>
+        ) : null}
 
         <div className="mt-10 grid gap-6 lg:grid-cols-2 lg:items-start">
           <div className="rounded-[2rem] border border-[#c9a96e]/30 bg-[linear-gradient(180deg,rgba(244,231,204,0.96),rgba(232,209,166,0.9))] p-6 text-[#271c0f] shadow-[0_24px_90px_rgba(201,169,110,0.18)]">
@@ -730,7 +890,9 @@ export default function TestUiPageClient() {
                   }
                 }}
                 placeholder={
-                  customerComposerLocked
+                  sessionExpired
+                    ? "Start a fresh demo to continue."
+                    : customerComposerLocked
                     ? "Approve Sophia's draft before sending the next message."
                     : "Write as the customer..."
                 }
@@ -862,7 +1024,7 @@ export default function TestUiPageClient() {
                 <button
                   type="button"
                   onClick={handleRefreshDraft}
-                  disabled={loading || isApproving || (!reviewDraft && !sessionId)}
+                  disabled={sessionExpired || loading || isApproving || (!reviewDraft && !sessionId)}
                   className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-sm font-medium text-white transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <IconRefresh />
@@ -889,9 +1051,9 @@ export default function TestUiPageClient() {
                   <textarea
                     value={reviewComposer}
                     onChange={(event) => setReviewComposer(event.target.value)}
-                    disabled={!reviewDraft || isApproving}
+                    disabled={sessionExpired || !reviewDraft || isApproving}
                     rows={6}
-                    placeholder="No draft yet."
+                    placeholder={sessionExpired ? "Session expired." : "No draft yet."}
                     className="min-h-[148px] w-full resize-none bg-transparent text-sm leading-6 text-white placeholder:text-white/30 focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
                   />
                 )}
@@ -905,7 +1067,7 @@ export default function TestUiPageClient() {
               <button
                 type="button"
                 onClick={() => void handleApprove()}
-                disabled={!draftReady || isApproving}
+                disabled={sessionExpired || !draftReady || isApproving}
                 className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[1.1rem] bg-[#c9a96e] px-5 py-3.5 text-sm font-semibold text-[#1d1711] shadow-[0_18px_35px_rgba(201,169,110,0.24)] transition hover:bg-[#d6ba84] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isApproving ? (

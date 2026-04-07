@@ -244,6 +244,67 @@ export async function createTestUiConversation(salonId: string, sessionId?: stri
   return data;
 }
 
+export async function expireSessionById(sessionId: string, metadataPatch?: Record<string, any>) {
+  const { data: existingSession, error } = await supabase
+    .from('sessions')
+    .select('id, status, metadata')
+    .eq('id', sessionId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!existingSession) {
+    return null;
+  }
+
+  const currentMetadata =
+    existingSession.metadata && typeof existingSession.metadata === 'object'
+      ? existingSession.metadata
+      : {};
+  const expiredAt =
+    typeof currentMetadata.expired_at === 'string'
+      ? currentMetadata.expired_at
+      : new Date().toISOString();
+  const nextMetadata = {
+    ...currentMetadata,
+    ...metadataPatch,
+    expired_at: expiredAt,
+  };
+
+  if (existingSession.status === 'completed') {
+    return {
+      ...existingSession,
+      metadata: nextMetadata,
+    };
+  }
+
+  const { data: updatedSession, error: updateError } = await supabase
+    .from('sessions')
+    .update({
+      status: 'completed',
+      updated_at: new Date().toISOString(),
+      metadata: nextMetadata,
+    })
+    .eq('id', sessionId)
+    .neq('status', 'completed')
+    .select('id, status, metadata')
+    .maybeSingle();
+
+  if (updateError) {
+    throw updateError;
+  }
+
+  return (
+    updatedSession || {
+      ...existingSession,
+      status: 'completed',
+      metadata: nextMetadata,
+    }
+  );
+}
+
 // Mark a session as completed
 export async function completeSession(salonId: string, clientIdentifier: string) {
   await supabase
