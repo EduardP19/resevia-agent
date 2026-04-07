@@ -33,6 +33,19 @@ function getUtcStart(date: string, time: string): string {
   return new Date(localDate.getTime() - offsetMs).toISOString();
 }
 
+function isWithinBookingWindow(date: string): boolean {
+  const requestedDate = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(requestedDate.getTime())) return false;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const maxDate = new Date(today);
+  maxDate.setMonth(maxDate.getMonth() + 6);
+
+  return requestedDate >= today && requestedDate <= maxDate;
+}
+
 function formatSlotTime(isoString: string): string {
   return new Date(isoString).toLocaleTimeString('en-GB', {
     hour: '2-digit',
@@ -206,6 +219,10 @@ export async function fetchAvailability(
   workerName?: string
 ) {
   try {
+    if (!isWithinBookingWindow(date)) {
+      return [];
+    }
+
     const [workersRes, salonRes] = await Promise.all([
       supabase
         .from('workers')
@@ -323,6 +340,10 @@ export async function holdBooking(details: {
   salonServices?: any[];
 }) {
   try {
+    if (!isWithinBookingWindow(details.date)) {
+      return { success: false, error: 'Bookings are available from today up to 6 months ahead only.' };
+    }
+
     let workerQuery = supabase
       .from('workers')
       .select('id, name, cal_event_type_id, services')
@@ -476,6 +497,10 @@ export async function rescheduleBooking(
   serviceName?: string
 ) {
   try {
+    if (!isWithinBookingWindow(newDate)) {
+      return { success: false, error: 'Reschedules are available from today up to 6 months ahead only.' };
+    }
+
     let query = supabase
       .from('bookings')
       .select('*')

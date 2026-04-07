@@ -104,6 +104,9 @@ export default function TestUiPageClient() {
   const reviewScrollRef = useRef<HTMLDivElement>(null);
   const customerTranscriptRef = useRef<HTMLDivElement>(null);
   const reviewTranscriptRef = useRef<HTMLDivElement>(null);
+  const reviewComposerRef = useRef<HTMLTextAreaElement>(null);
+  const customerAutoScrollRef = useRef(true);
+  const reviewAutoScrollRef = useRef(true);
   const isSyncingRef = useRef(false);
   const isExpiringRef = useRef(false);
   const lastSyncedAt = useRef<string | null>(null);
@@ -119,6 +122,7 @@ export default function TestUiPageClient() {
   const [reviewFeed, setReviewFeed] = useState<ReviewMessage[]>([]);
   const [reviewDraft, setReviewDraft] = useState<DraftMessage | null>(null);
   const [reviewComposer, setReviewComposer] = useState("");
+  const [isModifyMode, setIsModifyMode] = useState(false);
   const [draftStatus, setDraftStatus] = useState("No draft yet");
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -144,6 +148,7 @@ export default function TestUiPageClient() {
   const salonScreenDisabled = !salonNeedsAction;
   const customerNeedsAttention = customerNeedsAction && !sessionExpired;
   const salonNeedsAttention = salonNeedsAction && !sessionExpired;
+  const hasCustomerSentMessage = messages.some((message) => message.role === "user");
 
   const clearExpiryTimers = useCallback(() => {
     if (warningTimeoutRef.current) {
@@ -188,6 +193,7 @@ export default function TestUiPageClient() {
     setReviewFeed([]);
     setReviewDraft(null);
     setReviewComposer("");
+    setIsModifyMode(false);
     setDraftStatus("No draft yet");
     setInput("");
     setError(null);
@@ -225,6 +231,7 @@ export default function TestUiPageClient() {
     setMessages((currentMessages) => currentMessages.filter((message) => message.role !== "waiting"));
     setReviewDraft(null);
     setReviewComposer("");
+    setIsModifyMode(false);
     setReviewError(null);
     currentDraftIdRef.current = null;
     lastSyncedAt.current = null;
@@ -265,6 +272,7 @@ export default function TestUiPageClient() {
     if (currentDraftIdRef.current !== nextDraft?.id) {
       setReviewComposer(nextDraft?.content || "");
       currentDraftIdRef.current = nextDraft?.id || null;
+      setIsModifyMode(false);
     }
 
     if (!nextDraft) {
@@ -303,10 +311,14 @@ export default function TestUiPageClient() {
 
   useEffect(() => {
     if (customerTranscriptRef.current) {
-      customerTranscriptRef.current.scrollTop = customerTranscriptRef.current.scrollHeight;
+      if (customerAutoScrollRef.current) {
+        customerTranscriptRef.current.scrollTop = customerTranscriptRef.current.scrollHeight;
+      }
     }
     if (reviewTranscriptRef.current) {
-      reviewTranscriptRef.current.scrollTop = reviewTranscriptRef.current.scrollHeight;
+      if (reviewAutoScrollRef.current) {
+        reviewTranscriptRef.current.scrollTop = reviewTranscriptRef.current.scrollHeight;
+      }
     }
   }, [messages, reviewFeed, reviewDraft, loading, isApproving]);
 
@@ -556,6 +568,7 @@ export default function TestUiPageClient() {
 
         setReviewDraft(null);
         setReviewComposer(approvedContent);
+        setIsModifyMode(false);
         currentDraftIdRef.current = null;
         hadDraftRef.current = false;
         setDraftStatus("Auto-sent after switching to autonomous.");
@@ -708,6 +721,7 @@ export default function TestUiPageClient() {
 
           setReviewDraft(null);
           setReviewComposer(data.reply);
+          setIsModifyMode(false);
           currentDraftIdRef.current = null;
           hadDraftRef.current = false;
           setDraftStatus("Auto-sent.");
@@ -814,6 +828,7 @@ export default function TestUiPageClient() {
       );
       setReviewDraft(null);
       setReviewComposer(approvedContent);
+      setIsModifyMode(false);
       setDraftStatus("Approved and sent.");
       currentDraftIdRef.current = null;
       hadDraftRef.current = false;
@@ -884,7 +899,36 @@ export default function TestUiPageClient() {
           </div>
         ) : null}
 
-        <div className="mt-6 grid grid-cols-2 gap-3 lg:hidden">
+        <div className="mt-6 flex justify-center">
+          <div className="flex flex-col items-center">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-white/75">
+              {toggleModeText}
+            </p>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={manualApproval}
+              onClick={handleManualApprovalToggle}
+              disabled={toggleDisabled}
+              className={cx(
+                "mt-2 inline-flex h-7 w-[64px] items-center rounded-full border px-1 transition",
+                manualApproval
+                  ? "border-emerald-400/40 bg-emerald-500/20"
+                  : "border-rose-400/40 bg-rose-500/20",
+                toggleDisabled && "cursor-not-allowed opacity-50"
+              )}
+            >
+              <span
+                className={cx(
+                  "h-5 w-5 rounded-full transition",
+                  manualApproval ? "translate-x-0 bg-emerald-500" : "translate-x-[36px] bg-rose-500"
+                )}
+              />
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-3 lg:hidden">
           <button
             type="button"
             onClick={() =>
@@ -893,7 +937,7 @@ export default function TestUiPageClient() {
             className={cx(
               "rounded-full border px-4 py-2.5 text-sm font-semibold transition",
               mobileScreen === "customer"
-                ? "border-[#c9a96e] bg-[#c9a96e]/20 text-[#f7dfb6]"
+                ? "border-[#c9a96e]/75 bg-[#c9a96e]/15 text-[#f5e2c2] shadow-[0_0_0_1px_rgba(201,169,110,0.2)]"
                 : "border-white/20 bg-white/5 text-white/80",
               customerNeedsAttention &&
                 "animate-pulse border-amber-300 shadow-[0_0_0_1px_rgba(252,211,77,0.45),0_0_26px_rgba(252,211,77,0.22)]"
@@ -919,7 +963,15 @@ export default function TestUiPageClient() {
           </button>
         </div>
 
-        <div className="mt-4 rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(25,21,38,0.98),rgba(18,15,28,1))] p-6 text-white shadow-[0_24px_90px_rgba(0,0,0,0.26)] lg:mt-10 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none">
+        <div
+          className={cx(
+            "relative mt-4 rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(25,21,38,0.98),rgba(18,15,28,1))] p-6 text-white shadow-[0_24px_90px_rgba(0,0,0,0.26)] lg:mt-10 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none",
+            mobileScreen === "customer" && "border-[#c9a96e]/45"
+          )}
+        >
+          {mobileScreen === "customer" ? (
+            <div className="pointer-events-none absolute inset-0 rounded-[2rem] bg-[#c9a96e]/14 shadow-[inset_0_0_0_1px_rgba(201,169,110,0.22)] lg:hidden" />
+          ) : null}
         <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
           <div
             className={cx(
@@ -949,6 +1001,12 @@ export default function TestUiPageClient() {
 
               <div
                 ref={customerTranscriptRef}
+                onScroll={(event) => {
+                  const target = event.currentTarget;
+                  const distanceFromBottom =
+                    target.scrollHeight - target.scrollTop - target.clientHeight;
+                  customerAutoScrollRef.current = distanceFromBottom < 80;
+                }}
                 className="mt-3 h-[340px] space-y-3 overflow-y-auto rounded-[1.5rem] border border-white/20 bg-[#0f1320] p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
               >
                 {messages.length === 0 ? (
@@ -1028,6 +1086,7 @@ export default function TestUiPageClient() {
             ) : null}
 
             <form className="mt-5" onSubmit={sendMessage}>
+              {!hasCustomerSentMessage ? (
               <div className="mb-3 flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -1046,6 +1105,7 @@ export default function TestUiPageClient() {
                   I want to book a haircut tomorrow at 1 PM.
                 </button>
               </div>
+              ) : null}
               <textarea
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
@@ -1097,35 +1157,6 @@ export default function TestUiPageClient() {
                   </h2>
                 </div>
               </div>
-
-              <div className="flex flex-col items-center">
-                <p className="w-[64px] text-center text-[9px] font-semibold uppercase tracking-[0.08em] text-white/70">
-                  {toggleModeText}
-                </p>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={manualApproval}
-                  onClick={handleManualApprovalToggle}
-                  disabled={toggleDisabled}
-                  className={cx(
-                    "mt-2 inline-flex h-7 w-[64px] items-center rounded-full border px-1 transition",
-                    manualApproval
-                      ? "border-emerald-400/40 bg-emerald-500/20"
-                      : "border-rose-400/40 bg-rose-500/20",
-                    toggleDisabled && "cursor-not-allowed opacity-50"
-                  )}
-                >
-                  <span
-                    className={cx(
-                      "h-5 w-5 rounded-full transition",
-                      manualApproval
-                        ? "translate-x-0 bg-emerald-500"
-                        : "translate-x-[36px] bg-rose-500"
-                    )}
-                  />
-                </button>
-              </div>
             </div>
 
             <div className={cx("transition duration-200", salonScreenDisabled && "grayscale opacity-45")}>
@@ -1139,6 +1170,12 @@ export default function TestUiPageClient() {
 
               <div
                 ref={reviewTranscriptRef}
+                onScroll={(event) => {
+                  const target = event.currentTarget;
+                  const distanceFromBottom =
+                    target.scrollHeight - target.scrollTop - target.clientHeight;
+                  reviewAutoScrollRef.current = distanceFromBottom < 80;
+                }}
                 className="mt-3 h-[340px] space-y-3 overflow-y-auto rounded-[1.5rem] border border-white/20 bg-[#0f1320] p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
               >
                 {reviewFeed.length === 0 ? (
@@ -1196,28 +1233,51 @@ export default function TestUiPageClient() {
                 </div>
               ) : (
                 <textarea
+                  ref={reviewComposerRef}
                   value={reviewComposer}
-                  onChange={(event) => setReviewComposer(event.target.value)}
+                  onChange={(event) => {
+                    setReviewComposer(event.target.value);
+                    setIsModifyMode(true);
+                  }}
                   disabled={sessionExpired || !reviewDraft || isApproving}
+                  readOnly={!isModifyMode}
                   rows={2}
                   placeholder={sessionExpired ? "Session expired." : "No draft yet"}
-                  className="min-h-[96px] w-full resize-none rounded-[1rem] border border-white/20 bg-white/95 px-4 py-3 text-sm leading-6 text-[#1e2331] placeholder:text-[#6d7486] focus:border-[#9da5bb] focus:outline-none disabled:cursor-not-allowed disabled:border-[#c8ccd4] disabled:bg-[#e5e7eb] disabled:text-[#6b7280] disabled:placeholder:text-[#9097a3]"
+                  className={cx(
+                    "min-h-[96px] w-full resize-none rounded-[1rem] border px-4 py-3 text-sm leading-6 focus:outline-none disabled:cursor-not-allowed disabled:border-[#c8ccd4] disabled:bg-[#e5e7eb] disabled:text-[#6b7280] disabled:placeholder:text-[#9097a3]",
+                    isModifyMode
+                      ? "border-white/20 bg-white/95 text-[#1e2331] placeholder:text-[#6d7486] focus:border-[#9da5bb]"
+                      : "border-white/15 bg-white/70 text-[#5f6675] placeholder:text-[#8a90a0] focus:border-[#9da5bb]"
+                  )}
                 />
               )}
 
-              <button
-                type="button"
-                onClick={() => void handleApprove()}
-                disabled={sessionExpired || !draftReady || isApproving}
-                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[1.1rem] bg-[#1e9e63] px-5 py-3.5 text-sm font-semibold text-white shadow-[0_18px_35px_rgba(30,158,99,0.28)] transition hover:bg-[#188754] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isApproving ? (
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#1d1711]/20 border-t-[#1d1711]" />
-                ) : (
-                  <IconCheck />
-                )}
-                {isApproving ? "Sending..." : "Approve & Send"}
-              </button>
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void handleApprove()}
+                  disabled={sessionExpired || !draftReady || isApproving}
+                  className="inline-flex w-[70%] items-center justify-center gap-2 rounded-[1.1rem] bg-[#1e9e63] px-5 py-3.5 text-sm font-semibold text-white shadow-[0_18px_35px_rgba(30,158,99,0.28)] transition hover:bg-[#188754] disabled:cursor-not-allowed disabled:opacity-50 lg:w-1/2"
+                >
+                  {isApproving ? (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#1d1711]/20 border-t-[#1d1711]" />
+                  ) : (
+                    <IconCheck />
+                  )}
+                  {isApproving ? "Sending..." : "Approve & Send"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsModifyMode(true);
+                    reviewComposerRef.current?.focus();
+                  }}
+                  disabled={sessionExpired || isApproving || !reviewDraft}
+                  className="inline-flex w-[30%] items-center justify-center rounded-[1.1rem] bg-[#c83b3b] px-3 py-3.5 text-sm font-semibold text-white transition hover:bg-[#b02f2f] disabled:cursor-not-allowed disabled:opacity-50 lg:w-1/2"
+                >
+                  Modify
+                </button>
+              </div>
 
               {reviewError ? (
                 <div className="mt-4 flex items-start gap-3 rounded-[1.2rem] border border-rose-200/70 bg-rose-500/35 px-4 py-3 text-sm text-rose-50 shadow-[0_0_0_1px_rgba(255,255,255,0.12)]">

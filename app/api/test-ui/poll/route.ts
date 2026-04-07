@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
     .from(TEST_UI_TRANSCRIPTS_TABLE)
     .select('id, role, content, created_at')
     .eq('session_id', sessionId)
-    .in('role', ['user', 'assistant', 'draft', 'system'])
+    .in('role', ['user', 'assistant', 'draft'])
     .order('created_at', { ascending: false })
     .limit(10);
 

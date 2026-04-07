@@ -348,14 +348,17 @@ export async function getWorkers(salonId: string) {
 
 // The most recent held (unconfirmed) booking for a customer
 export async function getActiveHold(customerPhone: string) {
+  const nowIso = new Date().toISOString();
   const { data } = await supabase
     .from('bookings')
     .select('*')
     .eq('customer_phone', customerPhone)
     .eq('status', 'held')
-    .order('created_at', { ascending: false })
+    .gte('start_time', nowIso)
+    .or(`expires_at.is.null,expires_at.gte.${nowIso}`)
+    .order('start_time', { ascending: true })
     .limit(1)
-    .single();
+    .maybeSingle();
   return data || null;
 }
 
