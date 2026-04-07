@@ -104,7 +104,9 @@ export async function createTestUiResponse(options: {
     );
   }
 
-  const reply = aiResponse.reply || "I'm sorry, I'm having trouble processing that.";
+  const reply =
+    aiResponse.reply ||
+    "I'm sorry, I ran into an issue processing your previous message. Could you please rephrase your last question?";
   const nextMetadata = {
     ...conversationMetadata,
     source: 'test-ui',

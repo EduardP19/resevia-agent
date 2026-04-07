@@ -1,6 +1,7 @@
 "use client";
 
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import Logo from "../(dashboard)/Logo";
 
 type TestMessage = {
   role: "user" | "assistant" | "waiting";
@@ -48,7 +49,7 @@ type PollResponse = {
   error?: string;
 };
 
-const TEST_UI_SESSION_KEY = "resevia_test_ui_session";
+const TEST_UI_SESSION_KEY = "resevia_sophia_sandbox_session";
 const SESSION_WARNING_MS = 2 * 60 * 1000;
 const SESSION_EXPIRY_MS = 3 * 60 * 1000;
 const SESSION_WARNING_SECONDS = Math.ceil((SESSION_EXPIRY_MS - SESSION_WARNING_MS) / 1000);
@@ -70,19 +71,6 @@ function formatTime(value?: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function IconRefresh() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className="h-4 w-4">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.9"
-        d="M4 4v5h5M20 20v-5h-5M19.4 9A8 8 0 0 0 5.2 7.8M4.6 15A8 8 0 0 0 18.8 16.2"
-      />
-    </svg>
-  );
 }
 
 function IconCheck() {
@@ -129,7 +117,7 @@ export default function TestUiPageClient() {
   const [reviewFeed, setReviewFeed] = useState<ReviewMessage[]>([]);
   const [reviewDraft, setReviewDraft] = useState<DraftMessage | null>(null);
   const [reviewComposer, setReviewComposer] = useState("");
-  const [draftStatus, setDraftStatus] = useState("No draft yet.");
+  const [draftStatus, setDraftStatus] = useState("No draft yet");
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
@@ -143,9 +131,14 @@ export default function TestUiPageClient() {
 
   const hasWaiting = messages.some((message) => message.role === "waiting");
   const customerComposerLocked = sessionExpired || (manualApproval && Boolean(reviewDraft));
-  const toggleDisabled = sessionExpired || Boolean(reviewDraft) || loading || isApproving;
-  const modeLabel = manualApproval ? "Manual" : "Auto";
+  const toggleDisabled = sessionExpired || loading || isApproving;
   const draftReady = Boolean(reviewDraft && reviewComposer.trim());
+  const toggleModeText = manualApproval ? "Manual Approval" : "Agent Autonomous";
+  const salonNeedsAction =
+    !sessionExpired && manualApproval && Boolean(reviewDraft) && !loading && !isApproving;
+  const customerNeedsAction = !sessionExpired && !salonNeedsAction && !loading && !isApproving;
+  const customerScreenDisabled = !customerNeedsAction;
+  const salonScreenDisabled = !salonNeedsAction;
 
   const clearExpiryTimers = useCallback(() => {
     if (warningTimeoutRef.current) {
@@ -177,18 +170,19 @@ export default function TestUiPageClient() {
         throw new Error(payload.error || "Unable to expire the demo session.");
       }
     } catch (nextError) {
-      console.error("[Test UI Session Expire Error]", nextError);
+      console.error("[Sophia Sandbox Session Expire Error]", nextError);
     }
   }, []);
 
   const resetLocalSession = useCallback(() => {
     sessionStorage.removeItem(TEST_UI_SESSION_KEY);
+    sessionIdRef.current = null;
     setSessionId(null);
     setMessages([]);
     setReviewFeed([]);
     setReviewDraft(null);
     setReviewComposer("");
-    setDraftStatus("No draft yet.");
+    setDraftStatus("No draft yet");
     setInput("");
     setError(null);
     setReviewError(null);
@@ -343,6 +337,10 @@ export default function TestUiPageClient() {
           throw new Error(data.error || "Unable to sync transcript.");
         }
 
+        if (sessionIdRef.current !== nextSessionId) {
+          return;
+        }
+
         applyReviewSnapshot(data);
 
         const hadDraftBefore = hadDraftRef.current;
@@ -474,27 +472,113 @@ export default function TestUiPageClient() {
       return;
     }
 
+    const switchingToAutonomous = manualApproval;
     noteSessionActivity();
     setManualApproval((current) => !current);
     setReviewError(null);
-    setDraftStatus("No draft yet.");
-  }, [noteSessionActivity, toggleDisabled]);
 
-  const handleRefreshDraft = useCallback(() => {
-    if (sessionExpired) {
+    if (!switchingToAutonomous) {
+      setDraftStatus("No draft yet");
       return;
     }
 
-    if (reviewDraft) {
-      setReviewComposer(reviewDraft.content);
-      setDraftStatus("Draft refreshed.");
+    if (!sessionId || !reviewDraft) {
+      setDraftStatus("Agent autonomous.");
+      return;
     }
 
-    if (sessionId) {
-      noteSessionActivity();
-      void syncTranscript(sessionId);
+    const approvedContent = reviewComposer.trim() || reviewDraft.content.trim();
+    if (!approvedContent) {
+      setDraftStatus("No draft yet");
+      return;
     }
-  }, [noteSessionActivity, reviewDraft, sessionExpired, sessionId, syncTranscript]);
+
+    const localAssistantId = `local-assistant-${Date.now()}`;
+
+    setIsApproving(true);
+    setDraftStatus("Auto-sending pending draft...");
+
+    void (async () => {
+      try {
+        const response = await fetch("/api/test-ui/approve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId,
+            content: approvedContent,
+          }),
+        });
+        const payload = (await response.json()) as { error?: string };
+
+        if (!response.ok) {
+          throw new Error(payload.error || "Unable to auto-send the pending draft.");
+        }
+
+        if (sessionIdRef.current !== sessionId) {
+          return;
+        }
+
+        setMessages((currentMessages) => {
+          const waitingIndex = currentMessages.findIndex((message) => message.role === "waiting");
+
+          if (waitingIndex !== -1) {
+            const nextMessages = [...currentMessages];
+            nextMessages[waitingIndex] = {
+              role: "assistant",
+              content: approvedContent,
+              id: localAssistantId,
+            };
+            return nextMessages;
+          }
+
+          return [
+            ...currentMessages,
+            {
+              role: "assistant",
+              content: approvedContent,
+              id: localAssistantId,
+            },
+          ];
+        });
+        setReviewFeed((currentMessages) =>
+          trimReviewFeed([
+            ...currentMessages.filter((message) => message.role !== "draft"),
+            {
+              id: localAssistantId,
+              role: "assistant",
+              content: approvedContent,
+              created_at: new Date().toISOString(),
+            },
+          ])
+        );
+
+        setReviewDraft(null);
+        setReviewComposer(approvedContent);
+        currentDraftIdRef.current = null;
+        hadDraftRef.current = false;
+        setDraftStatus("Auto-sent after switching to autonomous.");
+        noteSessionActivity();
+        await syncTranscript(sessionId);
+      } catch (nextError) {
+        setReviewError(
+          nextError instanceof Error
+            ? nextError.message
+            : "Unable to auto-send the pending draft."
+        );
+        setDraftStatus("Unable to auto-send the pending draft.");
+      } finally {
+        setIsApproving(false);
+      }
+    })();
+  }, [
+    manualApproval,
+    noteSessionActivity,
+    reviewComposer,
+    reviewDraft,
+    sessionId,
+    syncTranscript,
+    toggleDisabled,
+  ]);
 
   const sendMessage = useCallback(
     async (event?: FormEvent<HTMLFormElement>) => {
@@ -561,6 +645,10 @@ export default function TestUiPageClient() {
           lastSyncedAt.current = null;
           seenIds.current = new Set();
           hadDraftRef.current = false;
+        }
+
+        if (sessionIdRef.current && resolvedSessionId && sessionIdRef.current !== resolvedSessionId) {
+          return;
         }
 
         if (resolvedSessionId) {
@@ -685,6 +773,10 @@ export default function TestUiPageClient() {
         throw new Error(payload.error || "Unable to approve the draft.");
       }
 
+      if (sessionIdRef.current !== sessionId) {
+        return;
+      }
+
       setMessages((currentMessages) => {
         const waitingIndex = currentMessages.findIndex((message) => message.role === "waiting");
 
@@ -754,10 +846,10 @@ export default function TestUiPageClient() {
         <div className="mx-auto max-w-3xl text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-[#b94747]/35 bg-[#b94747]/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-[#f4d6d6]">
             <span className="h-2.5 w-2.5 rounded-full bg-[#e14a4a]" />
-            Two-sided demo harness
+            Sophia Sandbox
           </div>
           <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-            Show both sides before a business goes live
+            Test Sophia before going live
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-white/68 sm:text-lg">
             Send messages as the customer, then review and approve Sophia&apos;s reply in the
@@ -781,30 +873,33 @@ export default function TestUiPageClient() {
         ) : null}
 
         <div className="mt-10 grid gap-6 lg:grid-cols-2 lg:items-start">
-          <div className="rounded-[2rem] border border-[#c9a96e]/30 bg-[linear-gradient(180deg,rgba(244,231,204,0.96),rgba(232,209,166,0.9))] p-6 text-[#271c0f] shadow-[0_24px_90px_rgba(201,169,110,0.18)]">
-            <div className="flex items-start justify-between gap-4">
+          <div
+            className={cx(
+              "rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(25,21,38,0.95),rgba(18,15,28,0.96))] p-6 text-white shadow-[0_24px_90px_rgba(0,0,0,0.26)] transition duration-200",
+              customerScreenDisabled && "grayscale opacity-45"
+            )}
+          >
+            <div className="flex min-h-[112px] items-start justify-between gap-4">
               <div className="flex items-start gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/60 text-xl shadow-[0_12px_30px_rgba(39,28,15,0.08)]">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-xl">
                   💬
                 </div>
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8c6331]">
-                    Customer screen
-                  </p>
-                  <h2 className="mt-2 text-2xl font-semibold text-[#22170d]">Client conversation</h2>
-                  <p className="mt-1 text-sm text-[#5f4630]">What the customer sees</p>
+                  <h2 className="mt-1 text-2xl font-semibold uppercase tracking-[0.12em] text-white">
+                    Customer Screen
+                  </h2>
                 </div>
               </div>
             </div>
 
-            <div className="mt-6 border-t border-[#8c6331]/15 pt-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8c6331]">
+            <div className="mt-[-25px] border-t border-white/10 pt-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/45">
                 Live transcript
               </p>
 
-              <div className="mt-3 min-h-[220px] max-h-[340px] space-y-3 overflow-y-auto rounded-[1.5rem] border border-[#8c6331]/15 bg-white/55 p-4">
+              <div className="mt-3 h-[340px] space-y-3 overflow-y-auto rounded-[1.5rem] border border-white/20 bg-[#0f1320] p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
                 {messages.length === 0 ? (
-                  <div className="flex min-h-[180px] items-center justify-center rounded-[1.2rem] border border-dashed border-[#8c6331]/20 bg-white/35 px-6 text-center text-sm text-[#6b4c2c]">
+                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-white/45">
                     No messages yet.
                   </div>
                 ) : (
@@ -841,13 +936,13 @@ export default function TestUiPageClient() {
                         ) : (
                           <div
                             className={cx(
-                              "max-w-[86%] rounded-[1.3rem] px-4 py-3 text-sm leading-6 shadow-[0_10px_24px_rgba(39,28,15,0.08)]",
+                              "max-w-[88%] rounded-[1.15rem] border px-3 py-3 text-sm leading-6",
                               isAssistant
-                                ? "rounded-bl-md border border-white/70 bg-white text-[#2e2318]"
-                                : "rounded-br-md bg-[#b78743] text-white"
+                                ? "rounded-bl-md border border-[#8e73ff]/35 bg-[#7a63d8] text-white"
+                                : "rounded-br-md border border-white/10 bg-white/12 text-white"
                             )}
                           >
-                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-current/65">
+                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/35">
                               {isAssistant ? "Sophia" : "Customer"}
                             </p>
                             <p className="whitespace-pre-wrap">{message.content}</p>
@@ -873,7 +968,7 @@ export default function TestUiPageClient() {
             </div>
 
             {error ? (
-              <div className="mt-4 flex items-start gap-3 rounded-[1.2rem] border border-rose-500/20 bg-rose-500/12 px-4 py-3 text-sm text-rose-950">
+              <div className="mt-4 flex items-start gap-3 rounded-[1.2rem] border border-rose-200/70 bg-rose-500/35 px-4 py-3 text-sm text-rose-50 shadow-[0_0_0_1px_rgba(255,255,255,0.12)]">
                 <IconAlert />
                 <p>{error}</p>
               </div>
@@ -897,88 +992,81 @@ export default function TestUiPageClient() {
                     : "Write as the customer..."
                 }
                 disabled={loading || isApproving || customerComposerLocked}
-                rows={4}
-                className="min-h-[132px] w-full rounded-[1.5rem] border border-[#8c6331]/18 bg-white/65 px-4 py-4 text-sm leading-6 text-[#24180e] placeholder:text-[#7c5f44] focus:border-[#b78743] focus:outline-none focus:ring-2 focus:ring-[#b78743]/25 disabled:cursor-not-allowed disabled:opacity-60"
+                rows={2}
+                className="min-h-[96px] w-full resize-none rounded-[1rem] border border-white/20 bg-white/95 px-4 py-3 text-sm leading-6 text-[#1e2331] placeholder:text-[#6d7486] focus:border-[#9da5bb] focus:outline-none disabled:cursor-not-allowed disabled:border-[#c8ccd4] disabled:bg-[#e5e7eb] disabled:text-[#6b7280] disabled:placeholder:text-[#9097a3]"
               />
 
-              <div className="mt-4 flex items-center justify-end">
+              <div className="mt-4">
                 <button
                   type="submit"
                   disabled={!input.trim() || loading || isApproving || customerComposerLocked}
-                  className="inline-flex items-center justify-center rounded-full bg-[#22170d] px-5 py-3 text-sm font-semibold text-[#f4e7cc] transition hover:bg-[#110b06] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex w-full items-center justify-center rounded-full bg-[#c9a96e] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#d6ba84] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Send ↗
+                  Send
                 </button>
               </div>
             </form>
           </div>
 
-          <div className="rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(25,21,38,0.95),rgba(18,15,28,0.96))] p-6 text-white shadow-[0_24px_90px_rgba(0,0,0,0.26)]">
-            <div className="flex items-start justify-between gap-4">
+          <div
+            className={cx(
+              "rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(25,21,38,0.95),rgba(18,15,28,0.96))] p-6 text-white shadow-[0_24px_90px_rgba(0,0,0,0.26)] transition duration-200"
+            )}
+          >
+            <div className="flex min-h-[112px] items-start justify-between gap-4">
               <div className="flex items-start gap-4">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-xl">
-                  🛡️
+                  <Logo className="h-7 w-7" />
                 </div>
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-white/48">
-                    Salon screen
-                  </p>
-                  <h2 className="mt-2 text-2xl font-semibold text-white">Approval cockpit</h2>
-                  <p className="mt-1 text-sm text-white/60">What the salon owner sees</p>
+                  <h2 className="mt-1 text-2xl font-semibold uppercase tracking-[0.12em] text-white">
+                    Salon Screen
+                  </h2>
                 </div>
               </div>
 
-              <span
-                className={cx(
-                  "inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em]",
-                  manualApproval
-                    ? "bg-emerald-500/15 text-emerald-200"
-                    : "bg-sky-500/15 text-sky-200"
-                )}
-              >
-                {modeLabel}
-              </span>
-            </div>
-
-            <div className="mt-6 flex items-center justify-between gap-4 border-t border-white/10 pt-5">
-              <div>
-                <p className="text-sm font-semibold text-white">Manual approval</p>
-                <p className="mt-1 text-sm text-white/55">Review each reply before it sends</p>
-              </div>
-
-              <button
-                type="button"
-                role="switch"
-                aria-checked={manualApproval}
-                onClick={handleManualApprovalToggle}
-                disabled={toggleDisabled}
-                className={cx(
-                  "inline-flex h-8 w-14 items-center rounded-full border px-1 transition",
-                  manualApproval
-                    ? "border-emerald-400/40 bg-emerald-500/20"
-                    : "border-sky-400/35 bg-sky-500/18",
-                  toggleDisabled && "cursor-not-allowed opacity-50"
-                )}
-              >
-                <span
-                  className={cx(
-                    "h-6 w-6 rounded-full bg-white transition",
-                    manualApproval ? "translate-x-0" : "translate-x-6"
-                  )}
-                />
-              </button>
-            </div>
-
-            <div className="mt-5 border-t border-white/10 pt-5">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/45">
-                  Review timeline
+              <div className="flex flex-col items-center">
+                <p className="w-[64px] text-center text-[9px] font-semibold uppercase tracking-[0.08em] text-white/70">
+                  {toggleModeText}
                 </p>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={manualApproval}
+                  onClick={handleManualApprovalToggle}
+                  disabled={toggleDisabled}
+                  className={cx(
+                    "mt-2 inline-flex h-7 w-[64px] items-center rounded-full border px-1 transition",
+                    manualApproval
+                      ? "border-emerald-400/40 bg-emerald-500/20"
+                      : "border-rose-400/40 bg-rose-500/20",
+                    toggleDisabled && "cursor-not-allowed opacity-50"
+                  )}
+                >
+                  <span
+                    className={cx(
+                      "h-5 w-5 rounded-full transition",
+                      manualApproval
+                        ? "translate-x-0 bg-emerald-500"
+                        : "translate-x-[36px] bg-rose-500"
+                    )}
+                  />
+                </button>
+              </div>
+            </div>
+
+            <div className={cx("transition duration-200", salonScreenDisabled && "grayscale opacity-45")}>
+            <div className="mt-[-25px] border-t border-white/10 pt-5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/55">
+                  <span className={cx("h-2 w-2 rounded-full", reviewStatusTone)} />
+                  <span>{draftStatus}</span>
+                </div>
               </div>
 
-              <div className="mt-3 max-h-[240px] space-y-3 overflow-y-auto rounded-[1.4rem] border border-white/10 bg-black/15 p-3">
+              <div className="mt-3 h-[340px] space-y-3 overflow-y-auto rounded-[1.5rem] border border-white/20 bg-[#0f1320] p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
                 {reviewFeed.length === 0 ? (
-                  <div className="flex min-h-[180px] items-center justify-center rounded-[1.15rem] border border-dashed border-white/10 bg-white/[0.03] px-6 text-center text-sm text-white/45">
+                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-white/45">
                     No messages yet.
                   </div>
                 ) : (
@@ -995,10 +1083,10 @@ export default function TestUiPageClient() {
                           className={cx(
                             "max-w-[88%] rounded-[1.15rem] border px-3 py-3 text-sm leading-6",
                             isUser
-                              ? "border-[#b78743]/30 bg-[#b78743]/20 text-white"
+                              ? "border-white/10 bg-white/12 text-white"
                               : isDraft
-                                ? "border-emerald-400/18 bg-emerald-400/10 text-emerald-50"
-                                : "border-white/10 bg-white/[0.05] text-white"
+                                ? "border-[#8e73ff]/30 bg-[#7a63d8]/90 text-white"
+                                : "border-[#8e73ff]/35 bg-[#7a63d8] text-white"
                           )}
                         >
                           <div className="mb-2 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">
@@ -1015,75 +1103,53 @@ export default function TestUiPageClient() {
               </div>
             </div>
 
-            <div className="mt-5 border-t border-white/10 pt-5">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/45">
-                  Review composer
-                </p>
-
-                <button
-                  type="button"
-                  onClick={handleRefreshDraft}
-                  disabled={sessionExpired || loading || isApproving || (!reviewDraft && !sessionId)}
-                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-sm font-medium text-white transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  <IconRefresh />
-                  Refresh
-                </button>
-              </div>
-
-              <div className="mt-3 min-h-[180px] rounded-[1.4rem] border border-white/10 bg-[#0f0d17] p-4">
-                {loading && manualApproval ? (
-                  <div className="flex min-h-[148px] items-center justify-center">
-                    <div className="inline-flex items-center gap-2 text-[#f0dfbf]">
-                      <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-[#c9a96e]" />
-                      <span
-                        className="h-2.5 w-2.5 animate-bounce rounded-full bg-[#c9a96e]"
-                        style={{ animationDelay: "120ms" }}
-                      />
-                      <span
-                        className="h-2.5 w-2.5 animate-bounce rounded-full bg-[#c9a96e]"
-                        style={{ animationDelay: "240ms" }}
-                      />
-                    </div>
+            <div className="mt-5">
+              {loading && manualApproval ? (
+                <div className="flex min-h-[96px] items-center justify-center">
+                  <div className="inline-flex items-center gap-2 text-[#f0dfbf]">
+                    <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-[#c9a96e]" />
+                    <span
+                      className="h-2.5 w-2.5 animate-bounce rounded-full bg-[#c9a96e]"
+                      style={{ animationDelay: "120ms" }}
+                    />
+                    <span
+                      className="h-2.5 w-2.5 animate-bounce rounded-full bg-[#c9a96e]"
+                      style={{ animationDelay: "240ms" }}
+                    />
                   </div>
-                ) : (
-                  <textarea
-                    value={reviewComposer}
-                    onChange={(event) => setReviewComposer(event.target.value)}
-                    disabled={sessionExpired || !reviewDraft || isApproving}
-                    rows={6}
-                    placeholder={sessionExpired ? "Session expired." : "No draft yet."}
-                    className="min-h-[148px] w-full resize-none bg-transparent text-sm leading-6 text-white placeholder:text-white/30 focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
-                  />
-                )}
-              </div>
-
-              <div className="mt-4 flex items-center gap-3 text-sm text-white/65">
-                <span className={cx("h-2.5 w-2.5 rounded-full", reviewStatusTone)} />
-                <span>{draftStatus}</span>
-              </div>
+                </div>
+              ) : (
+                <textarea
+                  value={reviewComposer}
+                  onChange={(event) => setReviewComposer(event.target.value)}
+                  disabled={sessionExpired || !reviewDraft || isApproving}
+                  rows={2}
+                  placeholder={sessionExpired ? "Session expired." : "No draft yet"}
+                  className="min-h-[96px] w-full resize-none rounded-[1rem] border border-white/20 bg-white/95 px-4 py-3 text-sm leading-6 text-[#1e2331] placeholder:text-[#6d7486] focus:border-[#9da5bb] focus:outline-none disabled:cursor-not-allowed disabled:border-[#c8ccd4] disabled:bg-[#e5e7eb] disabled:text-[#6b7280] disabled:placeholder:text-[#9097a3]"
+                />
+              )}
 
               <button
                 type="button"
                 onClick={() => void handleApprove()}
                 disabled={sessionExpired || !draftReady || isApproving}
-                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[1.1rem] bg-[#c9a96e] px-5 py-3.5 text-sm font-semibold text-[#1d1711] shadow-[0_18px_35px_rgba(201,169,110,0.24)] transition hover:bg-[#d6ba84] disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[1.1rem] bg-[#1e9e63] px-5 py-3.5 text-sm font-semibold text-white shadow-[0_18px_35px_rgba(30,158,99,0.28)] transition hover:bg-[#188754] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isApproving ? (
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#1d1711]/20 border-t-[#1d1711]" />
                 ) : (
                   <IconCheck />
                 )}
-                {isApproving ? "Sending..." : "Approve and send"}
+                {isApproving ? "Sending..." : "Approve & Send"}
               </button>
 
               {reviewError ? (
-                <div className="mt-4 flex items-start gap-3 rounded-[1.2rem] border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+                <div className="mt-4 flex items-start gap-3 rounded-[1.2rem] border border-rose-200/70 bg-rose-500/35 px-4 py-3 text-sm text-rose-50 shadow-[0_0_0_1px_rgba(255,255,255,0.12)]">
                   <IconAlert />
                   <p>{reviewError}</p>
                 </div>
               ) : null}
+            </div>
             </div>
           </div>
         </div>

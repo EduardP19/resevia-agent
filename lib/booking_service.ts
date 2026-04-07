@@ -13,11 +13,22 @@ const calApiV2 = axios.create({
 
 const VERSION_STABLE = '2024-06-11';
 const VERSION_LATEST = '2024-08-13';
+const LONDON_TIME_ZONE = 'Europe/London';
+
+const DAY_TO_INDEX: Record<string, number> = {
+  sun: 0,
+  mon: 1,
+  tue: 2,
+  wed: 3,
+  thu: 4,
+  fri: 5,
+  sat: 6,
+};
 
 function getUtcStart(date: string, time: string): string {
   const localDate = new Date(`${date}T${time}:00`);
   const utcDate = new Date(localDate.toLocaleString('en-US', { timeZone: 'UTC' }));
-  const londonDate = new Date(localDate.toLocaleString('en-US', { timeZone: 'Europe/London' }));
+  const londonDate = new Date(localDate.toLocaleString('en-US', { timeZone: LONDON_TIME_ZONE }));
   const offsetMs = londonDate.getTime() - utcDate.getTime();
   return new Date(localDate.getTime() - offsetMs).toISOString();
 }
@@ -26,8 +37,152 @@ function formatSlotTime(isoString: string): string {
   return new Date(isoString).toLocaleTimeString('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
-    timeZone: 'Europe/London'
+    timeZone: LONDON_TIME_ZONE
   });
+}
+
+function parseTimeToMinutes(raw: string): number | null {
+  const normalized = raw.trim().toLowerCase();
+  const match = normalized.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+  if (!match) return null;
+
+  let hours = Number(match[1]);
+  const minutes = Number(match[2] || '0');
+  const meridiem = (match[3] || '').toLowerCase();
+
+  if (Number.isNaN(hours) || Number.isNaN(minutes) || minutes > 59) return null;
+
+  if (meridiem === 'am') {
+    if (hours === 12) hours = 0;
+  } else if (meridiem === 'pm') {
+    if (hours < 12) hours += 12;
+  }
+
+  if (hours > 23) return null;
+  return hours * 60 + minutes;
+}
+
+function parseDayToken(raw: string): number[] {
+  const cleaned = raw.replace(/\./g, '').trim().toLowerCase();
+  if (!cleaned) return [];
+
+  if (cleaned.includes('-')) {
+    const [startToken, endToken] = cleaned.split('-').map((part) => part.trim().slice(0, 3));
+    const start = DAY_TO_INDEX[startToken];
+    const end = DAY_TO_INDEX[endToken];
+    if (start === undefined || end === undefined) return [];
+
+    if (start <= end) {
+      return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+    }
+    return [...Array.from({ length: 7 - start }, (_, i) => start + i), ...Array.from({ length: end + 1 }, (_, i) => i)];
+  }
+
+  const parts = cleaned.split(/[,&/]/).map((part) => part.trim()).filter(Boolean);
+  return parts
+    .map((part) => DAY_TO_INDEX[part.slice(0, 3)])
+    .filter((value): value is number => value !== undefined);
+}
+
+function parseOpeningHours(openingHoursRaw?: string | null): Record<number, { open: number; close: number } | null> | null {
+  if (!openingHoursRaw || !openingHoursRaw.trim()) return null;
+
+  const parsed: Record<number, { open: number; close: number } | null> = {
+    0: null,
+    1: null,
+    2: null,
+    3: null,
+    4: null,
+    5: null,
+    6: null,
+  };
+
+  const text = openingHoursRaw.trim();
+  const lines: string[] = [];
+
+  try {
+    const maybeJson = JSON.parse(text);
+    if (maybeJson && typeof maybeJson === 'object' && !Array.isArray(maybeJson)) {
+      for (const [key, value] of Object.entries(maybeJson)) {
+        lines.push(`${key}: ${String(value)}`);
+      }
+    }
+  } catch {
+    lines.push(...text.split(/\n|;/).map((line) => line.trim()).filter(Boolean));
+  }
+
+  if (lines.length === 0) {
+    lines.push(...text.split(/\n|;/).map((line) => line.trim()).filter(Boolean));
+  }
+
+  let parsedAtLeastOne = false;
+
+  for (const line of lines) {
+    const [dayPartRaw, timePartRaw] = line.includes(':')
+      ? [line.slice(0, line.indexOf(':')), line.slice(line.indexOf(':') + 1)]
+      : line.split(/\s+/, 2);
+
+    const dayPart = (dayPartRaw || '').trim();
+    const timePart = (timePartRaw || '').trim().toLowerCase();
+    if (!dayPart || !timePart) continue;
+
+    const days = parseDayToken(dayPart);
+    if (days.length === 0) continue;
+
+    if (timePart.includes('closed')) {
+      for (const day of days) parsed[day] = null;
+      parsedAtLeastOne = true;
+      continue;
+    }
+
+    const rangeMatch = timePart.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*(?:-|to)\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
+    if (!rangeMatch) continue;
+
+    const open = parseTimeToMinutes(rangeMatch[1]);
+    const close = parseTimeToMinutes(rangeMatch[2]);
+    if (open === null || close === null || close <= open) continue;
+
+    for (const day of days) {
+      parsed[day] = { open, close };
+    }
+    parsedAtLeastOne = true;
+  }
+
+  return parsedAtLeastOne ? parsed : null;
+}
+
+function getLondonDayAndMinutes(date: Date): { day: number; minutes: number } {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: LONDON_TIME_ZONE,
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+
+  const weekday = (parts.find((part) => part.type === 'weekday')?.value || '').toLowerCase().slice(0, 3);
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value || '0');
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value || '0');
+  const day = DAY_TO_INDEX[weekday] ?? 0;
+
+  return { day, minutes: hour * 60 + minute };
+}
+
+function isWithinOpeningHours(startIso: string, durationMinutes: number, openingHoursRaw?: string | null): boolean {
+  const schedule = parseOpeningHours(openingHoursRaw);
+  if (!schedule) return true;
+
+  const start = new Date(startIso);
+  const end = new Date(start.getTime() + durationMinutes * 60000);
+  const startInfo = getLondonDayAndMinutes(start);
+  const endInfo = getLondonDayAndMinutes(end);
+
+  if (startInfo.day !== endInfo.day) return false;
+
+  const dayHours = schedule[startInfo.day];
+  if (!dayHours) return false;
+
+  return startInfo.minutes >= dayHours.open && endInfo.minutes <= dayHours.close;
 }
 
 function extractSlotTimes(slotsData: any, date: string): string[] {
@@ -51,14 +206,27 @@ export async function fetchAvailability(
   workerName?: string
 ) {
   try {
-    let query = supabase
-      .from('workers')
-      .select('id, name, cal_event_type_id, services')
-      .eq('salon_id', salonId)
-      .eq('is_active', true);
+    const [workersRes, salonRes] = await Promise.all([
+      supabase
+        .from('workers')
+        .select('id, name, cal_event_type_id, services')
+        .eq('salon_id', salonId)
+        .eq('is_active', true),
+      supabase
+        .from('business_profiles')
+        .select('opening_hours, services')
+        .eq('id', salonId)
+        .single(),
+    ]);
 
-    const { data: allWorkers } = await query;
+    const allWorkers = workersRes.data;
     if (!allWorkers || allWorkers.length === 0) return [];
+
+    const matchedService = (salonRes.data?.services || []).find((s: any) =>
+      String(s?.name || '').toLowerCase().includes(serviceName.toLowerCase())
+    );
+    const serviceDuration = Number(matchedService?.duration_minutes || 60);
+    const openingHoursRaw = salonRes.data?.opening_hours || null;
 
     const workers = allWorkers.filter(w => {
       if (workerName) {
@@ -85,18 +253,30 @@ export async function fetchAvailability(
             }),
             supabase
               .from('bookings')
-              .select('start_time')
+              .select('start_time, end_time')
               .eq('worker_id', worker.id)
               .in('status', ['held', 'confirmed'])
           ]);
 
           const slots = extractSlotTimes(calRes.data.data?.slots, date);
-          const heldTimes = new Set(
-            (holdsRes.data || []).map((h: any) => new Date(h.start_time).toISOString())
-          );
+          const existingBookings = (holdsRes.data || []).map((h: any) => ({
+            start: new Date(h.start_time).getTime(),
+            end: new Date(h.end_time).getTime(),
+          }));
 
           return slots
-            .filter(t => !heldTimes.has(new Date(t).toISOString()))
+            .filter((slotStart) => {
+              const slotStartIso = new Date(slotStart).toISOString();
+              const slotStartMs = new Date(slotStartIso).getTime();
+              const slotEndMs = slotStartMs + serviceDuration * 60000;
+
+              const overlapsBooking = existingBookings.some((booking) =>
+                slotStartMs < booking.end && slotEndMs > booking.start
+              );
+              if (overlapsBooking) return false;
+
+              return isWithinOpeningHours(slotStartIso, serviceDuration, openingHoursRaw);
+            })
             .map(t => `${formatSlotTime(t)} (${worker.name})`);
         } catch {
           return [];
@@ -151,8 +331,8 @@ export async function holdBooking(details: {
 
     const [salonRes, workersRes] = await Promise.all([
       details.salonServices
-        ? Promise.resolve({ data: { services: details.salonServices, name: details.salonName || 'Salon' } })
-        : supabase.from('business_profiles').select('name, services').eq('id', details.salonId).single(),
+        ? Promise.resolve({ data: { services: details.salonServices, name: details.salonName || 'Salon', opening_hours: null } })
+        : supabase.from('business_profiles').select('name, services, opening_hours').eq('id', details.salonId).single(),
       workerQuery
     ]);
 
@@ -179,9 +359,14 @@ export async function holdBooking(details: {
     const duration = service?.duration_minutes || 60;
     const startISO = getUtcStart(details.date, details.time);
     const endISO = new Date(new Date(startISO).getTime() + duration * 60000).toISOString();
+    const openingHoursRaw = salonRes.data?.opening_hours || null;
 
     if (workers.length === 0) {
       return { success: false, error: 'No workers available for this service.' };
+    }
+
+    if (!isWithinOpeningHours(startISO, duration, openingHoursRaw)) {
+      return { success: false, error: 'That time falls outside opening hours for this service duration.' };
     }
 
     // Find first worker with no conflict at this start time
@@ -192,7 +377,8 @@ export async function holdBooking(details: {
         .select('id')
         .eq('worker_id', worker.id)
         .in('status', ['held', 'confirmed'])
-        .eq('start_time', startISO)
+        .lt('start_time', endISO)
+        .gt('end_time', startISO)
         .limit(1);
 
       if (!conflict || conflict.length === 0) {
@@ -311,6 +497,16 @@ export async function rescheduleBooking(
     const booking = bookings[0];
     const newStartISO = getUtcStart(newDate, newTime);
     const newEndISO = new Date(new Date(newStartISO).getTime() + booking.duration_minutes * 60000).toISOString();
+
+    const { data: salon } = await supabase
+      .from('business_profiles')
+      .select('opening_hours')
+      .eq('id', salonId)
+      .single();
+
+    if (!isWithinOpeningHours(newStartISO, booking.duration_minutes, salon?.opening_hours || null)) {
+      return { success: false, error: 'That new time exceeds opening hours for this service duration.' };
+    }
 
     await calApiV2.patch(`/bookings/${booking.cal_booking_uid}/reschedule`, {
       start: newStartISO
