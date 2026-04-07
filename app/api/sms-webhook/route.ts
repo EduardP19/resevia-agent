@@ -64,7 +64,9 @@ export async function POST(req: NextRequest) {
       aiResponse = await callAI(systemPrompt, updatedHistory.map((h: any) => ({ role: h.role, content: h.content })));
     }
 
-    let reply = aiResponse.reply || "I'm sorry, I'm having trouble processing that.";
+    let reply =
+      aiResponse.reply ||
+      "I'm sorry, I ran into an issue processing your previous message. Could you please rephrase your last question?";
     const triggerHandoff = isHandoff(reply);
 
     if (salon.approval_mode) {

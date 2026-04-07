@@ -1,14 +1,5 @@
-import type { Metadata } from "next";
-import TestUiPageClient from "./TestUiPageClient";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Test UI | Resevia",
-  robots: {
-    index: false,
-    follow: false,
-  },
-};
-
-export default function TestUiPage() {
-  return <TestUiPageClient />;
+export default function LegacyTestUiPage() {
+  redirect("/sophia-sandbox");
 }
