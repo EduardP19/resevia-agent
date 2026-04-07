@@ -1,4 +1,4 @@
-import { getSessionTranscript, supabase } from '@/lib/supabase';
+import { getSessionTranscript, isTestUiSession, supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import ChatInterface from './ChatInterface';
 import HeaderActions from './HeaderActions';
@@ -12,9 +12,9 @@ export default async function SessionTranscriptPage({ params }: { params: { id: 
     .eq('id', params.id)
     .single();
 
-  const transcript = await getSessionTranscript(params.id);
+  if (!session || isTestUiSession(session)) return <div>Session not found.</div>;
 
-  if (!session) return <div>Session not found.</div>;
+  const transcript = await getSessionTranscript(params.id);
 
   const isReview = session.status === 'review' || transcript.some((m: any) => m.role === 'draft');
 

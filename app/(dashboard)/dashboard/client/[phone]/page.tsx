@@ -1,5 +1,5 @@
 import React from 'react';
-import { supabase } from '@/lib/supabase';
+import { isTestUiSession, supabase } from '@/lib/supabase';
 import Link from 'next/link';
 
 export const revalidate = 0;
@@ -13,7 +13,9 @@ export default async function ClientHistoryPage({ params }: { params: { phone: s
     .eq('client_identifier', decodedPhone)
     .order('created_at', { ascending: false });
 
-  if (!sessions || sessions.length === 0) {
+  const visibleSessions = (sessions || []).filter((session: any) => !isTestUiSession(session));
+
+  if (visibleSessions.length === 0) {
     return (
       <div className="max-w-4xl mx-auto p-20 text-center">
         <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4 text-gray-300">
@@ -26,12 +28,12 @@ export default async function ClientHistoryPage({ params }: { params: { phone: s
     );
   }
 
-  const liveSessions = sessions.filter((s: any) => {
+  const liveSessions = visibleSessions.filter((s: any) => {
     const threeMinsAgo = new Date(Date.now() - 3 * 60 * 1000);
     const isRecentlyActive = new Date(s.updated_at) > threeMinsAgo;
     return (s.status === 'active' || s.status === 'review') && isRecentlyActive;
   });
-  const archivedSessions = sessions.filter((s: any) => {
+  const archivedSessions = visibleSessions.filter((s: any) => {
     const threeMinsAgo = new Date(Date.now() - 3 * 60 * 1000);
     const isRecentlyActive = new Date(s.updated_at) > threeMinsAgo;
     return !(( s.status === 'active' || s.status === 'review') && isRecentlyActive);
@@ -136,7 +138,7 @@ export default async function ClientHistoryPage({ params }: { params: { phone: s
               </div>
             )}
             <div className="bg-gray-50 px-4 py-2 rounded-2xl border border-gray-100 text-xs font-bold text-gray-500 uppercase tracking-widest">
-              {sessions.length} total sessions
+              {visibleSessions.length} total sessions
             </div>
           </div>
         </div>

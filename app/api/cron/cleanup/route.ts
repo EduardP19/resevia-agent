@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase, saveMessage, getSessionTranscript } from '@/lib/supabase';
+import { supabase, saveMessage, getSessionTranscript, isTestUiSession } from '@/lib/supabase';
 import { sendSMS } from '@/lib/twilio';
 import { generateSummary } from '@/lib/ai';
 
@@ -39,10 +39,11 @@ export async function GET() {
       .lt('updated_at', threeMinsAgo)
       .gt('updated_at', twoDaysAgo);
 
-    const expireRoles = await getLastTranscriptRoles((toExpire || []).map(s => s.id));
+    const expirableSessions = (toExpire || []).filter(session => !isTestUiSession(session));
+    const expireRoles = await getLastTranscriptRoles(expirableSessions.map(s => s.id));
 
     let expiredCount = 0;
-    for (const session of (toExpire || [])) {
+    for (const session of expirableSessions) {
       // Only expire sessions where the latest message is from the agent.
       // If the client is still waiting for us (last message is user/draft/system), do not terminate.
       if (expireRoles[session.id] !== 'assistant') continue;
@@ -87,10 +88,11 @@ export async function GET() {
       .gt('updated_at', threeMinsAgo)
       .gt('updated_at', twoDaysAgo);
 
-    const warnRoles = await getLastTranscriptRoles((toWarn || []).map(s => s.id));
+    const warnableSessions = (toWarn || []).filter(session => !isTestUiSession(session));
+    const warnRoles = await getLastTranscriptRoles(warnableSessions.map(s => s.id));
 
     let warnedCount = 0;
-    for (const session of (toWarn || [])) {
+    for (const session of warnableSessions) {
       // Warn only when we are waiting for the client's reply.
       if (warnRoles[session.id] !== 'assistant') continue;
 

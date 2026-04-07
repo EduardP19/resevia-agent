@@ -9,6 +9,21 @@ export const TEST_UI_TRANSCRIPTS_TABLE = 'transcripts-test-ui';
 type TranscriptTableName = 'transcripts' | typeof TEST_UI_TRANSCRIPTS_TABLE;
 type TranscriptRole = 'user' | 'assistant' | 'system' | 'draft';
 
+export function isTestUiSession(session: { metadata?: any } | null | undefined) {
+  const metadata = session?.metadata;
+  return Boolean(metadata && typeof metadata === 'object' && metadata.source === 'test-ui');
+}
+
+function formatTranscriptTableError(error: any, table: TranscriptTableName) {
+  if (table === TEST_UI_TRANSCRIPTS_TABLE) {
+    return new Error(
+      `${error.message}. Ensure the test-ui transcript migration has been applied for "${TEST_UI_TRANSCRIPTS_TABLE}".`
+    );
+  }
+
+  return error;
+}
+
 // Load salon by ID
 export async function getSalonById(salonId: string) {
   const { data } = await supabase
@@ -120,7 +135,11 @@ export async function getTranscriptHistoryFromTable(
     .select('*')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true });
-  
+
+  if (error) {
+    throw formatTranscriptTableError(error, table);
+  }
+
   return data || [];
 }
 
@@ -135,11 +154,15 @@ export async function saveMessageToTable(
   content: string,
   table: TranscriptTableName = 'transcripts'
 ) {
-  await supabase.from(table).insert({
+  const { error } = await supabase.from(table).insert({
     session_id: sessionId,
     role,
     content
   });
+
+  if (error) {
+    throw formatTranscriptTableError(error, table);
+  }
 }
 
 export async function deleteMessagesByRoleFromTable(
@@ -147,7 +170,15 @@ export async function deleteMessagesByRoleFromTable(
   role: TranscriptRole,
   table: TranscriptTableName = 'transcripts'
 ) {
-  await supabase.from(table).delete().eq('session_id', sessionId).eq('role', role);
+  const { error } = await supabase
+    .from(table)
+    .delete()
+    .eq('session_id', sessionId)
+    .eq('role', role);
+
+  if (error) {
+    throw formatTranscriptTableError(error, table);
+  }
 }
 
 async function fallbackAllocateTestUiPhone() {
@@ -241,7 +272,7 @@ export async function getClientSessions(salonId: string, clientIdentifier: strin
     .eq('salon_id', salonId)
     .eq('client_identifier', clientIdentifier)
     .order('created_at', { ascending: false });
-  return data || [];
+  return (data || []).filter((session: any) => !isTestUiSession(session));
 }
 
 // Active workers for a salon (name + services, used for system prompt)
@@ -291,7 +322,7 @@ export async function getSalonSessions(salonId?: string, limit = 50) {
   }
 
   const { data } = await query;
-  return data || [];
+  return (data || []).filter((session: any) => !isTestUiSession(session));
 }
 
 /**
@@ -308,6 +339,7 @@ export async function getGroupedSessions(salonId?: string) {
       client_identifier, 
       status, 
       updated_at, 
+      metadata,
       salon_id,
       business_profiles(name)
     `)
@@ -320,10 +352,12 @@ export async function getGroupedSessions(salonId?: string) {
   const { data, error } = await query;
   if (error) throw error;
 
+  const visibleSessions = (data || []).filter((session: any) => !isTestUiSession(session));
+
   const grouped: Record<string, any> = {};
   const sessionIds: string[] = [];
 
-  for (const s of (data || [])) {
+  for (const s of visibleSessions) {
     if (!grouped[s.client_identifier]) {
       grouped[s.client_identifier] = {
         ...s,
@@ -384,14 +418,16 @@ export async function deleteFAQ(id: string) {
 export async function searchSessionsByPhone(phone: string) {
   const { data: sessions, error: sError } = await supabase
     .from('sessions')
-    .select('id, created_at, status, salon_id, business_profiles(name)')
+    .select('id, created_at, status, salon_id, metadata, business_profiles(name)')
     .eq('client_identifier', phone)
     .order('created_at', { ascending: false });
   
   if (sError) throw sError;
 
+  const visibleSessions = (sessions || []).filter((session: any) => !isTestUiSession(session));
+
   // For each session, get the first user message for context and determine outcome
-  const results = await Promise.all((sessions || []).map(async (s: any) => {
+  const results = await Promise.all(visibleSessions.map(async (s: any) => {
     const { data: transcript } = await supabase
       .from('transcripts')
       .select('content, role')

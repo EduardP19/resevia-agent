@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabase, isTestUiSession } from '@/lib/supabase';
 
 export async function GET() {
-  const { count, error } = await supabase
+  const { data, error } = await supabase
     .from('sessions')
-    .select('*', { count: 'exact', head: true })
+    .select('id, metadata')
     .in('status', ['handed_over', 'review']);
 
   if (error) return NextResponse.json({ count: 0 });
-  return NextResponse.json({ count: count || 0 });
+  return NextResponse.json({
+    count: (data || []).filter((session: any) => !isTestUiSession(session)).length,
+  });
 }
