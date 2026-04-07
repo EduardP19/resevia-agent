@@ -865,9 +865,9 @@ export default function TestUiPageClient() {
             <span className="h-2.5 w-2.5 rounded-full bg-[#e14a4a]" />
             Sophia Sandbox
           </div>
-          <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-            Type as Client Respond as Manager
-          </h1>
+            <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+            Type as Client. <br /> Respond as Manager.
+            </h1>
           <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-white/68 sm:text-lg">
             Use Customer Screen to type client messages, then use Salon Screen to approve or auto-send Sophia&apos;s reply.
           </p>
