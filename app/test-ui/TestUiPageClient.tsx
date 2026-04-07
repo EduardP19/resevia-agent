@@ -862,7 +862,7 @@ export default function TestUiPageClient() {
             </summary>
             <div className="mt-3 space-y-1.5">
               <p>1. Open Customer Screen and send a realistic client message.</p>
-              <p>2. In Manual Approval mode, open Salon Screen and review Sophia&apos;s draft.</p>
+              <p>2. If you're in Manual Approval mode, open Salon Screen and review Sophia&apos;s draft.</p>
               <p>3. Edit if needed, then press Approve &amp; Send to publish the response.</p>
               <p>4. Toggle to Agent Autonomous to test fully automatic replies end-to-end.</p>
             </div>
@@ -909,7 +909,7 @@ export default function TestUiPageClient() {
             className={cx(
               "rounded-full border px-4 py-2.5 text-sm font-semibold transition",
               mobileScreen === "salon"
-                ? "border-[#6f56dd] bg-[#6f56dd]/22 text-[#d9d2ff]"
+                ? "border-emerald-300 bg-emerald-400/18 text-emerald-100"
                 : "border-white/20 bg-white/5 text-white/80",
               salonNeedsAttention &&
                 "animate-pulse border-emerald-300 shadow-[0_0_0_1px_rgba(110,231,183,0.5),0_0_26px_rgba(52,211,153,0.2)]"
@@ -1028,6 +1028,24 @@ export default function TestUiPageClient() {
             ) : null}
 
             <form className="mt-5" onSubmit={sendMessage}>
+              <div className="mb-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setInput("Hi, who are you?")}
+                  disabled={loading || isApproving || customerComposerLocked}
+                  className="rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Hi, who are you?
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInput("I want to book a haircut tomorrow at 1 PM.")}
+                  disabled={loading || isApproving || customerComposerLocked}
+                  className="rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  I want to book a haircut tomorrow at 1 PM.
+                </button>
+              </div>
               <textarea
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
