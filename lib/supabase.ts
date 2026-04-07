@@ -4,20 +4,20 @@ const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!;
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
-export const TEST_UI_TRANSCRIPTS_TABLE = 'transcripts-test-ui';
+export const TEST_UI_TRANSCRIPTS_TABLE = 'transcripts-sophia-sandbox';
 
 type TranscriptTableName = 'transcripts' | typeof TEST_UI_TRANSCRIPTS_TABLE;
 type TranscriptRole = 'user' | 'assistant' | 'system' | 'draft';
 
 export function isTestUiSession(session: { metadata?: any } | null | undefined) {
   const metadata = session?.metadata;
-  return Boolean(metadata && typeof metadata === 'object' && metadata.source === 'test-ui');
+  return Boolean(metadata && typeof metadata === 'object' && metadata.source === 'sophia-sandbox');
 }
 
 function formatTranscriptTableError(error: any, table: TranscriptTableName) {
   if (table === TEST_UI_TRANSCRIPTS_TABLE) {
     return new Error(
-      `${error.message}. Ensure the test-ui transcript migration has been applied for "${TEST_UI_TRANSCRIPTS_TABLE}".`
+      `${error.message}. Ensure the sophia-sandbox transcript migration has been applied for "${TEST_UI_TRANSCRIPTS_TABLE}".`
     );
   }
 
@@ -185,7 +185,7 @@ async function fallbackAllocateTestUiPhone() {
   const { data } = await supabase
     .from('sessions')
     .select('client_identifier')
-    .contains('metadata', { source: 'test-ui' })
+    .contains('metadata', { source: 'sophia-sandbox' })
     .like('client_identifier', '07%')
     .order('client_identifier', { ascending: false })
     .limit(1)
@@ -213,7 +213,7 @@ export async function createTestUiConversation(salonId: string, sessionId?: stri
       .select('*')
       .eq('id', sessionId)
       .neq('status', 'completed')
-      .contains('metadata', { source: 'test-ui' })
+      .contains('metadata', { source: 'sophia-sandbox' })
       .maybeSingle();
 
     if (existingSession) {
@@ -230,7 +230,7 @@ export async function createTestUiConversation(salonId: string, sessionId?: stri
       client_identifier: clientPhone,
       status: 'active',
       metadata: {
-        source: 'test-ui',
+        source: 'sophia-sandbox',
         allocated_phone: clientPhone,
       },
     })

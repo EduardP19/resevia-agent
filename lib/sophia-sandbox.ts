@@ -34,7 +34,7 @@ export async function createTestUiResponse(options: {
       ? (conversation.metadata as Record<string, any>)
       : {};
 
-  // Keep a single active draft per test-ui session.
+  // Keep a single active draft per sophia-sandbox session.
   await deleteMessagesByRoleFromTable(conversation.id, 'draft', TEST_UI_TRANSCRIPTS_TABLE);
   await saveMessageToTable(conversation.id, 'user', message, TEST_UI_TRANSCRIPTS_TABLE);
 
@@ -109,7 +109,7 @@ export async function createTestUiResponse(options: {
     "I'm sorry, I ran into an issue processing your previous message. Could you please rephrase your last question?";
   const nextMetadata = {
     ...conversationMetadata,
-    source: 'test-ui',
+    source: 'sophia-sandbox',
     allocated_phone: conversationMetadata.allocated_phone || conversation.client_identifier,
     tokens: aiResponse.tokens,
     booking_state: updatedBookingState,
@@ -159,7 +159,7 @@ export async function approveTestUiDraft(sessionId: string, content: string) {
     .from('sessions')
     .select('id, metadata')
     .eq('id', sessionId)
-    .contains('metadata', { source: 'test-ui' })
+    .contains('metadata', { source: 'sophia-sandbox' })
     .maybeSingle();
 
   if (error) {

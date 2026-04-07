@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
     .from('sessions')
     .select('status')
     .eq('id', sessionId)
-    .contains('metadata', { source: 'test-ui' })
+    .contains('metadata', { source: 'sophia-sandbox' })
     .maybeSingle();
 
   const { data: draftMessages } = await supabase

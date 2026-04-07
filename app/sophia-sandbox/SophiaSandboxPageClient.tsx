@@ -169,7 +169,7 @@ export default function TestUiPageClient() {
 
   const closeSessionOnServer = useCallback(async (nextSessionId: string) => {
     try {
-      const response = await fetch("/api/test-ui/expire", {
+      const response = await fetch("/api/sophia-sandbox/expire", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId: nextSessionId }),
@@ -342,7 +342,7 @@ export default function TestUiPageClient() {
           query.set("since", lastSyncedAt.current);
         }
 
-        const response = await fetch(`/api/test-ui/poll?${query.toString()}`, {
+        const response = await fetch(`/api/sophia-sandbox/poll?${query.toString()}`, {
           cache: "no-store",
         });
         const data = (await response.json()) as PollResponse;
@@ -514,7 +514,7 @@ export default function TestUiPageClient() {
 
     void (async () => {
       try {
-        const response = await fetch("/api/test-ui/approve", {
+        const response = await fetch("/api/sophia-sandbox/approve", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -637,7 +637,7 @@ export default function TestUiPageClient() {
       noteSessionActivity();
 
       try {
-        const response = await fetch("/api/test-ui/message", {
+        const response = await fetch("/api/sophia-sandbox/message", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -775,7 +775,7 @@ export default function TestUiPageClient() {
     noteSessionActivity();
 
     try {
-      const response = await fetch("/api/test-ui/approve", {
+      const response = await fetch("/api/sophia-sandbox/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

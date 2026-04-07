@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import TestUiPageClient from "../test-ui/TestUiPageClient";
+import SophiaSandboxPageClient from "./SophiaSandboxPageClient";
 
 export const metadata: Metadata = {
   title: "Sophia Sandbox | Resevia",
@@ -10,5 +10,5 @@ export const metadata: Metadata = {
 };
 
 export default function SophiaSandboxPage() {
-  return <TestUiPageClient />;
+  return <SophiaSandboxPageClient />;
 }

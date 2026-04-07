@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createTestUiResponse } from '@/lib/test-ui';
+import { createTestUiResponse } from '@/lib/sophia-sandbox';
 
 export async function POST(req: NextRequest) {
   try {
