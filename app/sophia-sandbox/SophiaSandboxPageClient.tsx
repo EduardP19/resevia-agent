@@ -1,7 +1,6 @@
 "use client";
 
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import Logo from "../(dashboard)/Logo";
 
 type TestMessage = {
@@ -102,7 +101,6 @@ function IconAlert() {
 }
 
 export default function TestUiPageClient() {
-  const searchParams = useSearchParams();
   const customerScrollRef = useRef<HTMLDivElement>(null);
   const reviewScrollRef = useRef<HTMLDivElement>(null);
   const customerTranscriptRef = useRef<HTMLDivElement>(null);
@@ -310,7 +308,7 @@ export default function TestUiPageClient() {
   }, []);
 
   useEffect(() => {
-    const fromUrl = searchParams.get("p")?.trim();
+    const fromUrl = new URLSearchParams(window.location.search).get("p")?.trim();
 
     if (fromUrl) {
       localStorage.setItem(TEST_UI_PARAM_KEY, fromUrl);
@@ -325,7 +323,7 @@ export default function TestUiPageClient() {
     }
 
     setPParam(null);
-  }, [searchParams]);
+  }, []);
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
