@@ -8,6 +8,10 @@ export async function POST(req: NextRequest) {
       typeof payload?.message === 'string' ? payload.message.trim() : '';
     const sessionId =
       typeof payload?.id === 'string' && payload.id.length > 0 ? payload.id : undefined;
+    const p =
+      typeof payload?.p === 'string' && payload.p.trim().length > 0
+        ? payload.p.trim()
+        : undefined;
     const manualApproval = payload?.manualApproval !== false;
 
     if (!message) {
@@ -18,6 +22,7 @@ export async function POST(req: NextRequest) {
       message,
       sessionId,
       manualApproval,
+      p,
     });
 
     return NextResponse.json(result);

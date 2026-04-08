@@ -152,13 +152,20 @@ export async function saveMessageToTable(
   sessionId: string,
   role: TranscriptRole,
   content: string,
-  table: TranscriptTableName = 'transcripts'
+  table: TranscriptTableName = 'transcripts',
+  p?: string
 ) {
-  const { error } = await supabase.from(table).insert({
+  const payload: Record<string, any> = {
     session_id: sessionId,
     role,
     content
-  });
+  };
+
+  if (table === TEST_UI_TRANSCRIPTS_TABLE) {
+    payload.p = p?.trim() || null;
+  }
+
+  const { error } = await supabase.from(table).insert(payload);
 
   if (error) {
     throw formatTranscriptTableError(error, table);

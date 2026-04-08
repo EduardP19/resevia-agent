@@ -20,8 +20,9 @@ export async function createTestUiResponse(options: {
   message: string;
   sessionId?: string;
   manualApproval: boolean;
+  p?: string;
 }) {
-  const { message, sessionId, manualApproval } = options;
+  const { message, sessionId, manualApproval, p } = options;
   const salon = await getDefaultSalon();
 
   if (!salon) {
@@ -36,7 +37,7 @@ export async function createTestUiResponse(options: {
 
   // Keep a single active draft per sophia-sandbox session.
   await deleteMessagesByRoleFromTable(conversation.id, 'draft', TEST_UI_TRANSCRIPTS_TABLE);
-  await saveMessageToTable(conversation.id, 'user', message, TEST_UI_TRANSCRIPTS_TABLE);
+  await saveMessageToTable(conversation.id, 'user', message, TEST_UI_TRANSCRIPTS_TABLE, p);
 
   const [workers, faqs, activeHold, history] = await Promise.all([
     getWorkers(salon.id),
@@ -87,7 +88,8 @@ export async function createTestUiResponse(options: {
       conversation.id,
       'system',
       `Tool (${name}): ${result.toolResult}`,
-      TEST_UI_TRANSCRIPTS_TABLE
+      TEST_UI_TRANSCRIPTS_TABLE,
+      p
     );
 
     const updatedHistory = await getTranscriptHistoryFromTable(
@@ -116,7 +118,7 @@ export async function createTestUiResponse(options: {
   };
 
   if (manualApproval) {
-    await saveMessageToTable(conversation.id, 'draft', reply, TEST_UI_TRANSCRIPTS_TABLE);
+    await saveMessageToTable(conversation.id, 'draft', reply, TEST_UI_TRANSCRIPTS_TABLE, p);
     await supabase
       .from('sessions')
       .update({
@@ -135,7 +137,7 @@ export async function createTestUiResponse(options: {
     };
   }
 
-  await saveMessageToTable(conversation.id, 'assistant', reply, TEST_UI_TRANSCRIPTS_TABLE);
+  await saveMessageToTable(conversation.id, 'assistant', reply, TEST_UI_TRANSCRIPTS_TABLE, p);
   await supabase
     .from('sessions')
     .update({
@@ -154,7 +156,7 @@ export async function createTestUiResponse(options: {
   };
 }
 
-export async function approveTestUiDraft(sessionId: string, content: string) {
+export async function approveTestUiDraft(sessionId: string, content: string, p?: string) {
   const { data: session, error } = await supabase
     .from('sessions')
     .select('id, metadata')
@@ -170,7 +172,7 @@ export async function approveTestUiDraft(sessionId: string, content: string) {
     throw new Error('Test UI session not found');
   }
 
-  await saveMessageToTable(sessionId, 'assistant', content, TEST_UI_TRANSCRIPTS_TABLE);
+  await saveMessageToTable(sessionId, 'assistant', content, TEST_UI_TRANSCRIPTS_TABLE, p);
   await deleteMessagesByRoleFromTable(sessionId, 'draft', TEST_UI_TRANSCRIPTS_TABLE);
 
   await supabase

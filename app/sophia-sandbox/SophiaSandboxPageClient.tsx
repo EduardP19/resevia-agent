@@ -1,6 +1,7 @@
 "use client";
 
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Logo from "../(dashboard)/Logo";
 
 type TestMessage = {
@@ -50,6 +51,7 @@ type PollResponse = {
 };
 
 const TEST_UI_SESSION_KEY = "resevia_sophia_sandbox_session";
+const TEST_UI_PARAM_KEY = "resevia_sophia_sandbox_p";
 const SESSION_WARNING_MS = 2 * 60 * 1000;
 const SESSION_EXPIRY_MS = 3 * 60 * 1000;
 const SESSION_WARNING_SECONDS = Math.ceil((SESSION_EXPIRY_MS - SESSION_WARNING_MS) / 1000);
@@ -100,6 +102,7 @@ function IconAlert() {
 }
 
 export default function TestUiPageClient() {
+  const searchParams = useSearchParams();
   const customerScrollRef = useRef<HTMLDivElement>(null);
   const reviewScrollRef = useRef<HTMLDivElement>(null);
   const customerTranscriptRef = useRef<HTMLDivElement>(null);
@@ -135,6 +138,7 @@ export default function TestUiPageClient() {
   const [secondsUntilExpiry, setSecondsUntilExpiry] = useState(SESSION_WARNING_SECONDS);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [mobileScreen, setMobileScreen] = useState<"customer" | "salon" | null>(null);
+  const [pParam, setPParam] = useState<string | null>(null);
 
   const hasWaiting = messages.some((message) => message.role === "waiting");
   const customerComposerLocked = sessionExpired || (manualApproval && Boolean(reviewDraft));
@@ -304,6 +308,24 @@ export default function TestUiPageClient() {
     }
 
   }, []);
+
+  useEffect(() => {
+    const fromUrl = searchParams.get("p")?.trim();
+
+    if (fromUrl) {
+      localStorage.setItem(TEST_UI_PARAM_KEY, fromUrl);
+      setPParam(fromUrl);
+      return;
+    }
+
+    const savedParam = localStorage.getItem(TEST_UI_PARAM_KEY)?.trim();
+    if (savedParam) {
+      setPParam(savedParam);
+      return;
+    }
+
+    setPParam(null);
+  }, [searchParams]);
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -520,6 +542,7 @@ export default function TestUiPageClient() {
           body: JSON.stringify({
             sessionId,
             content: approvedContent,
+            p: pParam || undefined,
           }),
         });
         const payload = (await response.json()) as { error?: string };
@@ -588,6 +611,7 @@ export default function TestUiPageClient() {
   }, [
     manualApproval,
     noteSessionActivity,
+    pParam,
     reviewComposer,
     reviewDraft,
     sessionId,
@@ -644,6 +668,7 @@ export default function TestUiPageClient() {
             message: text,
             id: sessionId,
             manualApproval,
+            p: pParam || undefined,
           }),
         });
         const data = (await response.json()) as SendResponse;
@@ -758,7 +783,7 @@ export default function TestUiPageClient() {
         setLoading(false);
       }
     },
-    [customerComposerLocked, input, loading, manualApproval, noteSessionActivity, sessionExpired, sessionId, syncTranscript]
+    [customerComposerLocked, input, loading, manualApproval, noteSessionActivity, pParam, sessionExpired, sessionId, syncTranscript]
   );
 
   const handleApprove = useCallback(async () => {
@@ -781,6 +806,7 @@ export default function TestUiPageClient() {
         body: JSON.stringify({
           sessionId,
           content: approvedContent,
+          p: pParam || undefined,
         }),
       });
       const payload = (await response.json()) as { error?: string };
@@ -843,7 +869,7 @@ export default function TestUiPageClient() {
     } finally {
       setIsApproving(false);
     }
-  }, [isApproving, noteSessionActivity, reviewComposer, reviewDraft, sessionExpired, sessionId, syncTranscript]);
+  }, [isApproving, noteSessionActivity, pParam, reviewComposer, reviewDraft, sessionExpired, sessionId, syncTranscript]);
 
   const reviewStatusTone = sessionExpired
     ? "bg-rose-400"
