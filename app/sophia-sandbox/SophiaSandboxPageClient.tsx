@@ -856,9 +856,9 @@ export default function TestUiPageClient() {
           : "bg-sky-400";
 
   return (
-    <section className="relative min-h-[100dvh] overflow-hidden bg-[#0b0911] px-4 pb-16 pt-20 text-white sm:px-6 sm:pt-24">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(201,169,110,0.16),transparent_28%)]" />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(109,40,217,0.18),transparent_34%)]" />
+    <section className="relative min-h-[100dvh] overflow-hidden bg-[#1a1628] px-4 pb-16 pt-20 text-white sm:px-6 sm:pt-24">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(201,169,110,0.26),transparent_38%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(109,40,217,0.3),transparent_42%)]" />
       <div className="relative mx-auto max-w-7xl">
         <div className="mx-auto max-w-3xl text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-[#b94747]/35 bg-[#b94747]/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-[#f4d6d6]">
@@ -869,11 +869,11 @@ export default function TestUiPageClient() {
             Type as Client. <br /> Respond as Manager.
             </h1>
           <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-white/68 sm:text-lg">
-            Use Customer Screen to type client messages, then use Salon Screen to approve or auto-send Sophia&apos;s reply.
+            1. Customer Screen to type client messages <br /> 2. Salon Screen to approve or auto-send Sophia&apos;s reply.
           </p>
           <details className="mx-auto mt-4 max-w-2xl rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm text-white/78">
             <summary className="cursor-pointer font-semibold text-white/90">
-              How to test step by step
+              How to test step by step - read more...
             </summary>
             <div className="mt-3 space-y-1.5">
               <p>1. Open Customer Screen and send a realistic client message.</p>
@@ -935,12 +935,12 @@ export default function TestUiPageClient() {
               setMobileScreen((current) => (current === "customer" ? null : "customer"))
             }
             className={cx(
-              "rounded-full border px-4 py-2.5 text-sm font-semibold transition",
+              "rounded-full border px-4 py-2.5 text-sm font-semibold transition duration-200",
               mobileScreen === "customer"
-                ? "border-[#c9a96e]/75 bg-[#c9a96e]/15 text-[#f5e2c2] shadow-[0_0_0_1px_rgba(201,169,110,0.2)]"
+                ? "border-[#e0bf84] bg-[#c9a96e]/20 text-[#f8e8c8] shadow-[0_0_0_1px_rgba(201,169,110,0.42),0_0_26px_rgba(201,169,110,0.42)]"
                 : "border-white/20 bg-white/5 text-white/80",
               customerNeedsAttention &&
-                "animate-pulse border-amber-300 shadow-[0_0_0_1px_rgba(252,211,77,0.45),0_0_26px_rgba(252,211,77,0.22)]"
+                "animate-pulse border-[#e0bf84] shadow-[0_0_0_1px_rgba(201,169,110,0.5),0_0_28px_rgba(201,169,110,0.38)]"
             )}
           >
             Customer Screen
@@ -951,12 +951,12 @@ export default function TestUiPageClient() {
               setMobileScreen((current) => (current === "salon" ? null : "salon"))
             }
             className={cx(
-              "rounded-full border px-4 py-2.5 text-sm font-semibold transition",
+              "rounded-full border px-4 py-2.5 text-sm font-semibold transition duration-200",
               mobileScreen === "salon"
-                ? "border-emerald-300 bg-emerald-400/18 text-emerald-100"
+                ? "border-[#9b86ff] bg-[#8e73ff]/22 text-[#eee9ff] shadow-[0_0_0_1px_rgba(142,115,255,0.45),0_0_26px_rgba(142,115,255,0.38)]"
                 : "border-white/20 bg-white/5 text-white/80",
               salonNeedsAttention &&
-                "animate-pulse border-emerald-300 shadow-[0_0_0_1px_rgba(110,231,183,0.5),0_0_26px_rgba(52,211,153,0.2)]"
+                "animate-pulse border-[#9b86ff] shadow-[0_0_0_1px_rgba(142,115,255,0.52),0_0_28px_rgba(142,115,255,0.45)]"
             )}
           >
             Salon Screen
@@ -965,17 +965,21 @@ export default function TestUiPageClient() {
 
         <div
           className={cx(
-            "relative mt-4 rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(25,21,38,0.98),rgba(18,15,28,1))] p-6 text-white shadow-[0_24px_90px_rgba(0,0,0,0.26)] lg:mt-10 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none",
-            mobileScreen === "customer" && "border-[#c9a96e]/45"
+            "relative mt-4 rounded-[2rem] border border-white/10 bg-transparent p-6 text-white shadow-[0_24px_90px_rgba(0,0,0,0.26)] lg:mt-10 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none",
+            mobileScreen === "customer" && "border-[#c9a96e]/52",
+            mobileScreen === "salon" && "border-[#8e73ff]/48"
           )}
         >
           {mobileScreen === "customer" ? (
             <div className="pointer-events-none absolute inset-0 rounded-[2rem] bg-[#c9a96e]/14 shadow-[inset_0_0_0_1px_rgba(201,169,110,0.22)] lg:hidden" />
           ) : null}
+          {mobileScreen === "salon" ? (
+            <div className="pointer-events-none absolute inset-0 rounded-[2rem] bg-[#8e73ff]/10 shadow-[inset_0_0_0_1px_rgba(142,115,255,0.24)] lg:hidden" />
+          ) : null}
         <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
           <div
             className={cx(
-              "relative p-0 text-white transition duration-200 lg:rounded-[2rem] lg:border lg:border-white/10 lg:bg-[linear-gradient(180deg,rgba(25,21,38,0.98),rgba(18,15,28,1))] lg:p-6 lg:shadow-[0_24px_90px_rgba(0,0,0,0.26)]",
+              "relative p-0 text-white transition duration-200 lg:rounded-[2rem] lg:border lg:border-[#c9a96e]/55 lg:bg-[#f0c75f]/5 lg:p-6 lg:shadow-[0_24px_90px_rgba(0,0,0,0.26),0_0_0_1px_rgba(201,169,110,0.22)]",
               customerScreenDisabled && "grayscale opacity-45",
               mobileScreen === "customer" ? "block" : "hidden",
               "lg:block"
@@ -1023,7 +1027,7 @@ export default function TestUiPageClient() {
                         key={message.id || `${message.role}-${index}`}
                         className={cx(
                           "flex",
-                          isAssistant || isWaiting ? "justify-end" : "justify-start"
+                          isAssistant || isWaiting ? "justify-start" : "justify-end"
                         )}
                       >
                         {isWaiting ? (
@@ -1049,8 +1053,8 @@ export default function TestUiPageClient() {
                             className={cx(
                               "max-w-[88%] rounded-[1.15rem] border px-3 py-3 text-sm leading-6",
                               isAssistant
-                                ? "rounded-br-md border border-[#8e73ff]/35 bg-[#7a63d8] text-white"
-                                : "rounded-bl-md border border-white/10 bg-white/12 text-white"
+                                ? "rounded-bl-md border border-[#8e73ff]/35 bg-[#7a63d8] text-white"
+                                : "rounded-br-md border border-white/10 bg-white/12 text-white"
                             )}
                           >
                             <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/35">
@@ -1141,7 +1145,7 @@ export default function TestUiPageClient() {
 
           <div
             className={cx(
-              "relative p-0 text-white transition duration-200 lg:rounded-[2rem] lg:border lg:border-white/10 lg:bg-[linear-gradient(180deg,rgba(25,21,38,0.98),rgba(18,15,28,1))] lg:p-6 lg:shadow-[0_24px_90px_rgba(0,0,0,0.26)]",
+              "relative p-0 text-white transition duration-200 lg:rounded-[2rem] lg:border lg:border-[#8e73ff]/52 lg:bg-[#8e73ff]/5 lg:p-6 lg:shadow-[0_24px_90px_rgba(0,0,0,0.26),0_0_0_1px_rgba(142,115,255,0.2)]",
               mobileScreen === "salon" ? "block" : "hidden",
               "lg:block"
             )}
@@ -1190,7 +1194,7 @@ export default function TestUiPageClient() {
                     return (
                       <div
                         key={message.id}
-                        className={cx("flex", isUser ? "justify-end" : "justify-start")}
+                        className={cx("flex", isUser ? "justify-start" : "justify-end")}
                       >
                         <div
                           className={cx(
@@ -1257,7 +1261,7 @@ export default function TestUiPageClient() {
                   type="button"
                   onClick={() => void handleApprove()}
                   disabled={sessionExpired || !draftReady || isApproving}
-                  className="inline-flex w-[70%] items-center justify-center gap-2 rounded-[1.1rem] bg-[#1e9e63] px-5 py-3.5 text-sm font-semibold text-white shadow-[0_18px_35px_rgba(30,158,99,0.28)] transition hover:bg-[#188754] disabled:cursor-not-allowed disabled:opacity-50 lg:w-1/2"
+                  className="inline-flex h-12 w-[70%] items-center justify-center gap-2 rounded-[1.1rem] bg-[#1e9e63] px-5 text-sm font-semibold text-white shadow-[0_18px_35px_rgba(30,158,99,0.28)] transition hover:bg-[#188754] disabled:cursor-not-allowed disabled:opacity-50 lg:w-1/2"
                 >
                   {isApproving ? (
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#1d1711]/20 border-t-[#1d1711]" />
@@ -1273,7 +1277,7 @@ export default function TestUiPageClient() {
                     reviewComposerRef.current?.focus();
                   }}
                   disabled={sessionExpired || isApproving || !reviewDraft}
-                  className="inline-flex w-[30%] items-center justify-center rounded-[1.1rem] bg-[#c83b3b] px-3 py-3.5 text-sm font-semibold text-white transition hover:bg-[#b02f2f] disabled:cursor-not-allowed disabled:opacity-50 lg:w-1/2"
+                  className="inline-flex h-12 w-[30%] items-center justify-center rounded-[1.1rem] bg-[#c83b3b] px-3 text-sm font-semibold text-white transition hover:bg-[#b02f2f] disabled:cursor-not-allowed disabled:opacity-50 lg:w-1/2"
                 >
                   Modify
                 </button>
