@@ -1,0 +1,83 @@
+.root {
+  /* Dark baseline (matches existing Sophia Sandbox look) */
+  --sb-bg: 26 22 40; /* #1a1628 */
+  --sb-panel: 15 19 32; /* #0f1320 */
+  --sb-surface: 255 255 255;
+  --sb-line: 255 255 255;
+  --sb-fg: 255 255 255;
+  --sb-muted: 255 255 255;
+  --sb-subtle: 255 255 255;
+
+  --sb-gold: 201 169 110; /* #c9a96e */
+  --sb-gold-30: 252 226 169; /* #fce2a9 */
+  --sb-purple: 142 115 255; /* #8e73ff */
+  --sb-purple-strong: 122 99 216; /* #7a63d8 */
+  --sb-purple-30: 209 165 250; /* #d1a5fa */
+
+  --sb-success: 30 158 99; /* #1e9e63 */
+  --sb-success-strong: 24 135 84; /* #188754 */
+  --sb-danger: 200 59 59; /* #c83b3b */
+  --sb-danger-strong: 176 47 47; /* #b02f2f */
+  --sb-warn: 201 169 110; /* reuse gold */
+
+  --sb-ink: 255 255 255; /* used for "on accent" */
+  --sb-ink-dark: 28 42 68; /* #1C2A44 reference */
+}
+
+.root[data-theme="light"] {
+  /* Polished SaaS light theme */
+  --sb-bg: 245 247 252;
+  --sb-panel: 248 250 255;
+  --sb-surface: 255 255 255;
+  --sb-line: 210 218 232;
+  --sb-fg: 28 42 68; /* #1C2A44 */
+  --sb-muted: 78 96 128;
+  --sb-subtle: 120 135 160;
+
+  /* Keep brand character, but avoid neon */
+  --sb-gold: 201 169 110;
+  --sb-purple: 111 91 242;
+  --sb-purple-strong: 91 76 214;
+
+  --sb-success: 43 164 109;
+  --sb-success-strong: 24 135 84;
+  --sb-danger: 199 65 75;
+  --sb-danger-strong: 176 47 47;
+
+  --sb-ink: 255 255 255;
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--sb-line));
+  background: rgb(var(--sb-surface));
+  color: rgb(var(--sb-muted));
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.12);
+}
+
+.switch:focus-visible {
+  outline: 2px solid rgb(var(--sb-purple));
+  outline-offset: 2px;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgb(var(--sb-purple));
+}
+
+.dotLight {
+  background: rgb(var(--sb-gold));
+}
+
+.label {
+  user-select: none;
+}

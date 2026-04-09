@@ -2,6 +2,7 @@
 
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import Logo from "../(dashboard)/Logo";
+import styles from "./theme.module.css";
 
 type TestMessage = {
   role: "user" | "assistant" | "waiting";
@@ -101,6 +102,8 @@ function IconAlert() {
 }
 
 export default function TestUiPageClient() {
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [themeMounted, setThemeMounted] = useState(false);
   const customerScrollRef = useRef<HTMLDivElement>(null);
   const reviewScrollRef = useRef<HTMLDivElement>(null);
   const customerTranscriptRef = useRef<HTMLDivElement>(null);
@@ -305,6 +308,22 @@ export default function TestUiPageClient() {
       setSessionId(savedSessionId);
     }
 
+  }, []);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("resevia_sophia_sandbox_theme");
+    if (saved === "light" || saved === "dark") {
+      setTheme(saved);
+    }
+    setThemeMounted(true);
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setTheme((current) => {
+      const next = current === "dark" ? "light" : "dark";
+      localStorage.setItem("resevia_sophia_sandbox_theme", next);
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -870,33 +889,52 @@ export default function TestUiPageClient() {
   }, [isApproving, noteSessionActivity, pParam, reviewComposer, reviewDraft, sessionExpired, sessionId, syncTranscript]);
 
   const reviewStatusTone = sessionExpired
-    ? "bg-rose-400"
+    ? "bg-[rgb(var(--sb-danger))]"
     : loading && manualApproval
-      ? "bg-[#c9a96e]"
+      ? "bg-[rgb(var(--sb-gold))]"
       : draftReady
-        ? "bg-emerald-400"
+        ? "bg-[rgb(var(--sb-success))]"
         : manualApproval
-          ? "bg-white/30"
-          : "bg-sky-400";
+          ? "bg-[rgb(var(--sb-surface))]/30"
+          : "bg-[rgb(var(--sb-purple))]";
 
   return (
-    <section className="relative min-h-[100dvh] overflow-hidden bg-[#1a1628] px-4 pb-16 pt-20 text-white sm:px-6 sm:pt-24">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(201,169,110,0.26),transparent_38%)]" />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(109,40,217,0.3),transparent_42%)]" />
+    <section
+      data-theme={theme}
+      className={cx(
+        styles.root,
+        "relative min-h-[100dvh] overflow-hidden bg-[rgb(var(--sb-bg))] px-4 pb-16 pt-20 text-[rgb(var(--sb-fg))] sm:px-6 sm:pt-24"
+      )}
+    >
+      <div className="absolute right-4 top-4 z-30 sm:right-6 sm:top-6">
+        <button
+          type="button"
+          onClick={toggleTheme}
+          aria-label="Toggle theme"
+          className={styles.switch}
+        >
+          <span className={cx(styles.dot, theme === "light" && styles.dotLight)} />
+          <span className={styles.label}>
+            {themeMounted ? (theme === "dark" ? "Dark" : "Light") : "Theme"}
+          </span>
+        </button>
+      </div>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(var(--sb-gold),0.18),transparent_40%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(var(--sb-purple),0.16),transparent_46%)]" />
       <div className="relative mx-auto max-w-7xl">
         <div className="mx-auto max-w-3xl text-center">
-          <div className="inline-flex items-center gap-2 rounded-full border border-[#b94747]/35 bg-[#b94747]/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-[#f4d6d6]">
-            <span className="h-2.5 w-2.5 rounded-full bg-[#e14a4a]" />
+          <div className="inline-flex items-center gap-2 rounded-full border border-[rgb(var(--sb-danger))]/35 bg-[rgb(var(--sb-danger))]/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-[rgb(var(--sb-fg))]">
+            <span className="h-2.5 w-2.5 rounded-full bg-[rgb(var(--sb-danger))]" />
             Sophia Sandbox
           </div>
-            <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+          <h1 className="mt-6 text-4xl font-semibold tracking-tight text-[rgb(var(--sb-fg))] sm:text-5xl">
             Type as Client. <br /> Respond as Manager.
-            </h1>
-          <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-white/68 sm:text-lg">
+          </h1>
+          <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-[rgb(var(--sb-muted))] sm:text-lg">
             1. Customer Screen to type client messages <br /> 2. Salon Screen to approve or auto-send Sophia&apos;s reply.
           </p>
-          <details className="mx-auto mt-4 max-w-2xl rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm text-white/78">
-            <summary className="cursor-pointer font-semibold text-white/90">
+          <details className="mx-auto mt-4 max-w-2xl rounded-2xl border border-[rgb(var(--sb-line))]/35 bg-[rgb(var(--sb-surface))]/5 px-4 py-3 text-left text-sm text-[rgb(var(--sb-muted))]">
+            <summary className="cursor-pointer font-semibold text-[rgb(var(--sb-fg))]">
               How to test step by step - read more...
             </summary>
             <div className="mt-3 space-y-1.5">
@@ -913,8 +951,8 @@ export default function TestUiPageClient() {
             className={cx(
               "mx-auto mt-8 max-w-3xl rounded-[1.4rem] border px-5 py-4 text-sm",
               sessionExpired
-                ? "border-rose-400/25 bg-rose-400/12 text-rose-100"
-                : "border-amber-300/25 bg-amber-300/12 text-amber-50"
+                ? "border-[rgb(var(--sb-danger))]/35 bg-[rgb(var(--sb-danger))]/12 text-[rgb(var(--sb-fg))]"
+                : "border-[rgb(var(--sb-gold))]/35 bg-[rgb(var(--sb-gold))]/12 text-[rgb(var(--sb-fg))]"
             )}
           >
             {sessionExpired
@@ -925,7 +963,7 @@ export default function TestUiPageClient() {
 
         <div className="mt-6 flex justify-center">
           <div className="flex flex-col items-center">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-white/75">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[rgb(var(--sb-muted))]">
               {toggleModeText}
             </p>
             <button
@@ -937,15 +975,17 @@ export default function TestUiPageClient() {
               className={cx(
                 "mt-2 inline-flex h-7 w-[64px] items-center rounded-full border px-1 transition",
                 manualApproval
-                  ? "border-emerald-400/40 bg-emerald-500/20"
-                  : "border-rose-400/40 bg-rose-500/20",
+                  ? "border-[rgb(var(--sb-success))]/45 bg-[rgb(var(--sb-success))]/20"
+                  : "border-[rgb(var(--sb-danger))]/45 bg-[rgb(var(--sb-danger))]/20",
                 toggleDisabled && "cursor-not-allowed opacity-50"
               )}
             >
               <span
                 className={cx(
                   "h-5 w-5 rounded-full transition",
-                  manualApproval ? "translate-x-0 bg-emerald-500" : "translate-x-[36px] bg-rose-500"
+                  manualApproval
+                    ? "translate-x-0 bg-[rgb(var(--sb-success))]"
+                    : "translate-x-[36px] bg-[rgb(var(--sb-danger))]"
                 )}
               />
             </button>
@@ -961,10 +1001,17 @@ export default function TestUiPageClient() {
             className={cx(
               "rounded-full border px-4 py-2.5 text-sm font-semibold transition duration-200",
               mobileScreen === "customer"
-                ? "border-[#e0bf84] bg-[#c9a96e]/20 text-[#f8e8c8] shadow-[0_0_0_1px_rgba(201,169,110,0.42),0_0_26px_rgba(201,169,110,0.42)]"
-                : "border-white/20 bg-white/5 text-white/80",
+                ? cx(
+                    "border-[rgb(var(--sb-gold))] text-[rgb(var(--sb-fg))]",
+                    theme === "light"
+                      ? "bg-[rgb(var(--sb-gold-30))] shadow-[0_10px_30px_rgba(28,42,68,0.14)]"
+                      : "bg-[rgb(var(--sb-gold))]/20 shadow-[0_0_0_1px_rgba(var(--sb-gold),0.42),0_0_26px_rgba(var(--sb-gold),0.42)]"
+                  )
+                : theme === "light"
+                  ? "border-[rgb(var(--sb-line))]/70 bg-[rgb(var(--sb-surface))] text-[rgb(var(--sb-muted))] shadow-[0_10px_26px_rgba(28,42,68,0.08)]"
+                  : "border-[rgb(var(--sb-line))]/20 bg-[rgb(var(--sb-surface))]/5 text-[rgb(var(--sb-muted))]",
               customerNeedsAttention &&
-                "animate-pulse border-[#e0bf84] shadow-[0_0_0_1px_rgba(201,169,110,0.5),0_0_28px_rgba(201,169,110,0.38)]"
+                "animate-pulse border-[rgb(var(--sb-gold))] shadow-[0_0_0_1px_rgba(var(--sb-gold),0.5),0_0_28px_rgba(var(--sb-gold),0.38)]"
             )}
           >
             Customer Screen
@@ -977,10 +1024,17 @@ export default function TestUiPageClient() {
             className={cx(
               "rounded-full border px-4 py-2.5 text-sm font-semibold transition duration-200",
               mobileScreen === "salon"
-                ? "border-[#9b86ff] bg-[#8e73ff]/22 text-[#eee9ff] shadow-[0_0_0_1px_rgba(142,115,255,0.45),0_0_26px_rgba(142,115,255,0.38)]"
-                : "border-white/20 bg-white/5 text-white/80",
+                ? cx(
+                    "border-[rgb(var(--sb-purple))] text-[rgb(var(--sb-fg))]",
+                    theme === "light"
+                      ? "bg-[rgb(var(--sb-purple-30))] shadow-[0_10px_30px_rgba(28,42,68,0.14)]"
+                      : "bg-[rgb(var(--sb-purple))]/22 shadow-[0_0_0_1px_rgba(var(--sb-purple),0.45),0_0_26px_rgba(var(--sb-purple),0.38)]"
+                  )
+                : theme === "light"
+                  ? "border-[rgb(var(--sb-line))]/70 bg-[rgb(var(--sb-surface))] text-[rgb(var(--sb-muted))] shadow-[0_10px_26px_rgba(28,42,68,0.08)]"
+                  : "border-[rgb(var(--sb-line))]/20 bg-[rgb(var(--sb-surface))]/5 text-[rgb(var(--sb-muted))]",
               salonNeedsAttention &&
-                "animate-pulse border-[#9b86ff] shadow-[0_0_0_1px_rgba(142,115,255,0.52),0_0_28px_rgba(142,115,255,0.45)]"
+                "animate-pulse border-[rgb(var(--sb-purple))] shadow-[0_0_0_1px_rgba(var(--sb-purple),0.52),0_0_28px_rgba(var(--sb-purple),0.45)]"
             )}
           >
             Salon Screen
@@ -989,41 +1043,59 @@ export default function TestUiPageClient() {
 
         <div
           className={cx(
-            "relative mt-4 rounded-[2rem] border border-white/10 bg-transparent p-6 text-white shadow-[0_24px_90px_rgba(0,0,0,0.26)] lg:mt-10 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none",
-            mobileScreen === "customer" && "border-[#c9a96e]/52",
-            mobileScreen === "salon" && "border-[#8e73ff]/48"
+            "relative mt-4 rounded-[2rem] border border-[rgb(var(--sb-line))]/10 bg-transparent p-6 text-[rgb(var(--sb-fg))] shadow-[0_24px_90px_rgba(0,0,0,0.26)] lg:mt-10 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none",
+            theme === "light" &&
+              "bg-[rgb(var(--sb-surface))] shadow-[0_18px_60px_rgba(28,42,68,0.10)]",
+            mobileScreen === "customer" && "border-[rgb(var(--sb-gold))]/52",
+            mobileScreen === "salon" && "border-[rgb(var(--sb-purple))]/48"
           )}
         >
           {mobileScreen === "customer" ? (
-            <div className="pointer-events-none absolute inset-0 rounded-[2rem] bg-[#c9a96e]/14 shadow-[inset_0_0_0_1px_rgba(201,169,110,0.22)] lg:hidden" />
+            <div
+              className={cx(
+                "pointer-events-none absolute inset-0 rounded-[2rem] lg:hidden",
+                theme === "light"
+                  ? "bg-[rgb(var(--sb-gold-30))]"
+                  : "bg-[rgb(var(--sb-gold))]/14 shadow-[inset_0_0_0_1px_rgba(var(--sb-gold),0.22)]"
+              )}
+            />
           ) : null}
           {mobileScreen === "salon" ? (
-            <div className="pointer-events-none absolute inset-0 rounded-[2rem] bg-[#8e73ff]/10 shadow-[inset_0_0_0_1px_rgba(142,115,255,0.24)] lg:hidden" />
+            <div
+              className={cx(
+                "pointer-events-none absolute inset-0 rounded-[2rem] lg:hidden",
+                theme === "light"
+                  ? "bg-[rgb(var(--sb-purple-30))]"
+                  : "bg-[rgb(var(--sb-purple))]/10 shadow-[inset_0_0_0_1px_rgba(var(--sb-purple),0.24)]"
+              )}
+            />
           ) : null}
-        <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
-          <div
-            className={cx(
-              "relative p-0 text-white transition duration-200 lg:rounded-[2rem] lg:border lg:border-[#c9a96e]/55 lg:bg-[#f0c75f]/5 lg:p-6 lg:shadow-[0_24px_90px_rgba(0,0,0,0.26),0_0_0_1px_rgba(201,169,110,0.22)]",
-              customerScreenDisabled && "grayscale opacity-45",
-              mobileScreen === "customer" ? "block" : "hidden",
-              "lg:block"
+          <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+            <div
+	            className={cx(
+	              "relative p-0 text-[rgb(var(--sb-fg))] transition duration-200 lg:rounded-[2rem] lg:border lg:border-[rgb(var(--sb-gold))]/55 lg:bg-[rgb(var(--sb-gold))]/5 lg:p-6 lg:shadow-[0_24px_90px_rgba(0,0,0,0.26),0_0_0_1px_rgba(var(--sb-gold),0.22)]",
+	              theme === "light" &&
+	                "lg:border-[rgb(var(--sb-gold))]/35 lg:bg-[rgb(var(--sb-gold-30))] lg:shadow-[0_18px_60px_rgba(28,42,68,0.12)]",
+	              customerScreenDisabled && "grayscale opacity-45",
+	              mobileScreen === "customer" ? "block" : "hidden",
+	              "lg:block"
             )}
           >
             <div className="flex min-h-[112px] items-start justify-between gap-4">
               <div className="flex items-start gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-xl">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[rgb(var(--sb-line))]/10 bg-[rgb(var(--sb-surface))]/5 text-xl">
                   💬
                 </div>
                 <div>
-                  <h2 className="mt-1 text-2xl font-semibold uppercase tracking-[0.12em] text-white">
+                  <h2 className="mt-1 text-2xl font-semibold uppercase tracking-[0.12em] text-[rgb(var(--sb-fg))]">
                     Customer Screen
                   </h2>
                 </div>
               </div>
             </div>
 
-            <div className="mt-[-25px] border-t border-white/10 pt-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/45">
+            <div className="mt-[-25px] border-t border-[rgb(var(--sb-line))]/10 pt-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[rgb(var(--sb-subtle))]">
                 Live transcript
               </p>
 
@@ -1031,14 +1103,18 @@ export default function TestUiPageClient() {
                 ref={customerTranscriptRef}
                 onScroll={(event) => {
                   const target = event.currentTarget;
-                  const distanceFromBottom =
-                    target.scrollHeight - target.scrollTop - target.clientHeight;
-                  customerAutoScrollRef.current = distanceFromBottom < 80;
-                }}
-                className="mt-3 h-[340px] space-y-3 overflow-y-auto rounded-[1.5rem] border border-white/20 bg-[#0f1320] p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
-              >
+	                  const distanceFromBottom =
+	                    target.scrollHeight - target.scrollTop - target.clientHeight;
+	                  customerAutoScrollRef.current = distanceFromBottom < 80;
+	                }}
+	                className={cx(
+	                  "mt-3 h-[340px] space-y-3 overflow-y-auto rounded-[1.5rem] border border-[rgb(var(--sb-line))]/20 bg-[rgb(var(--sb-panel))] p-4 shadow-[inset_0_0_0_1px_rgba(var(--sb-line),0.03)]",
+	                  theme === "light" &&
+	                    "border-[rgb(var(--sb-line))]/75 bg-[rgb(var(--sb-surface))] shadow-[inset_0_0_0_1px_rgba(var(--sb-ink-dark),0.06)]"
+	                )}
+	              >
                 {messages.length === 0 ? (
-                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-white/45">
+                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-[rgb(var(--sb-subtle))]">
                     No messages yet.
                   </div>
                 ) : (
@@ -1054,34 +1130,36 @@ export default function TestUiPageClient() {
                           isAssistant || isWaiting ? "justify-start" : "justify-end"
                         )}
                       >
-                        {isWaiting ? (
-                          <div className="inline-flex items-center gap-3 rounded-[1.25rem] border border-[#8c6331]/18 bg-white/70 px-4 py-3 text-sm text-[#5a432a]">
-                            <div className="flex items-center gap-1.5">
-                              <span
-                                className="h-2 w-2 animate-bounce rounded-full bg-[#c9a96e]"
-                                style={{ animationDelay: "0ms" }}
+	                        {isWaiting ? (
+	                          <div className="inline-flex items-center gap-3 rounded-[1.25rem] border border-[rgb(var(--sb-line))]/70 bg-[rgb(var(--sb-surface))]/75 px-4 py-3 text-sm text-[rgb(var(--sb-ink-dark))]">
+	                            <div className="flex items-center gap-1.5">
+	                              <span
+	                                className="h-2 w-2 animate-bounce rounded-full bg-[rgb(var(--sb-gold))]"
+	                                style={{ animationDelay: "0ms" }}
                               />
                               <span
-                                className="h-2 w-2 animate-bounce rounded-full bg-[#c9a96e]"
+                                className="h-2 w-2 animate-bounce rounded-full bg-[rgb(var(--sb-gold))]"
                                 style={{ animationDelay: "120ms" }}
                               />
                               <span
-                                className="h-2 w-2 animate-bounce rounded-full bg-[#c9a96e]"
+                                className="h-2 w-2 animate-bounce rounded-full bg-[rgb(var(--sb-gold))]"
                                 style={{ animationDelay: "240ms" }}
                               />
                             </div>
                             Sophia is waiting for approval.
                           </div>
                         ) : (
-                          <div
-                            className={cx(
-                              "max-w-[88%] rounded-[1.15rem] border px-3 py-3 text-sm leading-6",
-                              isAssistant
-                                ? "rounded-bl-md border border-[#8e73ff]/35 bg-[#7a63d8] text-white"
-                                : "rounded-br-md border border-white/10 bg-white/12 text-white"
-                            )}
-                          >
-                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/35">
+	                          <div
+	                            className={cx(
+	                              "max-w-[88%] rounded-[1.15rem] border px-3 py-3 text-sm leading-6",
+	                              isAssistant
+	                                ? "rounded-bl-md border border-[rgb(var(--sb-purple))]/35 bg-[rgb(var(--sb-purple-strong))] text-[rgb(var(--sb-fg))]"
+	                                : theme === "light"
+	                                  ? "rounded-br-md border-[rgb(var(--sb-line))]/75 bg-[rgb(var(--sb-panel))] text-[rgb(var(--sb-fg))]"
+	                                  : "rounded-br-md border-[rgb(var(--sb-line))]/10 bg-[rgb(var(--sb-surface))]/12 text-[rgb(var(--sb-fg))]"
+	                            )}
+	                          >
+                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[rgb(var(--sb-subtle))]">
                               {isAssistant ? "Sophia" : "Customer"}
                             </p>
                             <p className="whitespace-pre-wrap">{message.content}</p>
@@ -1094,10 +1172,16 @@ export default function TestUiPageClient() {
 
                 {loading && !manualApproval ? (
                   <div className="flex justify-start">
-                    <div className="inline-flex items-center gap-2 rounded-[1.25rem] border border-white/65 bg-white/80 px-4 py-3 text-sm text-[#5a432a]">
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-[#b78743]" />
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-[#b78743]" style={{ animationDelay: "120ms" }} />
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-[#b78743]" style={{ animationDelay: "240ms" }} />
+                    <div className="inline-flex items-center gap-2 rounded-[1.25rem] border border-[rgb(var(--sb-line))]/70 bg-[rgb(var(--sb-surface))]/80 px-4 py-3 text-sm text-[rgb(var(--sb-ink-dark))]">
+                      <span className="h-2 w-2 animate-bounce rounded-full bg-[rgb(var(--sb-gold))]" />
+                      <span
+                        className="h-2 w-2 animate-bounce rounded-full bg-[rgb(var(--sb-gold))]"
+                        style={{ animationDelay: "120ms" }}
+                      />
+                      <span
+                        className="h-2 w-2 animate-bounce rounded-full bg-[rgb(var(--sb-gold))]"
+                        style={{ animationDelay: "240ms" }}
+                      />
                     </div>
                   </div>
                 ) : null}
@@ -1107,7 +1191,7 @@ export default function TestUiPageClient() {
             </div>
 
             {error ? (
-              <div className="mt-4 flex items-start gap-3 rounded-[1.2rem] border border-rose-200/70 bg-rose-500/35 px-4 py-3 text-sm text-rose-50 shadow-[0_0_0_1px_rgba(255,255,255,0.12)]">
+              <div className="mt-4 flex items-start gap-3 rounded-[1.2rem] border border-[rgb(var(--sb-danger))]/35 bg-[rgb(var(--sb-danger))]/12 px-4 py-3 text-sm text-[rgb(var(--sb-fg))] shadow-[0_0_0_1px_rgba(var(--sb-line),0.12)]">
                 <IconAlert />
                 <p>{error}</p>
               </div>
@@ -1115,24 +1199,34 @@ export default function TestUiPageClient() {
 
             <form className="mt-5" onSubmit={sendMessage}>
               {!hasCustomerSentMessage ? (
-              <div className="mb-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setInput("Hi, who are you?")}
-                  disabled={loading || isApproving || customerComposerLocked}
-                  className="rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Hi, who are you?
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setInput("I want to book a haircut tomorrow at 1 PM.")}
-                  disabled={loading || isApproving || customerComposerLocked}
-                  className="rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  I want to book a haircut tomorrow at 1 PM.
-                </button>
-              </div>
+                <div className="mb-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setInput("Hi, who are you?")}
+                    disabled={loading || isApproving || customerComposerLocked}
+                    className={cx(
+                      "rounded-full border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
+                      theme === "light"
+                        ? "border-[rgb(var(--sb-line))]/70 bg-[rgb(var(--sb-surface))] text-[rgb(var(--sb-fg))] hover:bg-[rgb(var(--sb-surface))]/90"
+                        : "border-[rgb(var(--sb-line))]/25 bg-[rgb(var(--sb-surface))]/10 text-[rgb(var(--sb-fg))] hover:bg-[rgb(var(--sb-surface))]/15"
+                    )}
+                  >
+                    Hi, who are you?
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInput("I want to book a haircut tomorrow at 1 PM.")}
+                    disabled={loading || isApproving || customerComposerLocked}
+                    className={cx(
+                      "rounded-full border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
+                      theme === "light"
+                        ? "border-[rgb(var(--sb-line))]/70 bg-[rgb(var(--sb-surface))] text-[rgb(var(--sb-fg))] hover:bg-[rgb(var(--sb-surface))]/90"
+                        : "border-[rgb(var(--sb-line))]/25 bg-[rgb(var(--sb-surface))]/10 text-[rgb(var(--sb-fg))] hover:bg-[rgb(var(--sb-surface))]/15"
+                    )}
+                  >
+                    I want to book a haircut tomorrow at 1 PM.
+                  </button>
+                </div>
               ) : null}
               <textarea
                 value={input}
@@ -1152,14 +1246,14 @@ export default function TestUiPageClient() {
                 }
                 disabled={loading || isApproving || customerComposerLocked}
                 rows={2}
-                className="min-h-[96px] w-full resize-none rounded-[1rem] border border-white/20 bg-white/95 px-4 py-3 text-sm leading-6 text-[#1e2331] placeholder:text-[#6d7486] focus:border-[#9da5bb] focus:outline-none disabled:cursor-not-allowed disabled:border-[#c8ccd4] disabled:bg-[#e5e7eb] disabled:text-[#6b7280] disabled:placeholder:text-[#9097a3]"
+                className="min-h-[96px] w-full resize-none rounded-[1rem] border border-[rgb(var(--sb-line))]/20 bg-[rgb(var(--sb-surface))]/95 px-4 py-3 text-sm leading-6 text-[rgb(var(--sb-ink-dark))] placeholder:text-[rgb(var(--sb-muted))] focus:border-[rgb(var(--sb-purple))] focus:outline-none disabled:cursor-not-allowed disabled:border-[rgb(var(--sb-line))] disabled:bg-[rgb(var(--sb-panel))] disabled:text-[rgb(var(--sb-muted))] disabled:placeholder:text-[rgb(var(--sb-muted))]"
               />
 
               <div className="mt-4">
                 <button
                   type="submit"
                   disabled={!input.trim() || loading || isApproving || customerComposerLocked}
-                  className="inline-flex w-full items-center justify-center rounded-full bg-[#c9a96e] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#d6ba84] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex w-full items-center justify-center rounded-full bg-[rgb(var(--sb-gold))] px-5 py-3 text-sm font-semibold text-[rgb(var(--sb-fg))] transition hover:bg-[rgb(var(--sb-gold))]/80 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Send
                 </button>
@@ -1169,92 +1263,107 @@ export default function TestUiPageClient() {
 
           <div
             className={cx(
-              "relative p-0 text-white transition duration-200 lg:rounded-[2rem] lg:border lg:border-[#8e73ff]/52 lg:bg-[#8e73ff]/5 lg:p-6 lg:shadow-[0_24px_90px_rgba(0,0,0,0.26),0_0_0_1px_rgba(142,115,255,0.2)]",
+              "relative p-0 text-[rgb(var(--sb-fg))] transition duration-200 lg:rounded-[2rem] lg:border lg:border-[rgb(var(--sb-purple))]/52 lg:bg-[rgb(var(--sb-purple))]/5 lg:p-6 lg:shadow-[0_24px_90px_rgba(0,0,0,0.26),0_0_0_1px_rgba(var(--sb-purple),0.2)]",
+              theme === "light" &&
+                "lg:border-[rgb(var(--sb-purple))]/30 lg:bg-[rgb(var(--sb-purple-30))] lg:shadow-[0_18px_60px_rgba(28,42,68,0.12)]",
               mobileScreen === "salon" ? "block" : "hidden",
               "lg:block"
             )}
           >
             <div className="flex min-h-[112px] items-start justify-between gap-4">
               <div className="flex items-start gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-xl">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[rgb(var(--sb-line))]/10 bg-[rgb(var(--sb-surface))]/5 text-xl">
                   <Logo className="h-7 w-7" />
                 </div>
                 <div>
-                  <h2 className="mt-1 text-2xl font-semibold uppercase tracking-[0.12em] text-white">
+                  <h2 className="mt-1 text-2xl font-semibold uppercase tracking-[0.12em] text-[rgb(var(--sb-fg))]">
                     Salon Screen
                   </h2>
                 </div>
               </div>
             </div>
 
-            <div className={cx("transition duration-200", salonScreenDisabled && "grayscale opacity-45")}>
-            <div className="mt-[-25px] border-t border-white/10 pt-5">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/55">
-                  <span className={cx("h-2 w-2 rounded-full", reviewStatusTone)} />
-                  <span>{draftStatus}</span>
+            <div
+              className={cx(
+                "transition duration-200",
+                salonScreenDisabled && "grayscale opacity-45"
+              )}
+            >
+              <div className="mt-[-25px] border-t border-[rgb(var(--sb-line))]/10 pt-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[rgb(var(--sb-muted))]">
+                    <span className={cx("h-2 w-2 rounded-full", reviewStatusTone)} />
+                    <span>{draftStatus}</span>
+                  </div>
+                </div>
+
+                <div
+                  ref={reviewTranscriptRef}
+                  onScroll={(event) => {
+                    const target = event.currentTarget;
+                    const distanceFromBottom =
+                      target.scrollHeight - target.scrollTop - target.clientHeight;
+                    reviewAutoScrollRef.current = distanceFromBottom < 80;
+                  }}
+                  className={cx(
+                    "mt-3 h-[340px] space-y-3 overflow-y-auto rounded-[1.5rem] border border-[rgb(var(--sb-line))]/20 bg-[rgb(var(--sb-panel))] p-4 shadow-[inset_0_0_0_1px_rgba(var(--sb-line),0.03)]",
+                    theme === "light" &&
+                      "border-[rgb(var(--sb-line))]/75 bg-[rgb(var(--sb-surface))] shadow-[inset_0_0_0_1px_rgba(var(--sb-ink-dark),0.06)]"
+                  )}
+                >
+                  {reviewFeed.length === 0 ? (
+                    <div className="flex h-full items-center justify-center px-6 text-center text-sm text-[rgb(var(--sb-subtle))]">
+                      No messages yet.
+                    </div>
+                  ) : (
+                    reviewFeed.map((message) => {
+                      const isUser = message.role === "user";
+                      const isDraft = message.role === "draft";
+
+                      return (
+                        <div
+                          key={message.id}
+                          className={cx("flex", isUser ? "justify-start" : "justify-end")}
+                        >
+                          <div
+                            className={cx(
+                              "max-w-[88%] rounded-[1.15rem] border px-3 py-3 text-sm leading-6",
+                              isUser
+                                ? theme === "light"
+                                  ? "border-[rgb(var(--sb-line))]/75 bg-[rgb(var(--sb-panel))] text-[rgb(var(--sb-fg))]"
+                                  : "border-[rgb(var(--sb-line))]/10 bg-[rgb(var(--sb-surface))]/12 text-[rgb(var(--sb-fg))]"
+                                : isDraft
+                                  ? "border-[rgb(var(--sb-purple))]/30 bg-[rgb(var(--sb-purple-strong))]/90 text-[rgb(var(--sb-fg))]"
+                                  : "border-[rgb(var(--sb-purple))]/35 bg-[rgb(var(--sb-purple-strong))] text-[rgb(var(--sb-fg))]"
+                            )}
+                          >
+                            <div className="mb-2 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[rgb(var(--sb-subtle))]">
+                              <span>
+                                {isUser ? "Customer" : isDraft ? "Sophia draft" : "Sophia"}
+                              </span>
+                              <span>{formatTime(message.created_at)}</span>
+                            </div>
+                            <p className="whitespace-pre-wrap">{message.content}</p>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                  <div ref={reviewScrollRef} />
                 </div>
               </div>
-
-              <div
-                ref={reviewTranscriptRef}
-                onScroll={(event) => {
-                  const target = event.currentTarget;
-                  const distanceFromBottom =
-                    target.scrollHeight - target.scrollTop - target.clientHeight;
-                  reviewAutoScrollRef.current = distanceFromBottom < 80;
-                }}
-                className="mt-3 h-[340px] space-y-3 overflow-y-auto rounded-[1.5rem] border border-white/20 bg-[#0f1320] p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]"
-              >
-                {reviewFeed.length === 0 ? (
-                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-white/45">
-                    No messages yet.
-                  </div>
-                ) : (
-                  reviewFeed.map((message) => {
-                    const isUser = message.role === "user";
-                    const isDraft = message.role === "draft";
-
-                    return (
-                      <div
-                        key={message.id}
-                        className={cx("flex", isUser ? "justify-start" : "justify-end")}
-                      >
-                        <div
-                          className={cx(
-                            "max-w-[88%] rounded-[1.15rem] border px-3 py-3 text-sm leading-6",
-                            isUser
-                              ? "border-white/10 bg-white/12 text-white"
-                              : isDraft
-                                ? "border-[#8e73ff]/30 bg-[#7a63d8]/90 text-white"
-                                : "border-[#8e73ff]/35 bg-[#7a63d8] text-white"
-                          )}
-                        >
-                          <div className="mb-2 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">
-                            <span>{isUser ? "Customer" : isDraft ? "Sophia draft" : "Sophia"}</span>
-                            <span>{formatTime(message.created_at)}</span>
-                          </div>
-                          <p className="whitespace-pre-wrap">{message.content}</p>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-                <div ref={reviewScrollRef} />
-              </div>
-            </div>
 
             <div className="mt-5">
               {loading && manualApproval ? (
                 <div className="flex min-h-[96px] items-center justify-center">
-                  <div className="inline-flex items-center gap-2 text-[#f0dfbf]">
-                    <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-[#c9a96e]" />
+                  <div className="inline-flex items-center gap-2 text-[rgb(var(--sb-muted))]">
+                    <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-[rgb(var(--sb-gold))]" />
                     <span
-                      className="h-2.5 w-2.5 animate-bounce rounded-full bg-[#c9a96e]"
+                      className="h-2.5 w-2.5 animate-bounce rounded-full bg-[rgb(var(--sb-gold))]"
                       style={{ animationDelay: "120ms" }}
                     />
                     <span
-                      className="h-2.5 w-2.5 animate-bounce rounded-full bg-[#c9a96e]"
+                      className="h-2.5 w-2.5 animate-bounce rounded-full bg-[rgb(var(--sb-gold))]"
                       style={{ animationDelay: "240ms" }}
                     />
                   </div>
@@ -1272,10 +1381,10 @@ export default function TestUiPageClient() {
                   rows={2}
                   placeholder={sessionExpired ? "Session expired." : "No draft yet"}
                   className={cx(
-                    "min-h-[96px] w-full resize-none rounded-[1rem] border px-4 py-3 text-sm leading-6 focus:outline-none disabled:cursor-not-allowed disabled:border-[#c8ccd4] disabled:bg-[#e5e7eb] disabled:text-[#6b7280] disabled:placeholder:text-[#9097a3]",
+                    "min-h-[96px] w-full resize-none rounded-[1rem] border px-4 py-3 text-sm leading-6 focus:outline-none disabled:cursor-not-allowed disabled:border-[rgb(var(--sb-line))] disabled:bg-[rgb(var(--sb-panel))] disabled:text-[rgb(var(--sb-muted))] disabled:placeholder:text-[rgb(var(--sb-muted))]",
                     isModifyMode
-                      ? "border-white/20 bg-white/95 text-[#1e2331] placeholder:text-[#6d7486] focus:border-[#9da5bb]"
-                      : "border-white/15 bg-white/70 text-[#5f6675] placeholder:text-[#8a90a0] focus:border-[#9da5bb]"
+                      ? "border-[rgb(var(--sb-line))]/20 bg-[rgb(var(--sb-surface))]/95 text-[rgb(var(--sb-ink-dark))] placeholder:text-[rgb(var(--sb-muted))] focus:border-[rgb(var(--sb-purple))]"
+                      : "border-[rgb(var(--sb-line))]/15 bg-[rgb(var(--sb-surface))]/70 text-[rgb(var(--sb-muted))] placeholder:text-[rgb(var(--sb-subtle))] focus:border-[rgb(var(--sb-purple))]"
                   )}
                 />
               )}
@@ -1285,10 +1394,10 @@ export default function TestUiPageClient() {
                   type="button"
                   onClick={() => void handleApprove()}
                   disabled={sessionExpired || !draftReady || isApproving}
-                  className="inline-flex h-12 w-[70%] items-center justify-center gap-2 rounded-[1.1rem] bg-[#1e9e63] px-5 text-sm font-semibold text-white shadow-[0_18px_35px_rgba(30,158,99,0.28)] transition hover:bg-[#188754] disabled:cursor-not-allowed disabled:opacity-50 lg:w-1/2"
+                  className="inline-flex h-12 w-[70%] items-center justify-center gap-2 rounded-[1.1rem] bg-[rgb(var(--sb-success))] px-5 text-sm font-semibold text-[rgb(var(--sb-fg))] shadow-[0_18px_35px_rgba(30,158,99,0.28)] transition hover:bg-[rgb(var(--sb-success-strong))] disabled:cursor-not-allowed disabled:opacity-50 lg:w-1/2"
                 >
                   {isApproving ? (
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#1d1711]/20 border-t-[#1d1711]" />
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-[rgb(var(--sb-ink-dark))]/20 border-t-[rgb(var(--sb-ink-dark))]" />
                   ) : (
                     <IconCheck />
                   )}
@@ -1301,14 +1410,14 @@ export default function TestUiPageClient() {
                     reviewComposerRef.current?.focus();
                   }}
                   disabled={sessionExpired || isApproving || !reviewDraft}
-                  className="inline-flex h-12 w-[30%] items-center justify-center rounded-[1.1rem] bg-[#c83b3b] px-3 text-sm font-semibold text-white transition hover:bg-[#b02f2f] disabled:cursor-not-allowed disabled:opacity-50 lg:w-1/2"
+                  className="inline-flex h-12 w-[30%] items-center justify-center rounded-[1.1rem] bg-[rgb(var(--sb-danger))] px-3 text-sm font-semibold text-[rgb(var(--sb-fg))] transition hover:bg-[rgb(var(--sb-danger-strong))] disabled:cursor-not-allowed disabled:opacity-50 lg:w-1/2"
                 >
                   Modify
                 </button>
               </div>
 
               {reviewError ? (
-                <div className="mt-4 flex items-start gap-3 rounded-[1.2rem] border border-rose-200/70 bg-rose-500/35 px-4 py-3 text-sm text-rose-50 shadow-[0_0_0_1px_rgba(255,255,255,0.12)]">
+                <div className="mt-4 flex items-start gap-3 rounded-[1.2rem] border border-[rgb(var(--sb-danger))]/35 bg-[rgb(var(--sb-danger))]/12 px-4 py-3 text-sm text-[rgb(var(--sb-fg))] shadow-[0_0_0_1px_rgba(var(--sb-line),0.12)]">
                   <IconAlert />
                   <p>{reviewError}</p>
                 </div>
@@ -1317,7 +1426,14 @@ export default function TestUiPageClient() {
             </div>
           </div>
           {mobileScreen === null ? (
-            <div className="rounded-[1.25rem] border border-white/10 bg-white/[0.02] px-4 py-6 text-center text-sm text-white/65 lg:hidden">
+            <div
+              className={cx(
+                "rounded-[1.25rem] border px-4 py-6 text-center text-sm lg:hidden",
+                theme === "light"
+                  ? "border-[rgb(var(--sb-line))]/75 bg-[rgb(var(--sb-surface))] text-[rgb(var(--sb-muted))] shadow-[0_12px_32px_rgba(28,42,68,0.08)]"
+                  : "border-[rgb(var(--sb-line))]/10 bg-[rgb(var(--sb-surface))]/5 text-[rgb(var(--sb-muted))]"
+              )}
+            >
               Select Customer Screen or Salon Screen to continue.
             </div>
           ) : null}
@@ -1329,7 +1445,12 @@ export default function TestUiPageClient() {
             <button
               type="button"
               onClick={resetSession}
-              className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white/65 transition hover:bg-white/[0.07] hover:text-white"
+              className={cx(
+                "rounded-full border px-4 py-2 text-sm transition",
+                theme === "light"
+                  ? "border-[rgb(var(--sb-line))]/75 bg-[rgb(var(--sb-surface))] text-[rgb(var(--sb-muted))] shadow-[0_10px_28px_rgba(28,42,68,0.08)] hover:bg-[rgb(var(--sb-surface))]/90 hover:text-[rgb(var(--sb-fg))]"
+                  : "border-[rgb(var(--sb-line))]/10 bg-[rgb(var(--sb-surface))]/[0.04] text-[rgb(var(--sb-muted))] hover:bg-[rgb(var(--sb-surface))]/[0.07] hover:text-[rgb(var(--sb-fg))]"
+              )}
             >
               Start a fresh demo
             </button>
