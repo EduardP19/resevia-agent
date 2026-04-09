@@ -1302,7 +1302,7 @@ export default function TestUiPageClient() {
                 </div>
                 <div>
                   <h2 className="mt-1 text-2xl font-semibold uppercase tracking-[0.12em] text-[rgb(var(--sb-fg))]">
-                    Salon 
+                    Salon Manager
                   </h2>
                 </div>
               </div>
