@@ -8,6 +8,7 @@ export const TEST_UI_TRANSCRIPTS_TABLE = 'transcripts-sophia-sandbox';
 
 type TranscriptTableName = 'transcripts' | typeof TEST_UI_TRANSCRIPTS_TABLE;
 type TranscriptRole = 'user' | 'assistant' | 'system' | 'draft';
+let supportsSophiaSandboxPColumn: boolean | null = null;
 
 export function isTestUiSession(session: { metadata?: any } | null | undefined) {
   const metadata = session?.metadata;
@@ -22,6 +23,19 @@ function formatTranscriptTableError(error: any, table: TranscriptTableName) {
   }
 
   return error;
+}
+
+function isMissingSophiaSandboxPColumnError(error: any) {
+  const message = typeof error?.message === 'string' ? error.message : '';
+  const details = typeof error?.details === 'string' ? error.details : '';
+  const code = typeof error?.code === 'string' ? error.code : '';
+
+  // Supabase/PostgREST schema cache error when a column does not exist yet.
+  return (
+    code === 'PGRST204' ||
+    message.includes("Could not find the 'p' column") ||
+    details.includes("Could not find the 'p' column")
+  );
 }
 
 // Load salon by ID
@@ -155,21 +169,47 @@ export async function saveMessageToTable(
   table: TranscriptTableName = 'transcripts',
   p?: string
 ) {
-  const payload: Record<string, any> = {
+  const basePayload: Record<string, any> = {
     session_id: sessionId,
     role,
     content
   };
 
-  if (table === TEST_UI_TRANSCRIPTS_TABLE) {
-    payload.p = p?.trim() || null;
+  const includeP =
+    table === TEST_UI_TRANSCRIPTS_TABLE &&
+    supportsSophiaSandboxPColumn !== false;
+
+  if (!includeP) {
+    const { error } = await supabase.from(table).insert(basePayload);
+    if (error) {
+      throw formatTranscriptTableError(error, table);
+    }
+    return;
   }
 
-  const { error } = await supabase.from(table).insert(payload);
+  const payloadWithP = {
+    ...basePayload,
+    p: p?.trim() || null,
+  };
 
-  if (error) {
-    throw formatTranscriptTableError(error, table);
+  const { error } = await supabase.from(table).insert(payloadWithP);
+
+  if (!error) {
+    supportsSophiaSandboxPColumn = true;
+    return;
   }
+
+  if (table === TEST_UI_TRANSCRIPTS_TABLE && isMissingSophiaSandboxPColumnError(error)) {
+    supportsSophiaSandboxPColumn = false;
+    const { error: fallbackError } = await supabase.from(table).insert(basePayload);
+
+    if (fallbackError) {
+      throw formatTranscriptTableError(fallbackError, table);
+    }
+    return;
+  }
+
+  throw formatTranscriptTableError(error, table);
 }
 
 export async function deleteMessagesByRoleFromTable(

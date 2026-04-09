@@ -1002,13 +1002,13 @@ export default function TestUiPageClient() {
               "rounded-full border px-4 py-2.5 text-sm font-semibold transition duration-200",
               mobileScreen === "customer"
                 ? cx(
-                    "border-[rgb(var(--sb-gold))] text-[rgb(var(--sb-fg))]",
+                    "border-[rgb(var(--sb-gold))] text-[rgb(var(--sb-ink))]",
                     theme === "light"
-                      ? "bg-[rgb(var(--sb-gold-30))] shadow-[0_10px_30px_rgba(28,42,68,0.14)]"
+                      ? "bg-[rgb(var(--sb-gold-bright))] shadow-[0_12px_34px_rgba(28,42,68,0.18)]"
                       : "bg-[rgb(var(--sb-gold))]/20 shadow-[0_0_0_1px_rgba(var(--sb-gold),0.42),0_0_26px_rgba(var(--sb-gold),0.42)]"
                   )
                 : theme === "light"
-                  ? "border-[rgb(var(--sb-line))]/70 bg-[rgb(var(--sb-surface))] text-[rgb(var(--sb-muted))] shadow-[0_10px_26px_rgba(28,42,68,0.08)]"
+                  ? "border-[rgb(var(--sb-line))]/75 bg-[rgb(var(--sb-surface))] text-[rgb(var(--sb-fg))] shadow-[0_10px_26px_rgba(28,42,68,0.08)]"
                   : "border-[rgb(var(--sb-line))]/20 bg-[rgb(var(--sb-surface))]/5 text-[rgb(var(--sb-muted))]",
               customerNeedsAttention &&
                 "animate-pulse border-[rgb(var(--sb-gold))] shadow-[0_0_0_1px_rgba(var(--sb-gold),0.5),0_0_28px_rgba(var(--sb-gold),0.38)]"
@@ -1025,13 +1025,13 @@ export default function TestUiPageClient() {
               "rounded-full border px-4 py-2.5 text-sm font-semibold transition duration-200",
               mobileScreen === "salon"
                 ? cx(
-                    "border-[rgb(var(--sb-purple))] text-[rgb(var(--sb-fg))]",
+                    "border-[rgb(var(--sb-purple))] text-[rgb(var(--sb-ink))]",
                     theme === "light"
-                      ? "bg-[rgb(var(--sb-purple-30))] shadow-[0_10px_30px_rgba(28,42,68,0.14)]"
+                      ? "bg-[rgb(var(--sb-purple-bright))] shadow-[0_12px_34px_rgba(28,42,68,0.18)]"
                       : "bg-[rgb(var(--sb-purple))]/22 shadow-[0_0_0_1px_rgba(var(--sb-purple),0.45),0_0_26px_rgba(var(--sb-purple),0.38)]"
                   )
                 : theme === "light"
-                  ? "border-[rgb(var(--sb-line))]/70 bg-[rgb(var(--sb-surface))] text-[rgb(var(--sb-muted))] shadow-[0_10px_26px_rgba(28,42,68,0.08)]"
+                  ? "border-[rgb(var(--sb-line))]/75 bg-[rgb(var(--sb-surface))] text-[rgb(var(--sb-fg))] shadow-[0_10px_26px_rgba(28,42,68,0.08)]"
                   : "border-[rgb(var(--sb-line))]/20 bg-[rgb(var(--sb-surface))]/5 text-[rgb(var(--sb-muted))]",
               salonNeedsAttention &&
                 "animate-pulse border-[rgb(var(--sb-purple))] shadow-[0_0_0_1px_rgba(var(--sb-purple),0.52),0_0_28px_rgba(var(--sb-purple),0.45)]"
@@ -1055,7 +1055,7 @@ export default function TestUiPageClient() {
               className={cx(
                 "pointer-events-none absolute inset-0 rounded-[2rem] lg:hidden",
                 theme === "light"
-                  ? "bg-[rgb(var(--sb-gold-30))]"
+                  ? "bg-[rgb(var(--sb-gold-pastel))]"
                   : "bg-[rgb(var(--sb-gold))]/14 shadow-[inset_0_0_0_1px_rgba(var(--sb-gold),0.22)]"
               )}
             />
@@ -1065,7 +1065,7 @@ export default function TestUiPageClient() {
               className={cx(
                 "pointer-events-none absolute inset-0 rounded-[2rem] lg:hidden",
                 theme === "light"
-                  ? "bg-[rgb(var(--sb-purple-30))]"
+                  ? "bg-[rgb(var(--sb-purple-pastel))]"
                   : "bg-[rgb(var(--sb-purple))]/10 shadow-[inset_0_0_0_1px_rgba(var(--sb-purple),0.24)]"
               )}
             />
@@ -1075,7 +1075,7 @@ export default function TestUiPageClient() {
 	            className={cx(
 	              "relative p-0 text-[rgb(var(--sb-fg))] transition duration-200 lg:rounded-[2rem] lg:border lg:border-[rgb(var(--sb-gold))]/55 lg:bg-[rgb(var(--sb-gold))]/5 lg:p-6 lg:shadow-[0_24px_90px_rgba(0,0,0,0.26),0_0_0_1px_rgba(var(--sb-gold),0.22)]",
 	              theme === "light" &&
-	                "lg:border-[rgb(var(--sb-gold))]/35 lg:bg-[rgb(var(--sb-gold-30))] lg:shadow-[0_18px_60px_rgba(28,42,68,0.12)]",
+	                "lg:border-[rgb(var(--sb-gold))]/35 lg:bg-[rgb(var(--sb-gold-pastel))] lg:shadow-[0_18px_60px_rgba(28,42,68,0.12)]",
 	              customerScreenDisabled && "grayscale opacity-45",
 	              mobileScreen === "customer" ? "block" : "hidden",
 	              "lg:block"
@@ -1149,21 +1149,26 @@ export default function TestUiPageClient() {
                             Sophia is waiting for approval.
                           </div>
                         ) : (
-	                          <div
-	                            className={cx(
-	                              "max-w-[88%] rounded-[1.15rem] border px-3 py-3 text-sm leading-6",
-	                              isAssistant
-	                                ? "rounded-bl-md border border-[rgb(var(--sb-purple))]/35 bg-[rgb(var(--sb-purple-strong))] text-[rgb(var(--sb-fg))]"
-	                                : theme === "light"
-	                                  ? "rounded-br-md border-[rgb(var(--sb-line))]/75 bg-[rgb(var(--sb-panel))] text-[rgb(var(--sb-fg))]"
-	                                  : "rounded-br-md border-[rgb(var(--sb-line))]/10 bg-[rgb(var(--sb-surface))]/12 text-[rgb(var(--sb-fg))]"
-	                            )}
-	                          >
-                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[rgb(var(--sb-subtle))]">
-                              {isAssistant ? "Sophia" : "Customer"}
-                            </p>
-                            <p className="whitespace-pre-wrap">{message.content}</p>
-                          </div>
+		                          <div
+		                            className={cx(
+		                              "max-w-[88%] rounded-[1.15rem] border px-3 py-3 text-sm leading-6",
+		                              isAssistant
+		                                ? "rounded-bl-md border border-[rgb(var(--sb-purple))]/35 bg-[rgb(var(--sb-purple-strong))] text-[rgb(var(--sb-ink))]"
+		                                : theme === "light"
+		                                  ? "rounded-br-md border-[rgb(var(--sb-line))]/75 bg-[rgb(var(--sb-panel))] text-[rgb(var(--sb-fg))]"
+		                                  : "rounded-br-md border-[rgb(var(--sb-line))]/10 bg-[rgb(var(--sb-surface))]/12 text-[rgb(var(--sb-fg))]"
+		                            )}
+		                          >
+	                            <p
+                                className={cx(
+                                  "mb-1 text-[10px] font-semibold uppercase tracking-[0.2em]",
+                                  isAssistant ? "text-[rgb(var(--sb-ink))]" : "text-[rgb(var(--sb-subtle))]"
+                                )}
+                              >
+	                              {isAssistant ? "Sophia" : "Customer"}
+	                            </p>
+	                            <p className="whitespace-pre-wrap">{message.content}</p>
+	                          </div>
                         )}
                       </div>
                     );
@@ -1265,7 +1270,7 @@ export default function TestUiPageClient() {
             className={cx(
               "relative p-0 text-[rgb(var(--sb-fg))] transition duration-200 lg:rounded-[2rem] lg:border lg:border-[rgb(var(--sb-purple))]/52 lg:bg-[rgb(var(--sb-purple))]/5 lg:p-6 lg:shadow-[0_24px_90px_rgba(0,0,0,0.26),0_0_0_1px_rgba(var(--sb-purple),0.2)]",
               theme === "light" &&
-                "lg:border-[rgb(var(--sb-purple))]/30 lg:bg-[rgb(var(--sb-purple-30))] lg:shadow-[0_18px_60px_rgba(28,42,68,0.12)]",
+                "lg:border-[rgb(var(--sb-purple))]/30 lg:bg-[rgb(var(--sb-purple-pastel))] lg:shadow-[0_18px_60px_rgba(28,42,68,0.12)]",
               mobileScreen === "salon" ? "block" : "hidden",
               "lg:block"
             )}
@@ -1333,11 +1338,16 @@ export default function TestUiPageClient() {
                                   ? "border-[rgb(var(--sb-line))]/75 bg-[rgb(var(--sb-panel))] text-[rgb(var(--sb-fg))]"
                                   : "border-[rgb(var(--sb-line))]/10 bg-[rgb(var(--sb-surface))]/12 text-[rgb(var(--sb-fg))]"
                                 : isDraft
-                                  ? "border-[rgb(var(--sb-purple))]/30 bg-[rgb(var(--sb-purple-strong))]/90 text-[rgb(var(--sb-fg))]"
-                                  : "border-[rgb(var(--sb-purple))]/35 bg-[rgb(var(--sb-purple-strong))] text-[rgb(var(--sb-fg))]"
+                                  ? "border-[rgb(var(--sb-purple))]/30 bg-[rgb(var(--sb-purple-strong))]/90 text-[rgb(var(--sb-ink))]"
+                                  : "border-[rgb(var(--sb-purple))]/35 bg-[rgb(var(--sb-purple-strong))] text-[rgb(var(--sb-ink))]"
                             )}
                           >
-                            <div className="mb-2 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[rgb(var(--sb-subtle))]">
+                            <div
+                              className={cx(
+                                "mb-2 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.18em]",
+                                isUser ? "text-[rgb(var(--sb-subtle))]" : "text-[rgb(var(--sb-ink))]"
+                              )}
+                            >
                               <span>
                                 {isUser ? "Customer" : isDraft ? "Sophia draft" : "Sophia"}
                               </span>
@@ -1394,7 +1404,7 @@ export default function TestUiPageClient() {
                   type="button"
                   onClick={() => void handleApprove()}
                   disabled={sessionExpired || !draftReady || isApproving}
-                  className="inline-flex h-12 w-[70%] items-center justify-center gap-2 rounded-[1.1rem] bg-[rgb(var(--sb-success))] px-5 text-sm font-semibold text-[rgb(var(--sb-fg))] shadow-[0_18px_35px_rgba(30,158,99,0.28)] transition hover:bg-[rgb(var(--sb-success-strong))] disabled:cursor-not-allowed disabled:opacity-50 lg:w-1/2"
+                  className="inline-flex h-12 w-[70%] items-center justify-center gap-2 rounded-[1.1rem] bg-[rgb(var(--sb-success))] px-5 text-sm font-semibold text-[rgb(var(--sb-ink))] shadow-[0_18px_35px_rgba(30,158,99,0.28)] transition hover:bg-[rgb(var(--sb-success-strong))] disabled:cursor-not-allowed disabled:opacity-50 lg:w-1/2"
                 >
                   {isApproving ? (
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-[rgb(var(--sb-ink-dark))]/20 border-t-[rgb(var(--sb-ink-dark))]" />
@@ -1410,7 +1420,7 @@ export default function TestUiPageClient() {
                     reviewComposerRef.current?.focus();
                   }}
                   disabled={sessionExpired || isApproving || !reviewDraft}
-                  className="inline-flex h-12 w-[30%] items-center justify-center rounded-[1.1rem] bg-[rgb(var(--sb-danger))] px-3 text-sm font-semibold text-[rgb(var(--sb-fg))] transition hover:bg-[rgb(var(--sb-danger-strong))] disabled:cursor-not-allowed disabled:opacity-50 lg:w-1/2"
+                  className="inline-flex h-12 w-[30%] items-center justify-center rounded-[1.1rem] bg-[rgb(var(--sb-danger))] px-3 text-sm font-semibold text-[rgb(var(--sb-ink))] transition hover:bg-[rgb(var(--sb-danger-strong))] disabled:cursor-not-allowed disabled:opacity-50 lg:w-1/2"
                 >
                   Modify
                 </button>

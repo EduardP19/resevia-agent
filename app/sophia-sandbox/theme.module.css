@@ -38,6 +38,10 @@
   --sb-gold: 201 169 110;
   --sb-purple: 111 91 242;
   --sb-purple-strong: 91 76 214;
+  --sb-gold-pastel: 239 219 176; /* softer customer surface */
+  --sb-purple-pastel: 203 185 232; /* softer salon surface */
+  --sb-gold-bright: 222 163 54; /* stronger active button */
+  --sb-purple-bright: 120 86 228; /* stronger active button */
 
   --sb-success: 43 164 109;
   --sb-success-strong: 24 135 84;
