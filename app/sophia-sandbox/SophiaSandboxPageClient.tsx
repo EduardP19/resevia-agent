@@ -917,8 +917,8 @@ export default function TestUiPageClient() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(var(--sb-purple),0.16),transparent_46%)]" />
       <div className="relative mx-auto max-w-7xl">
         <div className="mx-auto max-w-3xl text-center">
-          <div className="inline-flex items-center gap-2 rounded-full border border-[rgb(var(--sb-danger))]/35 bg-[rgb(var(--sb-danger))]/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-[rgb(var(--sb-fg))]">
-            <span className="h-2.5 w-2.5 rounded-full bg-[rgb(var(--sb-danger))]" />
+          <div className="inline-flex items-center gap-2 rounded-full border border-[rgb(var(--sb-purple))]/35 bg-[rgb(var(--sb-purple))]/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-[rgb(var(--sb-fg))]">
+            <span className="h-2.5 w-2.5 rounded-full bg-[rgb(var(--sb-purple))]" />
             Sophia Sandbox
           </div>
           <h1 className="mt-6 text-4xl font-semibold tracking-tight text-[rgb(var(--sb-fg))] sm:text-5xl">
@@ -1278,7 +1278,7 @@ export default function TestUiPageClient() {
                 <button
                   type="submit"
                   disabled={!input.trim() || loading || isApproving || customerComposerLocked}
-                  className="inline-flex w-full items-center justify-center rounded-full bg-[rgb(var(--sb-gold))] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[rgb(var(--sb-gold))]/80 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-12 w-full items-center justify-center rounded-full bg-[rgb(var(--sb-gold))] px-5 text-sm font-semibold text-white transition hover:bg-[rgb(var(--sb-gold))]/80 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Send
                 </button>
