@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_noStore as noStore } from 'next/cache';
 import { supabase, TEST_UI_TRANSCRIPTS_TABLE } from '@/lib/supabase';
+import { logAppError } from '@/lib/error-logger';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -32,6 +33,14 @@ export async function GET(req: NextRequest) {
     : await baseQuery.order('created_at', { ascending: false }).limit(50);
 
   if (error) {
+    await logAppError({
+      source: 'api.sophia-sandbox.poll',
+      message: error.message || 'Poll query failed',
+      context: { code: error.code, details: error.details, hint: error.hint },
+      path: '/api/sophia-sandbox/poll',
+      method: 'GET',
+      runtime: 'server',
+    });
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

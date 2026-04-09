@@ -24,6 +24,7 @@ const DAY_TO_INDEX: Record<string, number> = {
   fri: 5,
   sat: 6,
 };
+const lowerSafe = (value: unknown) => String(value || '').toLowerCase();
 
 function getUtcStart(date: string, time: string): string {
   const localDate = new Date(`${date}T${time}:00`);
@@ -239,18 +240,21 @@ export async function fetchAvailability(
     const allWorkers = workersRes.data;
     if (!allWorkers || allWorkers.length === 0) return [];
 
+    const serviceNeedle = lowerSafe(serviceName);
+    const workerNeedle = lowerSafe(workerName);
     const matchedService = (salonRes.data?.services || []).find((s: any) =>
-      String(s?.name || '').toLowerCase().includes(serviceName.toLowerCase())
+      lowerSafe(s?.name).includes(serviceNeedle)
     );
     const serviceDuration = Number(matchedService?.duration_minutes || 60);
     const openingHoursRaw = salonRes.data?.opening_hours || null;
 
     const workers = allWorkers.filter(w => {
-      if (workerName) {
-        return w.name.toLowerCase().includes(workerName.toLowerCase());
+      if (workerNeedle) {
+        return lowerSafe(w?.name).includes(workerNeedle);
       }
-      return (w.services as string[] || []).some(s => 
-        s.toLowerCase().includes(serviceName.toLowerCase())
+      if (!serviceNeedle) return false;
+      return (w.services as string[] || []).some(s =>
+        lowerSafe(s).includes(serviceNeedle)
       );
     });
 
@@ -357,18 +361,21 @@ export async function holdBooking(details: {
       workerQuery
     ]);
 
+    const serviceNeedle = lowerSafe(details?.serviceName);
+    const workerNeedle = lowerSafe(details?.workerName);
     const allWorkers = workersRes.data || [];
     const workers = allWorkers.filter(w => {
-      if (details.workerName) {
-        return w.name.toLowerCase().includes(details.workerName.toLowerCase());
+      if (workerNeedle) {
+        return lowerSafe(w?.name).includes(workerNeedle);
       }
-      return (w.services as string[] || []).some(s => 
-        s.toLowerCase().includes(details.serviceName.toLowerCase())
+      if (!serviceNeedle) return false;
+      return (w.services as string[] || []).some(s =>
+        lowerSafe(s).includes(serviceNeedle)
       );
     });
 
     const service = salonRes.data?.services?.find((s: any) =>
-      s.name.toLowerCase().includes(details.serviceName.toLowerCase())
+      lowerSafe(s?.name).includes(serviceNeedle)
     );
     const resolvedSalonName = salonRes.data?.name || details.salonName || 'Salon';
 

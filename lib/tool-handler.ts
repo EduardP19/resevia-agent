@@ -35,6 +35,7 @@ export async function executeToolCall(
   ctx: ToolContext,
   currentBookingState: Record<string, any>
 ): Promise<ToolCallResult> {
+  const toLowerSafe = (value: unknown) => String(value || '').toLowerCase();
   let toolResult: string;
   let updatedBookingState: Record<string, any> | undefined;
   let updatedSystemPrompt: string | undefined;
@@ -50,9 +51,12 @@ export async function executeToolCall(
       .eq('salon_id', ctx.salonId)
       .eq('is_active', true);
 
+    const workerNeedle = toLowerSafe(args?.workerName);
+    const serviceNeedle = toLowerSafe(args?.serviceName);
     const worker = (allWorkers || []).find(w => {
-      if (args.workerName) return w.name.toLowerCase().includes(args.workerName.toLowerCase());
-      return (w.services as string[] || []).some(s => s.toLowerCase().includes(args.serviceName.toLowerCase()));
+      if (workerNeedle) return toLowerSafe(w?.name).includes(workerNeedle);
+      if (!serviceNeedle) return false;
+      return (w.services as string[] || []).some(s => toLowerSafe(s).includes(serviceNeedle));
     });
 
     if (worker) {
@@ -61,7 +65,7 @@ export async function executeToolCall(
       const hiddenFields = new Set(['title']);
       const clientFacingFields = fields.filter((f: any) => !hiddenFields.has(String(f.name || '').toLowerCase()));
       const summary = clientFacingFields.map((f: any) => `${f.name}${f.required ? ' (required)' : ''}`).join(', ');
-      toolResult = `To book ${args.serviceName}, I need: ${summary}`;
+      toolResult = `To book ${args?.serviceName || 'this service'}, I need: ${summary}`;
     } else {
       toolResult = 'Service not found or no workers available.';
     }

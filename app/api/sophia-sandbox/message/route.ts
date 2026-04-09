@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createTestUiResponse } from '@/lib/sophia-sandbox';
+import { logAppError, toErrorLogPayload } from '@/lib/error-logger';
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,6 +28,15 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error: any) {
+    const payload = toErrorLogPayload(error, 'Test UI message error');
+    await logAppError({
+      source: 'api.sophia-sandbox.message',
+      message: payload.message,
+      stack: payload.stack || undefined,
+      path: '/api/sophia-sandbox/message',
+      method: 'POST',
+      runtime: 'server',
+    });
     console.error('[Test UI Message Error]', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

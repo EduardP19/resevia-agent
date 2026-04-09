@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { approveTestUiDraft } from '@/lib/sophia-sandbox';
+import { logAppError, toErrorLogPayload } from '@/lib/error-logger';
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,6 +24,15 @@ export async function POST(req: NextRequest) {
     await approveTestUiDraft(sessionId, content, t);
     return NextResponse.json({ success: true });
   } catch (error: any) {
+    const payload = toErrorLogPayload(error, 'Test UI approve error');
+    await logAppError({
+      source: 'api.sophia-sandbox.approve',
+      message: payload.message,
+      stack: payload.stack || undefined,
+      path: '/api/sophia-sandbox/approve',
+      method: 'POST',
+      runtime: 'server',
+    });
     console.error('[Test UI Approve Error]', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

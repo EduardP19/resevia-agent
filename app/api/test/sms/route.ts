@@ -4,6 +4,7 @@ import { buildSystemPrompt } from '../../../../lib/agent';
 import { callAI } from '../../../../lib/ai';
 import { isHandoff } from '../../../../lib/handoff';
 import { executeToolCall, ToolContext } from '../../../../lib/tool-handler';
+import { logAppError, toErrorLogPayload } from '../../../../lib/error-logger';
 
 // Same logic as /api/sms-webhook but returns JSON instead of sending via Twilio
 export async function POST(req: NextRequest) {
@@ -104,6 +105,15 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ reply, handoff: triggerHandoff, sessionId: conversation.id });
   } catch (error: any) {
+    const payload = toErrorLogPayload(error, 'Test SMS route error');
+    await logAppError({
+      source: 'api.test.sms',
+      message: payload.message,
+      stack: payload.stack || undefined,
+      path: '/api/test/sms',
+      method: 'POST',
+      runtime: 'server',
+    });
     console.error('[Test SMS Error]', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

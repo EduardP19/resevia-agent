@@ -5,6 +5,7 @@ import { callAI } from '../../../lib/ai';
 import { sendSMS } from '../../../lib/twilio';
 import { isHandoff } from '../../../lib/handoff';
 import { executeToolCall, ToolContext } from '../../../lib/tool-handler';
+import { logAppError, toErrorLogPayload } from '../../../lib/error-logger';
 
 export async function POST(req: NextRequest) {
   try {
@@ -96,6 +97,15 @@ export async function POST(req: NextRequest) {
 
     return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
   } catch (error: any) {
+    const payload = toErrorLogPayload(error, 'SMS webhook error');
+    await logAppError({
+      source: 'api.sms-webhook',
+      message: payload.message,
+      stack: payload.stack || undefined,
+      path: '/api/sms-webhook',
+      method: 'POST',
+      runtime: 'server',
+    });
     return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
   }
 }
