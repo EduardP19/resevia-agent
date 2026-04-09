@@ -55,6 +55,13 @@ const TEST_UI_PARAM_KEY = "resevia_sophia_sandbox_p";
 const SESSION_WARNING_MS = 2 * 60 * 1000;
 const SESSION_EXPIRY_MS = 3 * 60 * 1000;
 const SESSION_WARNING_SECONDS = Math.ceil((SESSION_EXPIRY_MS - SESSION_WARNING_MS) / 1000);
+const SCREEN_SWITCH_DELAY_MS = 650;
+const HOW_TO_STEPS = [
+  "Open Customer Screen and send a realistic client message.",
+  "If you're in Manual Approval mode, open Salon Screen and review Sophia's draft.",
+  "Edit if needed, then press Approve & Send to publish the response.",
+  "Toggle to Agent Autonomous to test fully automatic replies end-to-end.",
+];
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -102,8 +109,7 @@ function IconAlert() {
 }
 
 export default function TestUiPageClient() {
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
-  const [themeMounted, setThemeMounted] = useState(false);
+  const theme: "light" = "light";
   const customerScrollRef = useRef<HTMLDivElement>(null);
   const reviewScrollRef = useRef<HTMLDivElement>(null);
   const customerTranscriptRef = useRef<HTMLDivElement>(null);
@@ -138,17 +144,22 @@ export default function TestUiPageClient() {
   const [showExpiryWarning, setShowExpiryWarning] = useState(false);
   const [secondsUntilExpiry, setSecondsUntilExpiry] = useState(SESSION_WARNING_SECONDS);
   const [sessionExpired, setSessionExpired] = useState(false);
-  const [mobileScreen, setMobileScreen] = useState<"customer" | "salon" | null>(null);
+  const [mobileScreen, setMobileScreen] = useState<"customer" | "salon">("customer");
   const [pParam, setPParam] = useState<string | null>(null);
+  const [howToStepIndex, setHowToStepIndex] = useState(0);
+  const [showSandboxSection, setShowSandboxSection] = useState(false);
 
   const hasWaiting = messages.some((message) => message.role === "waiting");
   const customerComposerLocked = sessionExpired || (manualApproval && Boolean(reviewDraft));
   const toggleDisabled = sessionExpired || loading || isApproving;
   const draftReady = Boolean(reviewDraft && reviewComposer.trim());
   const toggleModeText = manualApproval ? "Manual Approval" : "Agent Autonomous";
-  const salonNeedsAction =
-    !sessionExpired && manualApproval && Boolean(reviewDraft) && !loading && !isApproving;
-  const customerNeedsAction = !sessionExpired && !salonNeedsAction && !loading && !isApproving;
+  const nextActionScreen: "customer" | "salon" =
+    !sessionExpired && manualApproval && (loading || isApproving || Boolean(reviewDraft) || hasWaiting)
+      ? "salon"
+      : "customer";
+  const salonNeedsAction = nextActionScreen === "salon";
+  const customerNeedsAction = nextActionScreen === "customer";
   const customerScreenDisabled = !customerNeedsAction;
   const salonScreenDisabled = !salonNeedsAction;
   const customerNeedsAttention = customerNeedsAction && !sessionExpired;
@@ -208,6 +219,7 @@ export default function TestUiPageClient() {
     setShowExpiryWarning(false);
     setSecondsUntilExpiry(SESSION_WARNING_SECONDS);
     setSessionExpired(false);
+    setMobileScreen("customer");
     lastSyncedAt.current = null;
     seenIds.current = new Set();
     hadDraftRef.current = false;
@@ -303,28 +315,13 @@ export default function TestUiPageClient() {
 
   useEffect(() => {
     const savedSessionId = sessionStorage.getItem(TEST_UI_SESSION_KEY);
-
     if (savedSessionId) {
-      setSessionId(savedSessionId);
+      void closeSessionOnServer(savedSessionId);
     }
 
-  }, []);
-
-  useEffect(() => {
-    const saved = localStorage.getItem("resevia_sophia_sandbox_theme");
-    if (saved === "light" || saved === "dark") {
-      setTheme(saved);
-    }
-    setThemeMounted(true);
-  }, []);
-
-  const toggleTheme = useCallback(() => {
-    setTheme((current) => {
-      const next = current === "dark" ? "light" : "dark";
-      localStorage.setItem("resevia_sophia_sandbox_theme", next);
-      return next;
-    });
-  }, []);
+    // A page refresh should always start a clean demo state.
+    resetLocalSession();
+  }, [closeSessionOnServer, resetLocalSession]);
 
   useEffect(() => {
     const fromUrl = new URLSearchParams(window.location.search).get("p")?.trim();
@@ -347,6 +344,16 @@ export default function TestUiPageClient() {
   useEffect(() => {
     sessionIdRef.current = sessionId;
   }, [sessionId]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setMobileScreen(nextActionScreen);
+    }, SCREEN_SWITCH_DELAY_MS);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [nextActionScreen]);
 
   useEffect(() => {
     if (customerTranscriptRef.current) {
@@ -906,19 +913,6 @@ export default function TestUiPageClient() {
         "relative min-h-[100dvh] overflow-hidden bg-[rgb(var(--sb-bg))] px-4 pb-16 pt-20 text-[rgb(var(--sb-fg))] sm:px-6 sm:pt-24"
       )}
     >
-      <div className="absolute right-4 top-4 z-30 sm:right-6 sm:top-6">
-        <button
-          type="button"
-          onClick={toggleTheme}
-          aria-label="Toggle theme"
-          className={styles.switch}
-        >
-          <span className={cx(styles.dot, theme === "light" && styles.dotLight)} />
-          <span className={styles.label}>
-            {themeMounted ? (theme === "dark" ? "Dark" : "Light") : "Theme"}
-          </span>
-        </button>
-      </div>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(var(--sb-gold),0.18),transparent_40%)]" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(var(--sb-purple),0.16),transparent_46%)]" />
       <div className="relative mx-auto max-w-7xl">
@@ -930,22 +924,52 @@ export default function TestUiPageClient() {
           <h1 className="mt-6 text-4xl font-semibold tracking-tight text-[rgb(var(--sb-fg))] sm:text-5xl">
             Type as Client. <br /> Respond as Manager.
           </h1>
-          <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-[rgb(var(--sb-muted))] sm:text-lg">
-            1. Customer Screen to type client messages <br /> 2. Salon Screen to approve or auto-send Sophia&apos;s reply.
-          </p>
-          <details className="mx-auto mt-4 max-w-2xl rounded-2xl border border-[rgb(var(--sb-line))]/35 bg-[rgb(var(--sb-surface))]/5 px-4 py-3 text-left text-sm text-[rgb(var(--sb-muted))]">
-            <summary className="cursor-pointer font-semibold text-[rgb(var(--sb-fg))]">
-              How to test step by step - read more...
-            </summary>
-            <div className="mt-3 space-y-1.5">
-              <p>1. Open Customer Screen and send a realistic client message.</p>
-              <p>2. If you're in Manual Approval mode, open Salon Screen and review Sophia&apos;s draft.</p>
-              <p>3. Edit if needed, then press Approve &amp; Send to publish the response.</p>
-              <p>4. Toggle to Agent Autonomous to test fully automatic replies end-to-end.</p>
-            </div>
-          </details>
-        </div>
+          <div className="mx-auto mt-4 max-w-2xl rounded-xl border border-[rgb(var(--sb-line))]/60 bg-[rgb(var(--sb-surface))] p-4 text-left shadow-[0_10px_24px_rgba(28,42,68,0.08)]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[rgb(var(--sb-subtle))]">
+              Step {howToStepIndex + 1} of {HOW_TO_STEPS.length}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-[rgb(var(--sb-fg))]">
+              {HOW_TO_STEPS[howToStepIndex]}
+            </p>
 
+            {howToStepIndex < HOW_TO_STEPS.length - 1 ? (
+              <button
+                type="button"
+                onClick={() =>
+                  setHowToStepIndex((current) => Math.min(current + 1, HOW_TO_STEPS.length - 1))
+                }
+                className="mt-3 inline-flex items-center justify-center rounded-full bg-[rgb(var(--sb-purple))] px-4 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[rgb(var(--sb-ink))] transition hover:bg-[rgb(var(--sb-purple-strong))]"
+              >
+                Next
+              </button>
+            ) : (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSandboxSection(true)}
+                  className="inline-flex items-center justify-center rounded-full bg-[rgb(var(--sb-success))] px-4 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[rgb(var(--sb-ink))] transition hover:bg-[rgb(var(--sb-success-strong))]"
+                >
+                  Test Now
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHowToStepIndex(0);
+                    setShowSandboxSection(false);
+                  }}
+                  className="inline-flex items-center justify-center rounded-full border border-[rgb(var(--sb-line))]/70 bg-[rgb(var(--sb-surface))] px-4 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[rgb(var(--sb-fg))] transition hover:bg-[rgb(var(--sb-panel))]"
+                >
+                  Read Again
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="mx-auto max-w-2xl pt-5">
+            <div className="h-[2px] w-full rounded-full bg-[rgb(var(--sb-purple))]/30" />
+          </div>
+        </div>
+        {showSandboxSection ? (
+          <>
         {showExpiryWarning || sessionExpired ? (
           <div
             className={cx(
@@ -995,9 +1019,7 @@ export default function TestUiPageClient() {
         <div className="mt-4 grid grid-cols-2 gap-3 lg:hidden">
           <button
             type="button"
-            onClick={() =>
-              setMobileScreen((current) => (current === "customer" ? null : "customer"))
-            }
+            onClick={() => setMobileScreen("customer")}
             className={cx(
               "rounded-full border px-4 py-2.5 text-sm font-semibold transition duration-200",
               mobileScreen === "customer"
@@ -1018,9 +1040,7 @@ export default function TestUiPageClient() {
           </button>
           <button
             type="button"
-            onClick={() =>
-              setMobileScreen((current) => (current === "salon" ? null : "salon"))
-            }
+            onClick={() => setMobileScreen("salon")}
             className={cx(
               "rounded-full border px-4 py-2.5 text-sm font-semibold transition duration-200",
               mobileScreen === "salon"
@@ -1081,20 +1101,20 @@ export default function TestUiPageClient() {
 	              "lg:block"
             )}
           >
-            <div className="flex min-h-[112px] items-start justify-between gap-4">
+            <div className="flex items-start justify-between gap-4">
               <div className="flex items-start gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[rgb(var(--sb-line))]/10 bg-[rgb(var(--sb-surface))]/5 text-xl">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[rgb(var(--sb-line))]/10 bg-white text-xl">
                   💬
                 </div>
                 <div>
                   <h2 className="mt-1 text-2xl font-semibold uppercase tracking-[0.12em] text-[rgb(var(--sb-fg))]">
-                    Customer Screen
+                   Customer
                   </h2>
                 </div>
               </div>
             </div>
 
-            <div className="mt-[-25px] border-t border-[rgb(var(--sb-line))]/10 pt-5">
+            <div className="mt-[20px] border-t border-[rgb(var(--sb-line))]/10 pt-0">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[rgb(var(--sb-subtle))]">
                 Live transcript
               </p>
@@ -1108,7 +1128,7 @@ export default function TestUiPageClient() {
 	                  customerAutoScrollRef.current = distanceFromBottom < 80;
 	                }}
 	                className={cx(
-	                  "mt-3 h-[340px] space-y-3 overflow-y-auto rounded-[1.5rem] border border-[rgb(var(--sb-line))]/20 bg-[rgb(var(--sb-panel))] p-4 shadow-[inset_0_0_0_1px_rgba(var(--sb-line),0.03)]",
+	                  "mt-3 h-[238px] space-y-3 overflow-y-auto rounded-[1.5rem] border border-[rgb(var(--sb-line))]/20 bg-[rgb(var(--sb-panel))] p-4 shadow-[inset_0_0_0_1px_rgba(var(--sb-line),0.03)]",
 	                  theme === "light" &&
 	                    "border-[rgb(var(--sb-line))]/75 bg-[rgb(var(--sb-surface))] shadow-[inset_0_0_0_1px_rgba(var(--sb-ink-dark),0.06)]"
 	                )}
@@ -1212,11 +1232,11 @@ export default function TestUiPageClient() {
                     className={cx(
                       "rounded-full border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
                       theme === "light"
-                        ? "border-[rgb(var(--sb-line))]/70 bg-[rgb(var(--sb-surface))] text-[rgb(var(--sb-fg))] hover:bg-[rgb(var(--sb-surface))]/90"
-                        : "border-[rgb(var(--sb-line))]/25 bg-[rgb(var(--sb-surface))]/10 text-[rgb(var(--sb-fg))] hover:bg-[rgb(var(--sb-surface))]/15"
+                        ? "border-[rgb(var(--sb-line))]/70 bg-[rgb(var(--sb-surface))] text-[rgb(var(--sb-fg))]/70 hover:bg-[rgb(var(--sb-surface))]/90"
+                        : "border-[rgb(var(--sb-line))]/25 bg-[rgb(var(--sb-surface))]/10 text-[rgb(var(--sb-fg))]/70 hover:bg-[rgb(var(--sb-surface))]/15"
                     )}
                   >
-                    Hi, who are you?
+                    💡 Hi, who are you?
                   </button>
                   <button
                     type="button"
@@ -1225,11 +1245,11 @@ export default function TestUiPageClient() {
                     className={cx(
                       "rounded-full border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
                       theme === "light"
-                        ? "border-[rgb(var(--sb-line))]/70 bg-[rgb(var(--sb-surface))] text-[rgb(var(--sb-fg))] hover:bg-[rgb(var(--sb-surface))]/90"
-                        : "border-[rgb(var(--sb-line))]/25 bg-[rgb(var(--sb-surface))]/10 text-[rgb(var(--sb-fg))] hover:bg-[rgb(var(--sb-surface))]/15"
+                        ? "border-[rgb(var(--sb-line))]/70 bg-[rgb(var(--sb-surface))] text-[rgb(var(--sb-fg))]/70 hover:bg-[rgb(var(--sb-surface))]/90"
+                        : "border-[rgb(var(--sb-line))]/25 bg-[rgb(var(--sb-surface))]/10 text-[rgb(var(--sb-fg))]/70 hover:bg-[rgb(var(--sb-surface))]/15"
                     )}
                   >
-                    I want to book a haircut tomorrow at 1 PM.
+                    💡 Book a haircut tomorrow at 1 PM.
                   </button>
                 </div>
               ) : null}
@@ -1251,14 +1271,14 @@ export default function TestUiPageClient() {
                 }
                 disabled={loading || isApproving || customerComposerLocked}
                 rows={2}
-                className="min-h-[96px] w-full resize-none rounded-[1rem] border border-[rgb(var(--sb-line))]/20 bg-[rgb(var(--sb-surface))]/95 px-4 py-3 text-sm leading-6 text-[rgb(var(--sb-ink-dark))] placeholder:text-[rgb(var(--sb-muted))] focus:border-[rgb(var(--sb-purple))] focus:outline-none disabled:cursor-not-allowed disabled:border-[rgb(var(--sb-line))] disabled:bg-[rgb(var(--sb-panel))] disabled:text-[rgb(var(--sb-muted))] disabled:placeholder:text-[rgb(var(--sb-muted))]"
+                className="min-h-[48px] w-full resize-none rounded-[1rem] border border-[rgb(var(--sb-line))]/20 bg-[rgb(var(--sb-surface))]/95 px-4 py-3 text-sm leading-6 text-[rgb(var(--sb-ink-dark))] placeholder:text-[rgb(var(--sb-muted))] focus:border-[rgb(var(--sb-purple))] focus:outline-none disabled:cursor-not-allowed disabled:border-[rgb(var(--sb-line))] disabled:bg-[rgb(var(--sb-panel))] disabled:text-[rgb(var(--sb-muted))] disabled:placeholder:text-[rgb(var(--sb-muted))]"
               />
 
               <div className="mt-4">
                 <button
                   type="submit"
                   disabled={!input.trim() || loading || isApproving || customerComposerLocked}
-                  className="inline-flex w-full items-center justify-center rounded-full bg-[rgb(var(--sb-gold))] px-5 py-3 text-sm font-semibold text-[rgb(var(--sb-fg))] transition hover:bg-[rgb(var(--sb-gold))]/80 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex w-full items-center justify-center rounded-full bg-[rgb(var(--sb-gold))] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[rgb(var(--sb-gold))]/80 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Send
                 </button>
@@ -1275,14 +1295,14 @@ export default function TestUiPageClient() {
               "lg:block"
             )}
           >
-            <div className="flex min-h-[112px] items-start justify-between gap-4">
+            <div className="flex items-start justify-between gap-4">
               <div className="flex items-start gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[rgb(var(--sb-line))]/10 bg-[rgb(var(--sb-surface))]/5 text-xl">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[rgb(var(--sb-line))]/10 bg-white text-xl">
                   <Logo className="h-7 w-7" />
                 </div>
                 <div>
                   <h2 className="mt-1 text-2xl font-semibold uppercase tracking-[0.12em] text-[rgb(var(--sb-fg))]">
-                    Salon Screen
+                    Salon 
                   </h2>
                 </div>
               </div>
@@ -1294,7 +1314,7 @@ export default function TestUiPageClient() {
                 salonScreenDisabled && "grayscale opacity-45"
               )}
             >
-              <div className="mt-[-25px] border-t border-[rgb(var(--sb-line))]/10 pt-5">
+              <div className="mt-[20px] border-t border-[rgb(var(--sb-line))]/10 pt-0">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[rgb(var(--sb-muted))]">
                     <span className={cx("h-2 w-2 rounded-full", reviewStatusTone)} />
@@ -1311,7 +1331,7 @@ export default function TestUiPageClient() {
                     reviewAutoScrollRef.current = distanceFromBottom < 80;
                   }}
                   className={cx(
-                    "mt-3 h-[340px] space-y-3 overflow-y-auto rounded-[1.5rem] border border-[rgb(var(--sb-line))]/20 bg-[rgb(var(--sb-panel))] p-4 shadow-[inset_0_0_0_1px_rgba(var(--sb-line),0.03)]",
+                    "mt-3 h-[238px] space-y-3 overflow-y-auto rounded-[1.5rem] border border-[rgb(var(--sb-line))]/20 bg-[rgb(var(--sb-panel))] p-4 shadow-[inset_0_0_0_1px_rgba(var(--sb-line),0.03)]",
                     theme === "light" &&
                       "border-[rgb(var(--sb-line))]/75 bg-[rgb(var(--sb-surface))] shadow-[inset_0_0_0_1px_rgba(var(--sb-ink-dark),0.06)]"
                   )}
@@ -1365,7 +1385,7 @@ export default function TestUiPageClient() {
 
             <div className="mt-5">
               {loading && manualApproval ? (
-                <div className="flex min-h-[96px] items-center justify-center">
+                <div className="flex min-h-[48px] items-center justify-center">
                   <div className="inline-flex items-center gap-2 text-[rgb(var(--sb-muted))]">
                     <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-[rgb(var(--sb-gold))]" />
                     <span
@@ -1391,7 +1411,7 @@ export default function TestUiPageClient() {
                   rows={2}
                   placeholder={sessionExpired ? "Session expired." : "No draft yet"}
                   className={cx(
-                    "min-h-[96px] w-full resize-none rounded-[1rem] border px-4 py-3 text-sm leading-6 focus:outline-none disabled:cursor-not-allowed disabled:border-[rgb(var(--sb-line))] disabled:bg-[rgb(var(--sb-panel))] disabled:text-[rgb(var(--sb-muted))] disabled:placeholder:text-[rgb(var(--sb-muted))]",
+                    "min-h-[48px] w-full resize-none rounded-[1rem] border px-4 py-3 text-sm leading-6 focus:outline-none disabled:cursor-not-allowed disabled:border-[rgb(var(--sb-line))] disabled:bg-[rgb(var(--sb-panel))] disabled:text-[rgb(var(--sb-muted))] disabled:placeholder:text-[rgb(var(--sb-muted))]",
                     isModifyMode
                       ? "border-[rgb(var(--sb-line))]/20 bg-[rgb(var(--sb-surface))]/95 text-[rgb(var(--sb-ink-dark))] placeholder:text-[rgb(var(--sb-muted))] focus:border-[rgb(var(--sb-purple))]"
                       : "border-[rgb(var(--sb-line))]/15 bg-[rgb(var(--sb-surface))]/70 text-[rgb(var(--sb-muted))] placeholder:text-[rgb(var(--sb-subtle))] focus:border-[rgb(var(--sb-purple))]"
@@ -1435,36 +1455,25 @@ export default function TestUiPageClient() {
             </div>
             </div>
           </div>
-          {mobileScreen === null ? (
-            <div
-              className={cx(
-                "rounded-[1.25rem] border px-4 py-6 text-center text-sm lg:hidden",
-                theme === "light"
-                  ? "border-[rgb(var(--sb-line))]/75 bg-[rgb(var(--sb-surface))] text-[rgb(var(--sb-muted))] shadow-[0_12px_32px_rgba(28,42,68,0.08)]"
-                  : "border-[rgb(var(--sb-line))]/10 bg-[rgb(var(--sb-surface))]/5 text-[rgb(var(--sb-muted))]"
-              )}
-            >
-              Select Customer Screen or Salon Screen to continue.
-            </div>
-          ) : null}
         </div>
         </div>
 
-        {(messages.length > 0 || reviewFeed.length > 0 || sessionId) && !loading && !isApproving ? (
-          <div className="mt-5 flex justify-center">
-            <button
-              type="button"
-              onClick={resetSession}
-              className={cx(
-                "rounded-full border px-4 py-2 text-sm transition",
-                theme === "light"
-                  ? "border-[rgb(var(--sb-line))]/75 bg-[rgb(var(--sb-surface))] text-[rgb(var(--sb-muted))] shadow-[0_10px_28px_rgba(28,42,68,0.08)] hover:bg-[rgb(var(--sb-surface))]/90 hover:text-[rgb(var(--sb-fg))]"
-                  : "border-[rgb(var(--sb-line))]/10 bg-[rgb(var(--sb-surface))]/[0.04] text-[rgb(var(--sb-muted))] hover:bg-[rgb(var(--sb-surface))]/[0.07] hover:text-[rgb(var(--sb-fg))]"
-              )}
-            >
-              Start a fresh demo
-            </button>
-          </div>
+        <div className="mt-5 flex justify-center">
+          <button
+            type="button"
+            onClick={resetSession}
+            disabled={loading || isApproving}
+            className={cx(
+              "rounded-full border px-4 py-2 text-sm transition disabled:cursor-not-allowed disabled:opacity-50",
+              theme === "light"
+                ? "border-[rgb(var(--sb-line))]/75 bg-[rgb(var(--sb-surface))] text-[rgb(var(--sb-muted))] shadow-[0_10px_28px_rgba(28,42,68,0.08)] hover:bg-[rgb(var(--sb-surface))]/90 hover:text-[rgb(var(--sb-fg))]"
+                : "border-[rgb(var(--sb-line))]/10 bg-[rgb(var(--sb-surface))]/[0.04] text-[rgb(var(--sb-muted))] hover:bg-[rgb(var(--sb-surface))]/[0.07] hover:text-[rgb(var(--sb-fg))]"
+            )}
+          >
+            Start a fresh demo
+          </button>
+        </div>
+      </>
         ) : null}
       </div>
     </section>
