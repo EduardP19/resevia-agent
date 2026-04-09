@@ -8,7 +8,6 @@ export const TEST_UI_TRANSCRIPTS_TABLE = 'transcripts-sophia-sandbox';
 
 type TranscriptTableName = 'transcripts' | typeof TEST_UI_TRANSCRIPTS_TABLE;
 type TranscriptRole = 'user' | 'assistant' | 'system' | 'draft';
-let supportsSophiaSandboxPColumn: boolean | null = null;
 
 export function isTestUiSession(session: { metadata?: any } | null | undefined) {
   const metadata = session?.metadata;
@@ -25,7 +24,7 @@ function formatTranscriptTableError(error: any, table: TranscriptTableName) {
   return error;
 }
 
-function isMissingSophiaSandboxPColumnError(error: any) {
+function isMissingSophiaSandboxTColumnError(error: any) {
   const message = typeof error?.message === 'string' ? error.message : '';
   const details = typeof error?.details === 'string' ? error.details : '';
   const code = typeof error?.code === 'string' ? error.code : '';
@@ -33,8 +32,8 @@ function isMissingSophiaSandboxPColumnError(error: any) {
   // Supabase/PostgREST schema cache error when a column does not exist yet.
   return (
     code === 'PGRST204' ||
-    message.includes("Could not find the 'p' column") ||
-    details.includes("Could not find the 'p' column")
+    message.includes("Could not find the 't' column") ||
+    details.includes("Could not find the 't' column")
   );
 }
 
@@ -167,7 +166,7 @@ export async function saveMessageToTable(
   role: TranscriptRole,
   content: string,
   table: TranscriptTableName = 'transcripts',
-  p?: string
+  t?: string
 ) {
   const basePayload: Record<string, any> = {
     session_id: sessionId,
@@ -175,11 +174,9 @@ export async function saveMessageToTable(
     content
   };
 
-  const includeP =
-    table === TEST_UI_TRANSCRIPTS_TABLE &&
-    supportsSophiaSandboxPColumn !== false;
+  const includeT = table === TEST_UI_TRANSCRIPTS_TABLE;
 
-  if (!includeP) {
+  if (!includeT) {
     const { error } = await supabase.from(table).insert(basePayload);
     if (error) {
       throw formatTranscriptTableError(error, table);
@@ -187,20 +184,16 @@ export async function saveMessageToTable(
     return;
   }
 
-  const payloadWithP = {
+  const payloadWithT = {
     ...basePayload,
-    p: p?.trim() || null,
+    t: t?.trim() || null,
   };
 
-  const { error } = await supabase.from(table).insert(payloadWithP);
+  const { error } = await supabase.from(table).insert(payloadWithT);
 
-  if (!error) {
-    supportsSophiaSandboxPColumn = true;
-    return;
-  }
+  if (!error) return;
 
-  if (table === TEST_UI_TRANSCRIPTS_TABLE && isMissingSophiaSandboxPColumnError(error)) {
-    supportsSophiaSandboxPColumn = false;
+  if (table === TEST_UI_TRANSCRIPTS_TABLE && isMissingSophiaSandboxTColumnError(error)) {
     const { error: fallbackError } = await supabase.from(table).insert(basePayload);
 
     if (fallbackError) {

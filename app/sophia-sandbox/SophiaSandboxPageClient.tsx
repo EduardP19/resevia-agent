@@ -51,7 +51,7 @@ type PollResponse = {
 };
 
 const TEST_UI_SESSION_KEY = "resevia_sophia_sandbox_session";
-const TEST_UI_PARAM_KEY = "resevia_sophia_sandbox_p";
+const TEST_UI_T_PARAM_KEY = "resevia_sophia_sandbox_t";
 const SESSION_WARNING_MS = 2 * 60 * 1000;
 const SESSION_EXPIRY_MS = 3 * 60 * 1000;
 const SESSION_WARNING_SECONDS = Math.ceil((SESSION_EXPIRY_MS - SESSION_WARNING_MS) / 1000);
@@ -145,7 +145,7 @@ export default function TestUiPageClient() {
   const [secondsUntilExpiry, setSecondsUntilExpiry] = useState(SESSION_WARNING_SECONDS);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [mobileScreen, setMobileScreen] = useState<"customer" | "salon">("customer");
-  const [pParam, setPParam] = useState<string | null>(null);
+  const [tParam, setTParam] = useState<string | null>(null);
   const [howToStepIndex, setHowToStepIndex] = useState(0);
   const [showSandboxSection, setShowSandboxSection] = useState(false);
 
@@ -324,21 +324,17 @@ export default function TestUiPageClient() {
   }, [closeSessionOnServer, resetLocalSession]);
 
   useEffect(() => {
-    const fromUrl = new URLSearchParams(window.location.search).get("p")?.trim();
+    const fromUrl = new URLSearchParams(window.location.search).get("t")?.trim();
 
+    // Keep the latest local t unless a new t arrives via URL.
     if (fromUrl) {
-      localStorage.setItem(TEST_UI_PARAM_KEY, fromUrl);
-      setPParam(fromUrl);
+      localStorage.setItem(TEST_UI_T_PARAM_KEY, fromUrl);
+      setTParam(fromUrl);
       return;
     }
 
-    const savedParam = localStorage.getItem(TEST_UI_PARAM_KEY)?.trim();
-    if (savedParam) {
-      setPParam(savedParam);
-      return;
-    }
-
-    setPParam(null);
+    const savedParam = localStorage.getItem(TEST_UI_T_PARAM_KEY)?.trim();
+    setTParam(savedParam || null);
   }, []);
 
   useEffect(() => {
@@ -566,7 +562,7 @@ export default function TestUiPageClient() {
           body: JSON.stringify({
             sessionId,
             content: approvedContent,
-            p: pParam || undefined,
+            t: tParam || undefined,
           }),
         });
         const payload = (await response.json()) as { error?: string };
@@ -635,7 +631,7 @@ export default function TestUiPageClient() {
   }, [
     manualApproval,
     noteSessionActivity,
-    pParam,
+    tParam,
     reviewComposer,
     reviewDraft,
     sessionId,
@@ -692,7 +688,7 @@ export default function TestUiPageClient() {
             message: text,
             id: sessionId,
             manualApproval,
-            p: pParam || undefined,
+            t: tParam || undefined,
           }),
         });
         const data = (await response.json()) as SendResponse;
@@ -807,7 +803,7 @@ export default function TestUiPageClient() {
         setLoading(false);
       }
     },
-    [customerComposerLocked, input, loading, manualApproval, noteSessionActivity, pParam, sessionExpired, sessionId, syncTranscript]
+    [customerComposerLocked, input, loading, manualApproval, noteSessionActivity, tParam, sessionExpired, sessionId, syncTranscript]
   );
 
   const handleApprove = useCallback(async () => {
@@ -830,7 +826,7 @@ export default function TestUiPageClient() {
         body: JSON.stringify({
           sessionId,
           content: approvedContent,
-          p: pParam || undefined,
+          t: tParam || undefined,
         }),
       });
       const payload = (await response.json()) as { error?: string };
@@ -893,7 +889,7 @@ export default function TestUiPageClient() {
     } finally {
       setIsApproving(false);
     }
-  }, [isApproving, noteSessionActivity, pParam, reviewComposer, reviewDraft, sessionExpired, sessionId, syncTranscript]);
+  }, [isApproving, noteSessionActivity, tParam, reviewComposer, reviewDraft, sessionExpired, sessionId, syncTranscript]);
 
   const reviewStatusTone = sessionExpired
     ? "bg-[rgb(var(--sb-danger))]"
