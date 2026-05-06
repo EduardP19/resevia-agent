@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { updateSalonProfile } from '@/lib/supabase';
+import { supabase, updateSalonProfile } from '@/lib/supabase';
+
+export async function GET() {
+  const { data } = await supabase.from('business_profiles').select('id, approval_mode').limit(1).single();
+  return NextResponse.json(data ?? {});
+}
 
 export async function PATCH(req: NextRequest) {
   try {

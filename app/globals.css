@@ -1,26 +1,18 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=Montserrat:wght@600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
-  }
+  --brand-purple: #6D28D9;
+  --brand-gold: #C9A96E;
+  --brand-deep: #271549;
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background: white;
+  color: #1C1917;
+  background: #f8f6fb;
   font-family: 'Plus Jakarta Sans', sans-serif;
 }
 
@@ -32,5 +24,32 @@ body {
 
   .animate-slow-spin {
     animation: slow-spin 15s linear infinite;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -200% center; }
+    100% { background-position: 200% center; }
+  }
+
+  .text-brand-gradient {
+    background: linear-gradient(135deg, #6D28D9 0%, #C9A96E 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .bg-dash-surface {
+    background: #f8f6fb;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: rgba(109, 40, 217, 0.15);
+    border-radius: 999px;
   }
 }

@@ -10,13 +10,13 @@ interface Message {
   created_at: string;
 }
 
-export default function ChatInterface({ 
-  sessionId, 
+export default function ChatInterface({
+  sessionId,
   initialTranscript,
   clientPhone,
   sessionStatus,
-}: { 
-  sessionId: string; 
+}: {
+  sessionId: string;
   initialTranscript: Message[];
   clientPhone: string;
   sessionStatus: string;
@@ -27,30 +27,27 @@ export default function ChatInterface({
   const [sendMode, setSendMode] = useState<'approve' | 'manual'>('approve');
   const [currentStatus, setCurrentStatus] = useState(sessionStatus);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+
   const autoGrow = (el: HTMLTextAreaElement) => {
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   };
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
 
-  // Polling state
   const isSyncingRef = useRef(false);
   const lastSyncedAt = useRef<string | null>(null);
   const seenIds = useRef<Set<string>>(new Set(initialTranscript.map(m => m.id)));
   const isSendingRef = useRef(false);
 
-  // Keep refs in sync so the poll callback (stable ref) sees current values
   useEffect(() => { isSendingRef.current = isSending; }, [isSending]);
   const hasDraftRef = useRef(initialTranscript.some(m => m.role === 'draft'));
 
-  // Find the latest draft
   const latestDraft = [...transcript].reverse().find(m => m.role === 'draft');
   hasDraftRef.current = !!latestDraft;
   const isArchived = currentStatus !== 'active' && currentStatus !== 'review';
   const isReview = !isArchived && (currentStatus === 'review' || !!latestDraft);
 
-  // Keep local state aligned with refreshed server props after router.refresh().
   useEffect(() => {
     setTranscript(initialTranscript);
     setCurrentStatus(sessionStatus);
@@ -61,7 +58,6 @@ export default function ChatInterface({
     hasDraftRef.current = initialTranscript.some(m => m.role === 'draft');
   }, [initialTranscript, sessionStatus]);
 
-  // Poll for new messages every 3s — same dedup logic as test page
   const syncTranscript = useCallback(async () => {
     if (isSyncingRef.current || isSendingRef.current) return;
     isSyncingRef.current = true;
@@ -85,7 +81,6 @@ export default function ChatInterface({
         setTranscript(prev => {
           const updated = [...prev];
           for (const m of unprocessed) {
-            // Replace optimistic message if same role+content, otherwise append
             const optimisticIdx = updated.findIndex(
               x => x.id.startsWith('optimistic-') && x.role === m.role && x.content === m.content
             );
@@ -99,12 +94,9 @@ export default function ChatInterface({
         });
       }
 
-      // Draft sync: if server says there's a draft but we don't have one locally,
-      // trigger an RSC refresh to fetch it. Use ref to avoid stale closure.
       if (data.hasDraft && !hasDraftRef.current) {
         router.refresh();
       }
-      // If draft was cleared (approved), remove it locally immediately
       if (!data.hasDraft && hasDraftRef.current) {
         setTranscript(prev => prev.filter(m => m.role !== 'draft'));
         hasDraftRef.current = false;
@@ -114,9 +106,7 @@ export default function ChatInterface({
     }
   }, [sessionId, router]);
 
-  // Start polling on mount
   useEffect(() => {
-    // Seed lastSyncedAt from the latest message we already have
     if (initialTranscript.length > 0) {
       lastSyncedAt.current = initialTranscript[initialTranscript.length - 1].created_at;
     }
@@ -124,21 +114,19 @@ export default function ChatInterface({
     const pid = setInterval(syncTranscript, 3000);
     return () => clearInterval(pid);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]); // Only re-run if sessionId changes
+  }, [sessionId]);
 
-  // Pre-fill textarea with draft on load or when draft changes
   useEffect(() => {
     if (latestDraft && sendMode === 'approve') {
       setInput(latestDraft.content);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latestDraft?.id]);
 
-  // Scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [transcript]);
 
-  // Expose focus method for parent
   useEffect(() => {
     (window as any).__focusApprovalInput = () => {
       textareaRef.current?.focus();
@@ -146,21 +134,11 @@ export default function ChatInterface({
     };
   }, []);
 
-  const switchToManual = () => {
-    setSendMode('manual');
-    setInput('');
-    setTimeout(() => textareaRef.current?.focus(), 50);
-  };
-
-  const switchToApprove = () => {
-    setSendMode('approve');
-    setInput(latestDraft?.content || '');
-    setTimeout(() => textareaRef.current?.focus(), 50);
-  };
+  const switchToManual = () => { setSendMode('manual'); setInput(''); setTimeout(() => textareaRef.current?.focus(), 50); };
+  const switchToApprove = () => { setSendMode('approve'); setInput(latestDraft?.content || ''); setTimeout(() => textareaRef.current?.focus(), 50); };
 
   const handleSend = async () => {
     if (!input.trim() || isSending) return;
-
     const sentContent = input;
     const optimisticMsg: Message = {
       id: `optimistic-${Date.now()}`,
@@ -168,36 +146,26 @@ export default function ChatInterface({
       content: sentContent,
       created_at: new Date().toISOString(),
     };
-
-    // Optimistic update: show instantly, remove drafts
     seenIds.current.add(optimisticMsg.id);
-    setTranscript(prev => [
-      ...prev.filter(m => m.role !== 'draft'),
-      optimisticMsg,
-    ]);
+    setTranscript(prev => [...prev.filter(m => m.role !== 'draft'), optimisticMsg]);
     setInput('');
-    if (textareaRef.current) { textareaRef.current.style.height = 'auto'; }
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setSendMode('approve');
     setIsSending(true);
-
     try {
       const res = await fetch('/api/dashboard/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, content: sentContent }),
       });
-
       if (res.ok) {
-        // Background refresh to sync real DB state (replaces optimistic with real message)
         router.refresh();
       } else {
-        // Rollback optimistic update on failure
         setTranscript(prev => prev.filter(m => m.id !== optimisticMsg.id));
         setInput(sentContent);
         alert('Failed to send message');
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
       setTranscript(prev => prev.filter(m => m.id !== optimisticMsg.id));
       setInput(sentContent);
       alert('Error sending message');
@@ -207,9 +175,7 @@ export default function ChatInterface({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      handleSend();
-    }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSend();
   };
 
   const roleLabel: Record<string, string> = {
@@ -220,27 +186,45 @@ export default function ChatInterface({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-[calc(100dvh-250px)] min-h-[460px] max-h-[620px] md:h-[620px]">
-      
-      {/* Approval Banner — only for live sessions with a pending draft */}
+    <div
+      className="bg-white rounded-2xl overflow-hidden flex flex-col scrollbar-thin"
+      style={{
+        boxShadow: '0 4px 32px rgba(109,40,217,0.1)',
+        border: '1px solid rgba(109,40,217,0.1)',
+        height: 'calc(100dvh - 200px)',
+        minHeight: '400px',
+      }}
+    >
+      {/* Approval banner */}
       {isReview && !isArchived && (
-        <div className="bg-amber-50 border-b border-amber-200 px-5 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center space-x-2">
+        <div
+          className="px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between flex-shrink-0"
+          style={{ background: 'rgba(245,158,11,0.07)', borderBottom: '1px solid rgba(245,158,11,0.2)' }}
+        >
+          <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
             <span className="text-xs font-black uppercase tracking-widest text-amber-700">
-              Awaiting Your Approval — Sophia has NOT sent this yet
+              Awaiting Approval — Sophia has NOT sent this yet
             </span>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex gap-2">
             <button
               onClick={switchToApprove}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${sendMode === 'approve' ? 'bg-brand-purple text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-brand-purple hover:text-brand-purple'}`}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+              style={sendMode === 'approve'
+                ? { background: 'linear-gradient(135deg, #6D28D9 0%, #7C3AED 100%)', color: 'white' }
+                : { background: 'white', border: '1px solid #e5e7eb', color: '#4B5563' }
+              }
             >
               Use Sophia's Draft
             </button>
             <button
               onClick={switchToManual}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${sendMode === 'manual' ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-900 hover:text-gray-900'}`}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+              style={sendMode === 'manual'
+                ? { background: '#1F2937', color: 'white' }
+                : { background: 'white', border: '1px solid #e5e7eb', color: '#4B5563' }
+              }
             >
               Write My Own
             </button>
@@ -248,18 +232,20 @@ export default function ChatInterface({
         </div>
       )}
 
-      {/* Scrollable Transcript */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50/30">
+      {/* Transcript */}
+      <div className="flex-1 overflow-y-auto p-5 space-y-4 scrollbar-thin" style={{ background: '#faf8fd' }}>
         {transcript.map((msg) => {
           const isUser = msg.role === 'user';
           const isDraft = msg.role === 'draft';
           const isSystem = msg.role === 'system';
-          const isAssistant = msg.role === 'assistant';
 
           if (isSystem) {
             return (
               <div key={msg.id} className="flex justify-center">
-                <div className="bg-orange-50 border border-orange-100 text-orange-700 text-[10px] font-mono px-3 py-1.5 rounded-lg italic max-w-[90%] text-center">
+                <div
+                  className="text-[10px] font-mono px-3 py-1.5 rounded-lg italic max-w-[90%] text-center"
+                  style={{ background: 'rgba(201,169,110,0.1)', color: '#92400E', border: '1px solid rgba(201,169,110,0.2)' }}
+                >
                   {msg.content.replace(/^Tool \([^)]+\): /, '[Tool] ')}
                 </div>
               </div>
@@ -268,23 +254,40 @@ export default function ChatInterface({
 
           return (
             <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[78%] ${isDraft ? 'w-full max-w-[90%]' : ''}`}>
-                <div className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${isUser ? 'text-right text-gray-400' : 'text-left text-gray-400'}`}>
+              <div className={`max-w-[78%] ${isDraft ? 'w-full max-w-[92%]' : ''}`}>
+                <div className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${isUser ? 'text-right' : 'text-left'} text-gray-400`}>
                   {roleLabel[msg.role] || msg.role}
                 </div>
-                <div className={`rounded-2xl px-5 py-3 shadow-sm text-sm leading-relaxed ${
-                  isUser
-                    ? 'bg-brand-purple text-white rounded-tr-none'
-                    : isDraft
-                      ? 'bg-amber-50 border-2 border-amber-300 border-dashed text-amber-900 rounded-tl-none'
-                      : isAssistant
-                        ? 'bg-white border border-gray-100 text-gray-800 rounded-tl-none'
-                        : 'bg-gray-100 text-gray-500 text-xs font-mono'
-                }`}>
+                <div
+                  className="rounded-2xl px-4 py-3 text-sm leading-relaxed"
+                  style={
+                    isUser
+                      ? {
+                          background: 'linear-gradient(135deg, #6D28D9 0%, #7C3AED 100%)',
+                          color: 'white',
+                          borderTopRightRadius: '4px',
+                          boxShadow: '0 4px 16px rgba(109,40,217,0.25)',
+                        }
+                      : isDraft
+                      ? {
+                          background: 'rgba(245,158,11,0.07)',
+                          border: '2px dashed rgba(245,158,11,0.4)',
+                          color: '#92400E',
+                          borderTopLeftRadius: '4px',
+                        }
+                      : {
+                          background: 'white',
+                          border: '1px solid rgba(109,40,217,0.08)',
+                          color: '#374151',
+                          borderTopLeftRadius: '4px',
+                          boxShadow: '0 2px 8px rgba(109,40,217,0.06)',
+                        }
+                  }
+                >
                   {isDraft && (
-                    <div className="text-[10px] font-black uppercase tracking-widest text-amber-600 mb-2 flex items-center space-x-1">
+                    <div className="text-[10px] font-black uppercase tracking-widest text-amber-600 mb-2 flex items-center gap-1">
                       <span>⏳</span>
-                      <span>Awaiting your approval before sending</span>
+                      <span>Awaiting approval before sending</span>
                     </div>
                   )}
                   <div className="whitespace-pre-wrap">{msg.content}</div>
@@ -299,45 +302,55 @@ export default function ChatInterface({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Action Bar */}
+      {/* Action bar */}
       {isArchived ? (
-        /* Read-only notice for archived/completed sessions */
-        <div className="p-4 bg-gray-50 border-t border-gray-100 flex items-center space-x-3">
+        <div
+          className="p-4 flex items-center gap-3 flex-shrink-0"
+          style={{ background: '#faf8fd', borderTop: '1px solid rgba(109,40,217,0.07)' }}
+        >
           <div className="w-2 h-2 rounded-full bg-gray-300 flex-shrink-0" />
           <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-            This session is archived — no further messages can be sent
+            Session archived — no further messages can be sent
           </p>
         </div>
       ) : (
-        <div className="p-4 bg-white border-t border-gray-100 space-y-3">
-          {/* Mode label */}
-          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+        <div
+          className="p-4 space-y-3 flex-shrink-0"
+          style={{ background: 'white', borderTop: '1px solid rgba(109,40,217,0.07)' }}
+        >
+          <div className="flex items-center justify-between px-1">
             <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-              {sendMode === 'manual' ? '✏️ Manual Override' : isReview ? "✅ Sophia's Draft (edit to override)" : '✏️ Send manual message'}
+              {sendMode === 'manual' ? 'Manual Override' : isReview ? "Sophia's Draft" : 'Send Message'}
             </span>
-            <span className="text-[10px] text-gray-300 font-mono">⌘+Enter to send</span>
+            <span className="text-[10px] text-gray-300 font-mono hidden sm:block">⌘+Enter to send</span>
           </div>
-
-          <div className="flex items-end space-x-3">
+          <div className="flex items-end gap-3">
             <textarea
               ref={textareaRef}
               rows={2}
               value={input}
-              onChange={(e) => { setInput(e.target.value); autoGrow(e.target); }}
+              onChange={e => { setInput(e.target.value); autoGrow(e.target); }}
               onKeyDown={handleKeyDown}
               placeholder={
                 sendMode === 'manual'
-                  ? 'Type your own message to the client...'
+                  ? 'Type your own message…'
                   : latestDraft
-                    ? "Edit Sophia's draft, or send as-is..."
-                    : 'Type a message to send directly to the client...'
+                  ? "Edit Sophia's draft, or send as-is…"
+                  : 'Type a message to the client…'
               }
-              className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-purple/30 transition-all text-gray-900 resize-none bg-gray-50 focus:bg-white overflow-hidden"
+              className="flex-1 rounded-xl px-4 py-3 text-sm resize-none overflow-hidden transition-all outline-none text-gray-900"
+              style={{
+                background: '#faf8fd',
+                border: '1px solid rgba(109,40,217,0.12)',
+              }}
+              onFocus={e => { e.currentTarget.style.borderColor = '#6D28D9'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(109,40,217,0.08)'; }}
+              onBlur={e => { e.currentTarget.style.borderColor = 'rgba(109,40,217,0.12)'; e.currentTarget.style.boxShadow = 'none'; }}
             />
             <button
               onClick={handleSend}
               disabled={isSending || !input.trim()}
-              className="bg-brand-purple text-white px-5 py-3 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-indigo-100 whitespace-nowrap flex items-center space-x-2"
+              className="flex items-center gap-2 px-4 py-3 sm:px-5 rounded-xl text-sm font-bold text-white transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 flex-shrink-0 min-h-[48px]"
+              style={{ background: 'linear-gradient(135deg, #6D28D9 0%, #7C3AED 100%)', boxShadow: '0 4px 16px rgba(109,40,217,0.3)' }}
             >
               {isSending ? (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

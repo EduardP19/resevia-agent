@@ -1,7 +1,6 @@
 'use client';
 
 export default function HeaderActions({ isReview }: { isReview: boolean }) {
-  // Don't show action buttons for archived sessions
   if (!isReview) return null;
 
   const focusInput = () => {
@@ -9,19 +8,12 @@ export default function HeaderActions({ isReview }: { isReview: boolean }) {
   };
 
   return (
-    <div className="flex space-x-3">
-      <button
-        onClick={focusInput}
-        className="bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-50 transition-colors"
-      >
-        Escalate to Human
-      </button>
-      <button
-        onClick={focusInput}
-        className="bg-brand-purple text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition-colors"
-      >
-        Review & Approve
-      </button>
-    </div>
+    <button
+      onClick={focusInput}
+      className="px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all duration-150 active:scale-95"
+      style={{ background: 'linear-gradient(135deg, #6D28D9 0%, #7C3AED 100%)', boxShadow: '0 4px 16px rgba(109,40,217,0.3)' }}
+    >
+      Review & Approve
+    </button>
   );
 }

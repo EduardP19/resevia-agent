@@ -8,16 +8,19 @@ export default async function SettingsPage() {
   const { data: salon } = await supabase.from('business_profiles').select('*').limit(1).single();
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-3xl mx-auto">
       <div className="mb-8">
-        <h2 className="text-3xl font-bold text-gray-900">Salon Settings</h2>
-        <p className="text-gray-500 mt-1">Configure your AI agent's personality and business rules.</p>
+        <h2 className="text-3xl font-bold tracking-tight" style={{ color: '#271549' }}>Settings</h2>
+        <p className="text-sm text-gray-400 mt-1">Configure your AI agent's personality and business rules.</p>
       </div>
 
       {salon ? (
         <ProfileEditor salon={salon} />
       ) : (
-        <div>No salon profile found.</div>
+        <div className="p-12 text-center bg-white rounded-2xl text-gray-400"
+          style={{ border: '2px dashed rgba(109,40,217,0.15)' }}>
+          No salon profile found.
+        </div>
       )}
     </div>
   );
