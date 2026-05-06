@@ -138,25 +138,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <main className="flex-1 flex flex-col overflow-hidden w-full min-w-0">
         {/* Top header */}
         <header
-          className="h-14 md:h-16 bg-white/80 backdrop-blur-md border-b border-[#e8e0f0] flex items-center justify-between px-4 md:px-8 flex-shrink-0"
+          className="h-14 md:h-16 bg-white/80 backdrop-blur-md border-b border-[#e8e0f0] flex items-center px-4 md:px-8 flex-shrink-0"
           style={{ boxShadow: '0 1px 0 rgba(109,40,217,0.06)' }}
         >
-          {/* Left: hamburger on mobile */}
-          <button
-            onClick={() => setIsMobileMenuOpen(true)}
-            className="md:hidden p-2 -ml-1 text-gray-500 hover:bg-[#f0ebfa] rounded-lg transition-colors"
-            aria-label="Open menu"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
+          {/* Left: hamburger (mobile) — invisible placeholder on desktop to preserve layout */}
+          <div className="flex-1 flex items-center">
+            <button
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="md:hidden p-2 -ml-1 text-gray-500 hover:bg-[#f0ebfa] rounded-lg transition-colors"
+              aria-label="Open menu"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          </div>
 
-          {/* Mobile: Resevia wordmark centred */}
-          <span className="md:hidden text-sm font-bold tracking-tight" style={{ color: '#271549' }}>Resevia</span>
+          {/* Centre: Resevia wordmark on mobile */}
+          <span className="md:hidden text-sm font-bold tracking-tight absolute left-1/2 -translate-x-1/2" style={{ color: '#271549' }}>Resevia</span>
 
-          {/* Right: bell + toggle (toggle hidden on mobile — it's in Settings) */}
-          <div className="flex items-center space-x-2 md:space-x-4">
+          {/* Right: bell + toggle */}
+          <div className="flex-1 flex items-center justify-end space-x-2 md:space-x-4">
             <NotificationBell />
             <span className="h-5 w-px bg-gray-200 hidden md:block" />
             <div className="hidden md:block">
