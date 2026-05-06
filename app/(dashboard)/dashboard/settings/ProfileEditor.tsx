@@ -12,10 +12,12 @@ export default function ProfileEditor({ salon }: { salon: any }) {
     twilio_number: salon.twilio_number || '',
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [saveState, setSaveState] = useState<'idle' | 'saved' | 'error'>('idle');
   const router = useRouter();
 
   const handleSave = async () => {
     setIsSaving(true);
+    setSaveState('idle');
     const res = await fetch('/api/dashboard/salon', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -23,8 +25,11 @@ export default function ProfileEditor({ salon }: { salon: any }) {
     });
     setIsSaving(false);
     if (res.ok) {
-      alert('Settings saved!');
+      setSaveState('saved');
       router.refresh();
+      setTimeout(() => setSaveState('idle'), 3000);
+    } else {
+      setSaveState('error');
     }
   };
 
@@ -64,13 +69,14 @@ export default function ProfileEditor({ salon }: { salon: any }) {
           </div>
           <div>
             <label className="block text-xs font-bold text-gray-400 uppercase mb-1">AI Tone of Voice</label>
-            <textarea 
+            <textarea
               rows={3}
-              value={formData.tone_of_voice} 
+              value={formData.tone_of_voice}
               onChange={e => setFormData({...formData, tone_of_voice: e.target.value})}
               className="w-full border border-gray-200 rounded-lg px-4 py-3 text-black"
-              placeholder="e.g. professional and warm, helpful but concise"
+              placeholder="e.g. friendly and warm but professional — like a trusted local salon. Never pushy, always helpful."
             />
+            <p className="text-xs text-gray-400 mt-1">Describe how Sophia should sound. This shapes every message she writes.</p>
           </div>
         </div>
 
@@ -95,8 +101,19 @@ export default function ProfileEditor({ salon }: { salon: any }) {
         </div>
       </div>
 
-      <div className="pt-6 border-t border-gray-100 flex justify-end">
-        <button 
+      <div className="pt-6 border-t border-gray-100 flex items-center justify-end gap-4">
+        {saveState === 'saved' && (
+          <span className="text-sm font-semibold text-emerald-600 flex items-center gap-1.5">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+            </svg>
+            Settings saved
+          </span>
+        )}
+        {saveState === 'error' && (
+          <span className="text-sm font-semibold text-rose-600">Failed to save — please try again</span>
+        )}
+        <button
           onClick={handleSave}
           disabled={isSaving}
           className="bg-brand-purple text-white px-8 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-all disabled:opacity-50"

@@ -27,6 +27,10 @@ export default function ChatInterface({
   const [sendMode, setSendMode] = useState<'approve' | 'manual'>('approve');
   const [currentStatus, setCurrentStatus] = useState(sessionStatus);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const autoGrow = (el: HTMLTextAreaElement) => {
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  };
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
@@ -172,6 +176,7 @@ export default function ChatInterface({
       optimisticMsg,
     ]);
     setInput('');
+    if (textareaRef.current) { textareaRef.current.style.height = 'auto'; }
     setSendMode('approve');
     setIsSending(true);
 
@@ -318,7 +323,7 @@ export default function ChatInterface({
               ref={textareaRef}
               rows={2}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => { setInput(e.target.value); autoGrow(e.target); }}
               onKeyDown={handleKeyDown}
               placeholder={
                 sendMode === 'manual'
@@ -327,7 +332,7 @@ export default function ChatInterface({
                     ? "Edit Sophia's draft, or send as-is..."
                     : 'Type a message to send directly to the client...'
               }
-              className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-purple/30 transition-all text-gray-900 resize-none bg-gray-50 focus:bg-white"
+              className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-purple/30 transition-all text-gray-900 resize-none bg-gray-50 focus:bg-white overflow-hidden"
             />
             <button
               onClick={handleSend}

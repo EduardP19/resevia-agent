@@ -430,23 +430,23 @@ export async function getSalonSessions(salonId?: string, limit = 50) {
 }
 
 /**
- * Dashboard: Unique clients (phone numbers) across all salons.
- * It returns the latest session for each unique client_identifier.
+ * Dashboard: All active/review/escalated sessions across all salons.
+ * Returns one row per session (not grouped by phone), so multiple concurrent
+ * sessions from the same client all appear in the inbox.
  */
 export async function getGroupedSessions(salonId?: string) {
-  // Use a raw query or RPC to get the latest session per client.
-  // For simplicity using JS-side grouping for MVP.
   let query = supabase
     .from('sessions')
     .select(`
-      id, 
-      client_identifier, 
-      status, 
-      updated_at, 
+      id,
+      client_identifier,
+      status,
+      updated_at,
       metadata,
       salon_id,
       business_profiles(name)
     `)
+    .in('status', ['active', 'review', 'handed_over'])
     .order('updated_at', { ascending: false });
 
   if (salonId) {
@@ -458,26 +458,17 @@ export async function getGroupedSessions(salonId?: string) {
 
   const visibleSessions = (data || []).filter((session: any) => !isTestUiSession(session));
 
-  const grouped: Record<string, any> = {};
-  const sessionIds: string[] = [];
+  const sessions = visibleSessions.map((s: any) => ({
+    ...s,
+    has_review: s.status === 'review',
+    has_escalation: s.status === 'handed_over',
+    last_question: null as string | null,
+    draft_response: null as string | null,
+  }));
 
-  for (const s of visibleSessions) {
-    if (!grouped[s.client_identifier]) {
-      grouped[s.client_identifier] = {
-        ...s,
-        session_count: 0,
-        has_review: false,
-        last_question: null,
-        draft_response: null
-      };
-      sessionIds.push(s.id);
-    }
-    grouped[s.client_identifier].session_count++;
-    if (s.status === 'review') grouped[s.client_identifier].has_review = true;
-    if (s.status === 'handed_over') grouped[s.client_identifier].has_escalation = true;
-  }
+  const sessionIds = sessions.map((s: any) => s.id);
 
-  // Batch fetch transcripts for the latest sessions
+  // Batch fetch the latest transcript message per session
   if (sessionIds.length > 0) {
     const { data: transcripts } = await supabase
       .from('transcripts')
@@ -486,19 +477,19 @@ export async function getGroupedSessions(salonId?: string) {
       .order('created_at', { ascending: false });
 
     for (const t of (transcripts || [])) {
-      const client = Object.values(grouped).find(g => g.id === t.session_id);
-      if (!client) continue;
+      const session = sessions.find((s: any) => s.id === t.session_id);
+      if (!session) continue;
 
-      if (t.role === 'user' && !client.last_question) {
-        client.last_question = t.content;
+      if (t.role === 'user' && !session.last_question) {
+        session.last_question = t.content;
       }
-      if (t.role === 'draft' && !client.draft_response) {
-        client.draft_response = t.content;
+      if (t.role === 'draft' && !session.draft_response) {
+        session.draft_response = t.content;
       }
     }
   }
 
-  return Object.values(grouped);
+  return sessions;
 }
 
 // FAQ Management

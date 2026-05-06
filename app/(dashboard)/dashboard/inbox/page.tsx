@@ -8,38 +8,32 @@ export default async function InboxPage({ searchParams }: { searchParams: { filt
   const allClients = await getGroupedSessions();
   const filter = searchParams.filter || 'all';
   
-  const threeMinsAgo = new Date(Date.now() - 3 * 60 * 1000);
-  
-  // Categorize clients
+  // Stats across all returned sessions (already filtered to active/review/handed_over in the query)
   const stats = {
-    all: allClients.filter((c: any) => new Date(c.updated_at) > threeMinsAgo).length,
+    all: allClients.length,
     needs_approval: allClients.filter((c: any) => c.has_review).length,
     escalated: allClients.filter((c: any) => c.has_escalation).length,
   };
 
   const filteredClients = allClients.filter((c: any) => {
-    const isRecentlyActive = new Date(c.updated_at) > threeMinsAgo;
     if (filter === 'approval') return c.has_review;
     if (filter === 'escalated') return c.has_escalation;
-    // Default: 'all' active/review sessions
-    return (c.status === 'active' || c.status === 'review' || c.has_review) && isRecentlyActive;
+    return true; // 'all' — show every active/review/escalated session
   });
 
   const Tab = ({ id, label, count, active }: { id: string; label: string; count: number; active: boolean }) => (
-    <Link 
+    <Link
       href={`/dashboard/inbox${id === 'all' ? '' : `?filter=${id}`}`}
-      className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
-        active 
-          ? 'bg-brand-purple text-white shadow-lg shadow-indigo-100' 
+      className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center ${
+        active
+          ? 'bg-brand-purple text-white shadow-lg shadow-indigo-100'
           : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
       }`}
     >
       {label}
-      {count > 0 && (
-        <span className={`ml-2 px-1.5 py-0.5 rounded-md text-[10px] ${active ? 'bg-white/20' : 'bg-gray-100 text-gray-500'}`}>
-          {count}
-        </span>
-      )}
+      <span className={`ml-2 px-1.5 py-0.5 rounded-md text-[10px] ${active ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
+        {count}
+      </span>
     </Link>
   );
 
@@ -69,9 +63,9 @@ export default async function InboxPage({ searchParams }: { searchParams: { filt
 
       <div className="space-y-4">
         {filteredClients.map((c: any) => (
-          <Link 
-            key={c.client_identifier} 
-            href={`/dashboard/client/${encodeURIComponent(c.client_identifier)}`}
+          <Link
+            key={c.id}
+            href={`/dashboard/sessions/${c.id}`}
             className="block group"
           >
             <div className="bg-white rounded-3xl border border-gray-100 p-6 flex flex-col md:flex-row md:items-center justify-between shadow-sm hover:shadow-xl hover:border-indigo-100 transition-all duration-300 relative overflow-hidden">
@@ -81,8 +75,8 @@ export default async function InboxPage({ searchParams }: { searchParams: { filt
                     <div className="flex items-center space-x-3 mb-1">
                       <h3 className="text-lg font-bold text-gray-900 font-mono tracking-tight">{c.client_identifier}</h3>
                       <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                        c.has_review 
-                          ? 'bg-rose-100 text-rose-600 animate-pulse' 
+                        c.has_review
+                          ? 'bg-rose-100 text-rose-600 animate-pulse'
                           : c.has_escalation
                           ? 'bg-amber-100 text-amber-700'
                           : 'bg-emerald-100 text-emerald-600'
@@ -98,10 +92,12 @@ export default async function InboxPage({ searchParams }: { searchParams: { filt
 
                {/* Center: Message Preview */}
                <div className="flex-1 px-0 md:px-12 max-w-lg mb-4 md:mb-0">
-                  {c.last_question && (
+                  {c.last_question ? (
                     <p className="text-sm text-gray-600 italic line-clamp-1 leading-relaxed">
-                       "{c.last_question}"
+                       &ldquo;{c.last_question}&rdquo;
                     </p>
+                  ) : (
+                    <p className="text-sm text-gray-300 italic">No messages yet</p>
                   )}
                </div>
 
