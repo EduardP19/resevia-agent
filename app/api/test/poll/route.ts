@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_noStore as noStore } from 'next/cache';
 import { supabase } from '@/lib/supabase';
+import { safeLog } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -33,7 +34,19 @@ export async function GET(req: NextRequest) {
         .order('created_at', { ascending: false })
         .limit(50);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    safeLog({
+      level: 'error',
+      category: 'system',
+      event: 'db_error',
+      session_id: sessionId,
+      error: error?.message || String(error),
+      stack: error?.stack,
+      query_description: 'Poll test transcript messages',
+      code: error?.code,
+    });
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   const messages = since ? (rawMessages || []) : (rawMessages || []).reverse();
 

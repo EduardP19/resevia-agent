@@ -13,6 +13,7 @@ import {
   saveMessageToTable,
   supabase
 } from './supabase';
+import { safeLog } from '@/lib/logger';
 
 const MAX_TOOL_CALLS = 5;
 
@@ -30,6 +31,14 @@ export async function createTestUiResponse(options: {
   }
 
   const conversation = await createTestUiConversation(salon.id, sessionId);
+  safeLog({
+    level: 'info',
+    category: 'dashboard',
+    event: 'page_loaded',
+    tenant_id: salon.id,
+    session_id: conversation.id,
+    page: 'sophia-sandbox',
+  });
   const conversationMetadata =
     conversation.metadata && typeof conversation.metadata === 'object'
       ? (conversation.metadata as Record<string, any>)
@@ -59,6 +68,7 @@ export async function createTestUiResponse(options: {
 
   const toolCtx: ToolContext = {
     salonId: salon.id,
+    sessionId: conversation.id,
     customerPhone: conversation.client_identifier,
     salon,
     workers,
@@ -71,7 +81,8 @@ export async function createTestUiResponse(options: {
     history.map((entry: any) => ({
       role: entry.role,
       content: entry.content,
-    }))
+    })),
+    { tenant_id: salon.id, session_id: conversation.id }
   );
 
   let toolCallCount = 0;
@@ -102,7 +113,8 @@ export async function createTestUiResponse(options: {
       updatedHistory.map((entry: any) => ({
         role: entry.role,
         content: entry.content,
-      }))
+      })),
+      { tenant_id: salon.id, session_id: conversation.id }
     );
   }
 
@@ -119,6 +131,13 @@ export async function createTestUiResponse(options: {
 
   if (manualApproval) {
     await saveMessageToTable(conversation.id, 'draft', reply, TEST_UI_TRANSCRIPTS_TABLE, t);
+    safeLog({
+      level: 'info',
+      category: 'session',
+      event: 'draft_created',
+      tenant_id: salon.id,
+      session_id: conversation.id,
+    });
     await supabase
       .from('sessions')
       .update({
@@ -182,4 +201,11 @@ export async function approveTestUiDraft(sessionId: string, content: string, t?:
       updated_at: new Date().toISOString(),
     })
     .eq('id', sessionId);
+
+  safeLog({
+    level: 'info',
+    category: 'session',
+    event: 'draft_approved',
+    session_id: sessionId,
+  });
 }

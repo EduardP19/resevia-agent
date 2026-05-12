@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { approveTestUiDraft } from '@/lib/sophia-sandbox';
 import { logAppError, toErrorLogPayload } from '@/lib/error-logger';
+import { safeLog } from '@/lib/logger';
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,9 +23,25 @@ export async function POST(req: NextRequest) {
     }
 
     await approveTestUiDraft(sessionId, content, t);
+    safeLog({
+      level: 'info',
+      category: 'dashboard',
+      event: 'message_approved',
+      session_id: sessionId,
+      user_id: req.headers.get('x-user-id') || undefined,
+      source: 'sophia-sandbox',
+    });
     return NextResponse.json({ success: true });
   } catch (error: any) {
     const payload = toErrorLogPayload(error, 'Test UI approve error');
+    safeLog({
+      level: 'error',
+      category: 'system',
+      event: 'db_error',
+      error: payload.message,
+      stack: payload.stack || undefined,
+      query_description: 'Approve Sophia sandbox draft',
+    });
     await logAppError({
       source: 'api.sophia-sandbox.approve',
       message: payload.message,

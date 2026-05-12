@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { agentTools } from './agent';
+import { safeLog } from '@/lib/logger';
 
 const genAI = new GoogleGenerativeAI(process.env.AI_MODEL_API_KEY!);
 
@@ -24,6 +25,11 @@ export interface AIResponse {
   };
 }
 
+type AILogContext = {
+  tenant_id?: string;
+  session_id?: string;
+};
+
 /**
  * Parse a system message saved as "Tool (name): result" into its parts.
  */
@@ -33,7 +39,11 @@ function parseToolMessage(content: string): { toolName: string; result: string }
   return { toolName: match[1], result: match[2] };
 }
 
-export async function callAI(systemInstruction: string, messages: AIMessage[]): Promise<AIResponse> {
+export async function callAI(
+  systemInstruction: string,
+  messages: AIMessage[],
+  context: AILogContext = {}
+): Promise<AIResponse> {
   const model = genAI.getGenerativeModel({
     model: process.env.AI_MODEL_NAME || 'gemini-2.5-flash',
     systemInstruction,
@@ -70,7 +80,34 @@ export async function callAI(systemInstruction: string, messages: AIMessage[]): 
     }
   }
 
-  const result = await model.generateContent({ contents });
+  safeLog({
+    level: 'info',
+    category: 'ai',
+    event: 'ai_call_start',
+    tenant_id: context.tenant_id,
+    session_id: context.session_id,
+    message_count: messages.length,
+    model: process.env.AI_MODEL_NAME || 'gemini-2.5-flash',
+  });
+
+  let result;
+  try {
+    result = await model.generateContent({ contents });
+  } catch (error: any) {
+    safeLog({
+      level: 'error',
+      category: 'ai',
+      event: 'ai_call_failed',
+      tenant_id: context.tenant_id,
+      session_id: context.session_id,
+      message_count: messages.length,
+      error: error?.message || String(error),
+      stack: error?.stack,
+      model: process.env.AI_MODEL_NAME || 'gemini-2.5-flash',
+    });
+    throw error;
+  }
+
   const response = result.response;
   const usage = response.usageMetadata;
 
@@ -78,6 +115,16 @@ export async function callAI(systemInstruction: string, messages: AIMessage[]): 
   const toolCallPart = candidates?.content?.parts?.find((p: any) => p.functionCall);
 
   if (toolCallPart?.functionCall) {
+    safeLog({
+      level: 'info',
+      category: 'ai',
+      event: 'ai_call_success',
+      tenant_id: context.tenant_id,
+      session_id: context.session_id,
+      message_count: messages.length,
+      tool_call: toolCallPart.functionCall.name,
+      model: process.env.AI_MODEL_NAME || 'gemini-2.5-flash',
+    });
     return {
       tool_call: toolCallPart.functionCall,
       raw: response,
@@ -89,6 +136,15 @@ export async function callAI(systemInstruction: string, messages: AIMessage[]): 
     };
   }
 
+  safeLog({
+    level: 'info',
+    category: 'ai',
+    event: 'ai_call_success',
+    tenant_id: context.tenant_id,
+    session_id: context.session_id,
+    message_count: messages.length,
+    model: process.env.AI_MODEL_NAME || 'gemini-2.5-flash',
+  });
   return {
     reply: response.text(),
     raw: response,

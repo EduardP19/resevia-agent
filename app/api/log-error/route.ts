@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { logAppError } from '@/lib/error-logger';
+import { safeLog } from '@/lib/logger';
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,6 +19,16 @@ export async function POST(req: NextRequest) {
       client_identifier: typeof payload?.client_identifier === 'string' ? payload.client_identifier : undefined,
       user_agent: req.headers.get('user-agent') || undefined,
       runtime: 'client',
+    });
+    safeLog({
+      level: payload?.level === 'warn' ? 'warning' : payload?.level === 'info' ? 'info' : 'error',
+      category: 'dashboard',
+      event: 'client_error',
+      tenant_id: typeof payload?.salon_id === 'string' ? payload.salon_id : undefined,
+      session_id: typeof payload?.session_id === 'string' ? payload.session_id : undefined,
+      error: typeof payload?.message === 'string' ? payload.message : 'Client error',
+      stack: typeof payload?.stack === 'string' ? payload.stack : undefined,
+      path: typeof payload?.path === 'string' ? payload.path : req.nextUrl.pathname,
     });
 
     return NextResponse.json({ ok: true });

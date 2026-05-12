@@ -1,6 +1,7 @@
 import AutoRefresh from './AutoRefresh';
 import { getGroupedSessions } from '@/lib/supabase';
 import Link from 'next/link';
+import { safeLog } from '@/lib/logger';
 
 export const revalidate = 0;
 
@@ -8,6 +9,13 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const { filter: filterParam } = await searchParams;
   const allClients = await getGroupedSessions();
   const filter = filterParam || 'all';
+  safeLog({
+    level: 'info',
+    category: 'dashboard',
+    event: 'page_loaded',
+    page: 'dashboard/inbox',
+    filter,
+  });
 
   const stats = {
     all: allClients.length,

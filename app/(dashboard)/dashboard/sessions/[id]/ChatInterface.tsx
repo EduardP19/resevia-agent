@@ -158,7 +158,7 @@ export default function ChatInterface({
       const res = await fetch('/api/dashboard/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, content: sentContent }),
+        body: JSON.stringify({ sessionId, content: sentContent, mode: sendMode }),
       });
       if (res.ok) {
         router.refresh();

@@ -1,11 +1,19 @@
 import React from 'react';
 import { supabase } from '@/lib/supabase';
 import ProfileEditor from './ProfileEditor';
+import { safeLog } from '@/lib/logger';
 
 export const revalidate = 0;
 
 export default async function SettingsPage() {
   const { data: salon } = await supabase.from('business_profiles').select('*').limit(1).single();
+  safeLog({
+    level: 'info',
+    category: 'dashboard',
+    event: 'page_loaded',
+    tenant_id: salon?.id,
+    page: 'dashboard/settings',
+  });
 
   return (
     <div className="max-w-3xl mx-auto">

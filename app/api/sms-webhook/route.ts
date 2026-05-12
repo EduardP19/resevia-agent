@@ -6,6 +6,7 @@ import { sendSMS } from '../../../lib/twilio';
 import { isHandoff } from '../../../lib/handoff';
 import { executeToolCall, ToolContext } from '../../../lib/tool-handler';
 import { logAppError, toErrorLogPayload } from '../../../lib/error-logger';
+import { safeLog } from '@/lib/logger';
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,6 +20,16 @@ export async function POST(req: NextRequest) {
     if (!salon) return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
 
     const conversation = await getOrCreateConversation(salon.id, fromNumber);
+    safeLog({
+      level: 'info',
+      category: 'sms',
+      event: 'sms_received',
+      from: fromNumber,
+      to: toNumber,
+      body: userInput,
+      tenant_id: salon.id,
+      session_id: conversation.id,
+    });
     const userMessage = await saveMessage(conversation.id, 'user', userInput);
 
     const [workers, faqs, activeHold, history] = await Promise.all([
@@ -42,6 +53,7 @@ export async function POST(req: NextRequest) {
 
     const toolCtx: ToolContext = {
       salonId: salon.id,
+      sessionId: conversation.id,
       customerPhone: fromNumber,
       salon,
       workers,
@@ -49,7 +61,11 @@ export async function POST(req: NextRequest) {
       salonServices: salon.services
     };
 
-    let aiResponse = await callAI(systemPrompt, history.map((h: any) => ({ role: h.role, content: h.content })));
+    let aiResponse = await callAI(
+      systemPrompt,
+      history.map((h: any) => ({ role: h.role, content: h.content })),
+      { tenant_id: salon.id, session_id: conversation.id }
+    );
 
     let toolCallCount = 0;
     while (aiResponse.tool_call && toolCallCount < 5) {
@@ -63,7 +79,11 @@ export async function POST(req: NextRequest) {
 
       await saveMessage(conversation.id, 'system' as any, `Tool (${name}): ${result.toolResult}`);
       const updatedHistory = await getTranscriptHistory(conversation.id);
-      aiResponse = await callAI(systemPrompt, updatedHistory.map((h: any) => ({ role: h.role, content: h.content })));
+      aiResponse = await callAI(
+        systemPrompt,
+        updatedHistory.map((h: any) => ({ role: h.role, content: h.content })),
+        { tenant_id: salon.id, session_id: conversation.id }
+      );
     }
 
     let reply =
@@ -73,6 +93,13 @@ export async function POST(req: NextRequest) {
 
     if (salon.approval_mode) {
       await saveMessage(conversation.id, 'draft' as any, reply);
+      safeLog({
+        level: 'info',
+        category: 'session',
+        event: 'draft_created',
+        tenant_id: salon.id,
+        session_id: conversation.id,
+      });
       await supabase.from('sessions').update({
         metadata: { ...conversation.metadata, tokens: aiResponse.tokens, booking_state: updatedBookingState },
         status: 'review',
@@ -90,7 +117,10 @@ export async function POST(req: NextRequest) {
 
     const statusCallbackUrl =
       process.env.TWILIO_STATUS_CALLBACK_URL || new URL('/api/twilio/status', req.url).toString();
-    const outboundMessage = await sendSMS(fromNumber, reply, statusCallbackUrl);
+    const outboundMessage = await sendSMS(fromNumber, reply, statusCallbackUrl, {
+      tenant_id: salon.id,
+      session_id: conversation.id,
+    });
     const assistantMessage = await saveMessage(conversation.id, 'assistant', reply);
 
     if (inboundMessageSid && userMessage?.id) {
@@ -132,6 +162,14 @@ export async function POST(req: NextRequest) {
     }
 
     if (triggerHandoff) {
+       safeLog({
+         level: 'warning',
+         category: 'session',
+         event: 'session_escalated',
+         tenant_id: salon.id,
+         session_id: conversation.id,
+         customer_phone: fromNumber,
+       });
        const { notifyOwnerHandoff } = await import('../../../lib/handoff_service');
        await notifyOwnerHandoff(conversation.id, salon.id);
     }
@@ -139,6 +177,13 @@ export async function POST(req: NextRequest) {
     return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
   } catch (error: any) {
     const payload = toErrorLogPayload(error, 'SMS webhook error');
+    safeLog({
+      level: 'error',
+      category: 'system',
+      event: 'webhook_error',
+      error: payload.message,
+      stack: payload.stack || undefined,
+    });
     await logAppError({
       source: 'api.sms-webhook',
       message: payload.message,

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { TEST_UI_TRANSCRIPTS_TABLE, getDefaultSalon, supabase } from '@/lib/supabase';
+import { safeLog } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -46,6 +47,14 @@ export async function GET() {
       detail: salon ? 'Default salon found' : 'No salon found in business_profiles',
     });
   } catch (error: any) {
+    safeLog({
+      level: 'error',
+      category: 'system',
+      event: 'db_error',
+      error: error?.message || String(error),
+      stack: error?.stack,
+      query_description: 'Sophia sandbox health default salon check',
+    });
     checks.push({
       name: 'default_salon',
       ok: false,
@@ -68,6 +77,14 @@ export async function GET() {
       detail: `${TEST_UI_TRANSCRIPTS_TABLE} is writable`,
     });
   } catch (error: any) {
+    safeLog({
+      level: 'error',
+      category: 'system',
+      event: 'db_error',
+      error: error?.message || String(error),
+      stack: error?.stack,
+      query_description: 'Sophia sandbox health transcript write check',
+    });
     checks.push({
       name: 'test_ui_transcripts_write_path',
       ok: false,

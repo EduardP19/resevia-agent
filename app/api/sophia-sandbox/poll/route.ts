@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { unstable_noStore as noStore } from 'next/cache';
 import { supabase, TEST_UI_TRANSCRIPTS_TABLE } from '@/lib/supabase';
 import { logAppError } from '@/lib/error-logger';
+import { safeLog } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -33,6 +34,16 @@ export async function GET(req: NextRequest) {
     : await baseQuery.order('created_at', { ascending: false }).limit(50);
 
   if (error) {
+    safeLog({
+      level: 'error',
+      category: 'system',
+      event: 'db_error',
+      session_id: sessionId,
+      error: error?.message || String(error),
+      stack: error?.stack,
+      query_description: 'Poll Sophia sandbox transcript messages',
+      code: error?.code,
+    });
     await logAppError({
       source: 'api.sophia-sandbox.poll',
       message: error.message || 'Poll query failed',

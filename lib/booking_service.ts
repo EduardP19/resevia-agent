@@ -1,5 +1,6 @@
 import { supabase, completeSession } from './supabase';
 import axios from 'axios';
+import { safeLog } from '@/lib/logger';
 
 const CAL_COM_API_KEY = process.env.CAL_COM_API_KEY;
 
@@ -25,6 +26,17 @@ const DAY_TO_INDEX: Record<string, number> = {
   sat: 6,
 };
 const lowerSafe = (value: unknown) => String(value || '').toLowerCase();
+
+function logCalError(error: any, context: Record<string, any> = {}) {
+  safeLog({
+    level: 'error',
+    category: 'system',
+    event: 'cal_error',
+    error: error?.response?.data ? JSON.stringify(error.response.data) : error?.message || String(error),
+    stack: error?.stack,
+    ...context,
+  });
+}
 
 function getUtcStart(date: string, time: string): string {
   const localDate = new Date(`${date}T${time}:00`);
@@ -299,7 +311,12 @@ export async function fetchAvailability(
               return isWithinOpeningHours(slotStartIso, serviceDuration, openingHoursRaw);
             })
             .map(t => `${formatSlotTime(t)} (${worker.name})`);
-        } catch {
+        } catch (error: any) {
+          logCalError(error, {
+            tenant_id: salonId,
+            query_description: 'Fetch Cal.com availability',
+            worker_id: worker.id,
+          });
           return [];
         }
       })
@@ -308,6 +325,10 @@ export async function fetchAvailability(
     return results.flat();
   } catch (error: any) {
     console.error('[Availability Error]', error.message);
+    logCalError(error, {
+      tenant_id: salonId,
+      query_description: 'Fetch availability',
+    });
     return [];
   }
 }
@@ -324,6 +345,10 @@ export async function getBookingFields(eventTypeId: number) {
     return res.data.data?.eventType?.bookingFields || res.data.data?.bookingFields || [];
   } catch (error: any) {
     console.error('[Fields Error]', error.response?.data || error.message);
+    logCalError(error, {
+      query_description: 'Fetch Cal.com booking fields',
+      event_type_id: eventTypeId,
+    });
     return [];
   }
 }
@@ -488,6 +513,10 @@ export async function cancelBooking(customerPhone: string, salonId: string, serv
     };
   } catch (error: any) {
     console.error('[Cancel Error]', error.response?.data || error.message);
+    logCalError(error, {
+      tenant_id: salonId,
+      query_description: 'Cancel Cal.com booking',
+    });
     return { success: false, error: 'Failed to cancel booking.' };
   }
 }
@@ -559,6 +588,10 @@ export async function rescheduleBooking(
     };
   } catch (error: any) {
     console.error('[Reschedule Error]', error.response?.data || error.message);
+    logCalError(error, {
+      tenant_id: salonId,
+      query_description: 'Reschedule Cal.com booking',
+    });
     return { success: false, error: 'Failed to reschedule booking.' };
   }
 }
@@ -615,6 +648,9 @@ export async function confirmBooking(holdUid: string) {
     return { success: true, bookingUid: newBooking.uid };
   } catch (error: any) {
     console.error('[Confirm Error]', JSON.stringify(error.response?.data || error.message, null, 2));
+    logCalError(error, {
+      query_description: 'Confirm Cal.com booking',
+    });
     return { success: false, error: 'Failed to confirm booking.' };
   }
 }

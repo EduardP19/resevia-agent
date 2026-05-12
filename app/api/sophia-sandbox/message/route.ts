@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createTestUiResponse } from '@/lib/sophia-sandbox';
 import { logAppError, toErrorLogPayload } from '@/lib/error-logger';
+import { safeLog } from '@/lib/logger';
 
 export async function POST(req: NextRequest) {
   try {
@@ -29,6 +30,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result);
   } catch (error: any) {
     const payload = toErrorLogPayload(error, 'Test UI message error');
+    safeLog({
+      level: 'error',
+      category: 'system',
+      event: 'webhook_error',
+      error: payload.message,
+      stack: payload.stack || undefined,
+      source: 'sophia-sandbox-message',
+    });
     await logAppError({
       source: 'api.sophia-sandbox.message',
       message: payload.message,

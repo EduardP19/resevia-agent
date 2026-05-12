@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { expireSessionById, isTestUiSession, supabase } from '@/lib/supabase';
+import { safeLog } from '@/lib/logger';
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,9 +27,24 @@ export async function POST(req: NextRequest) {
     }
 
     await expireSessionById(sessionId, { expired_by: 'ui-timeout' });
+    safeLog({
+      level: 'info',
+      category: 'session',
+      event: 'session_closed',
+      session_id: sessionId,
+      reason: 'timeout',
+    });
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('[Test UI Expire Error]', error);
+    safeLog({
+      level: 'error',
+      category: 'system',
+      event: 'db_error',
+      error: error?.message || String(error),
+      stack: error?.stack,
+      query_description: 'Expire Sophia sandbox session',
+    });
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

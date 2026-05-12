@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabase, saveMessage, getSessionTranscript, isTestUiSession } from '@/lib/supabase';
 import { sendSMS } from '@/lib/twilio';
 import { generateSummary } from '@/lib/ai';
+import { safeLog } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -71,11 +72,22 @@ export async function GET() {
       const summary = await generateSummary(transcript);
 
       const msg = "Session expired. Please start a new one by saying Hi if you still need assistance.";
-      await sendSMS(session.client_identifier!, msg);
+      await sendSMS(session.client_identifier!, msg, undefined, {
+        tenant_id: session.salon_id,
+        session_id: session.id,
+      });
       // Save as 'assistant' so test window shows what the client would receive via SMS.
       // In production this is sent via Twilio; in test mode it appears in the chat.
       await saveMessage(session.id, 'assistant', msg);
       await supabase.from('sessions').update({ summary }).eq('id', session.id);
+      safeLog({
+        level: 'info',
+        category: 'session',
+        event: 'session_closed',
+        tenant_id: session.salon_id,
+        session_id: session.id,
+        reason: 'timeout',
+      });
       expiredCount++;
     }
 
@@ -112,9 +124,19 @@ export async function GET() {
       if (!claimed) continue;
 
       const msg = "Just checking if you're still there! In 1 minute this session will expire and you'll have to start a new one by saying Hi.";
-      await sendSMS(session.client_identifier!, msg);
+      await sendSMS(session.client_identifier!, msg, undefined, {
+        tenant_id: session.salon_id,
+        session_id: session.id,
+      });
       // Save as 'assistant' so test window shows what the client would receive via SMS.
       await saveMessage(session.id, 'assistant', msg);
+      safeLog({
+        level: 'info',
+        category: 'session',
+        event: 'session_warning',
+        tenant_id: session.salon_id,
+        session_id: session.id,
+      });
       warnedCount++;
     }
 
@@ -140,6 +162,14 @@ export async function GET() {
       holdsExpired: expiredHolds?.length || 0
     });
   } catch (err: any) {
+    safeLog({
+      level: 'error',
+      category: 'system',
+      event: 'db_error',
+      error: err?.message || String(err),
+      stack: err?.stack,
+      query_description: 'Cron cleanup failed',
+    });
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

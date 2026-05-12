@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { safeLog } from '@/lib/logger';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!;
@@ -127,9 +128,28 @@ export async function getOrCreateConversation(salonId: string, customerPhone: st
           .single();
         if (raceData) return raceData;
       }
+      safeLog({
+        level: 'error',
+        category: 'system',
+        event: 'db_error',
+        tenant_id: salonId,
+        error: nsError?.message || String(nsError),
+        stack: nsError?.stack,
+        query_description: 'Create SMS conversation session',
+        code: nsError?.code,
+      });
       throw nsError;
     }
     data = newData;
+    safeLog({
+      level: 'info',
+      category: 'session',
+      event: 'session_created',
+      tenant_id: salonId,
+      session_id: newData.id,
+      customer_phone: customerPhone,
+      channel: 'sms',
+    });
   }
   return data;
 }
@@ -150,6 +170,16 @@ export async function getTranscriptHistoryFromTable(
     .order('created_at', { ascending: true });
 
   if (error) {
+    safeLog({
+      level: 'error',
+      category: 'system',
+      event: 'db_error',
+      error: error?.message || String(error),
+      stack: error?.stack,
+      query_description: `Load transcript history from ${table}`,
+      session_id: sessionId,
+      code: error?.code,
+    });
     throw formatTranscriptTableError(error, table);
   }
 
@@ -181,6 +211,16 @@ export async function saveMessageToTable(
   if (!includeT) {
     const { data, error } = await supabase.from(table).insert(basePayload).select().single();
     if (error) {
+      safeLog({
+        level: 'error',
+        category: 'system',
+        event: 'db_error',
+        error: error?.message || String(error),
+        stack: error?.stack,
+        query_description: `Save ${role} message to ${table}`,
+        session_id: sessionId,
+        code: error?.code,
+      });
       throw formatTranscriptTableError(error, table);
     }
     return data;
@@ -199,11 +239,31 @@ export async function saveMessageToTable(
     const { data: fallbackData, error: fallbackError } = await supabase.from(table).insert(basePayload).select().single();
 
     if (fallbackError) {
+      safeLog({
+        level: 'error',
+        category: 'system',
+        event: 'db_error',
+        error: fallbackError?.message || String(fallbackError),
+        stack: fallbackError?.stack,
+        query_description: `Save fallback ${role} message to ${table}`,
+        session_id: sessionId,
+        code: fallbackError?.code,
+      });
       throw formatTranscriptTableError(fallbackError, table);
     }
     return fallbackData;
   }
 
+  safeLog({
+    level: 'error',
+    category: 'system',
+    event: 'db_error',
+    error: error?.message || String(error),
+    stack: error?.stack,
+    query_description: `Save ${role} message to ${table}`,
+    session_id: sessionId,
+    code: error?.code,
+  });
   throw formatTranscriptTableError(error, table);
 }
 
@@ -280,6 +340,16 @@ export async function createTestUiConversation(salonId: string, sessionId?: stri
     .single();
 
   if (error) {
+    safeLog({
+      level: 'error',
+      category: 'system',
+      event: 'db_error',
+      error: error?.message || String(error),
+      stack: error?.stack,
+      query_description: 'Load session before expiring',
+      session_id: sessionId,
+      code: error?.code,
+    });
     throw error;
   }
 
@@ -335,7 +405,27 @@ export async function expireSessionById(sessionId: string, metadataPatch?: Recor
     .maybeSingle();
 
   if (updateError) {
+    safeLog({
+      level: 'error',
+      category: 'system',
+      event: 'db_error',
+      error: updateError?.message || String(updateError),
+      stack: updateError?.stack,
+      query_description: 'Expire session',
+      session_id: sessionId,
+      code: updateError?.code,
+    });
     throw updateError;
+  }
+
+  if (updatedSession) {
+    safeLog({
+      level: 'info',
+      category: 'session',
+      event: 'session_closed',
+      session_id: sessionId,
+      reason: 'timeout',
+    });
   }
 
   return (
@@ -349,12 +439,34 @@ export async function expireSessionById(sessionId: string, metadataPatch?: Recor
 
 // Mark a session as completed
 export async function completeSession(salonId: string, clientIdentifier: string) {
-  await supabase
+  const { error } = await supabase
     .from('sessions')
     .update({ status: 'completed', updated_at: new Date().toISOString() })
     .eq('salon_id', salonId)
     .eq('client_identifier', clientIdentifier)
     .eq('status', 'active');
+
+  if (error) {
+    safeLog({
+      level: 'error',
+      category: 'system',
+      event: 'db_error',
+      tenant_id: salonId,
+      error: error?.message || String(error),
+      stack: error?.stack,
+      query_description: 'Complete active session',
+      code: error?.code,
+    });
+    throw error;
+  }
+
+  safeLog({
+    level: 'info',
+    category: 'session',
+    event: 'session_closed',
+    tenant_id: salonId,
+    reason: 'completed',
+  });
 }
 
 // Dashboard: all messages within a single session

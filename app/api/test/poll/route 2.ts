@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { safeLog } from '@/lib/logger';
 
 // Returns assistant messages for a session.
 // If 'since' is provided, returns only messages newer than that.
@@ -27,7 +28,19 @@ export async function GET(req: NextRequest) {
   }
 
   const { data: messages, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    safeLog({
+      level: 'error',
+      category: 'system',
+      event: 'db_error',
+      session_id: sessionId,
+      error: error?.message || String(error),
+      stack: error?.stack,
+      query_description: 'Poll test transcript messages',
+      code: error?.code,
+    });
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   // Fetch current session status and draft flag
   const { data: session } = await supabase

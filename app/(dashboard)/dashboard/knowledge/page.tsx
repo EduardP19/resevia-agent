@@ -1,12 +1,20 @@
 import React from 'react';
 import { getFAQs, supabase } from '@/lib/supabase';
 import FAQEditor from './FAQEditor';
+import { safeLog } from '@/lib/logger';
 
 export const revalidate = 0;
 
 export default async function KnowledgeBasePage() {
   const { data: salon } = await supabase.from('business_profiles').select('*').limit(1).single();
   const faqs = salon ? await getFAQs(salon.id) : [];
+  safeLog({
+    level: 'info',
+    category: 'dashboard',
+    event: 'page_loaded',
+    tenant_id: salon?.id,
+    page: 'dashboard/knowledge',
+  });
 
   return (
     <div className="max-w-4xl mx-auto">

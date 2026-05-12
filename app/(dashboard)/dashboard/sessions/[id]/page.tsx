@@ -2,6 +2,7 @@ import { getSessionTranscript, isTestUiSession, supabase } from '@/lib/supabase'
 import Link from 'next/link';
 import ChatInterface from './ChatInterface';
 import HeaderActions from './HeaderActions';
+import { safeLog } from '@/lib/logger';
 
 export const revalidate = 0;
 
@@ -16,6 +17,14 @@ export default async function SessionTranscriptPage({ params }: { params: { id: 
 
   const transcript = await getSessionTranscript(params.id);
   const isReview = session.status === 'review' || transcript.some((m: any) => m.role === 'draft');
+  safeLog({
+    level: 'info',
+    category: 'dashboard',
+    event: 'page_loaded',
+    tenant_id: session.salon_id,
+    session_id: params.id,
+    page: 'dashboard/session',
+  });
 
   return (
     <div className="max-w-3xl mx-auto">
