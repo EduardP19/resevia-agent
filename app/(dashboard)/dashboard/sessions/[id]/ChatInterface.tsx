@@ -31,8 +31,10 @@ export default function ChatInterface({
   const router = useRouter();
 
   const autoGrow = (el: HTMLTextAreaElement) => {
+    const maxHeight = 160;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
+    el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
   };
 
   const isSyncingRef = useRef(false);
@@ -161,14 +163,16 @@ export default function ChatInterface({
       if (res.ok) {
         router.refresh();
       } else {
+        const data = await res.json().catch(() => null);
+        const details = data?.code ? `Twilio error ${data.code}: ${data.error}` : data?.error;
         setTranscript(prev => prev.filter(m => m.id !== optimisticMsg.id));
         setInput(sentContent);
-        alert('Failed to send message');
+        alert(details || 'Failed to send message');
       }
-    } catch {
+    } catch (error: any) {
       setTranscript(prev => prev.filter(m => m.id !== optimisticMsg.id));
       setInput(sentContent);
-      alert('Error sending message');
+      alert(error?.message || 'Error sending message');
     } finally {
       setIsSending(false);
     }
@@ -234,7 +238,7 @@ export default function ChatInterface({
 
       {/* Transcript */}
       <div className="flex-1 overflow-y-auto p-5 space-y-4 scrollbar-thin" style={{ background: '#faf8fd' }}>
-        {transcript.map((msg) => {
+        {transcript.filter(msg => msg.role !== 'system').map((msg) => {
           const isUser = msg.role === 'user';
           const isDraft = msg.role === 'draft';
           const isSystem = msg.role === 'system';
@@ -338,7 +342,7 @@ export default function ChatInterface({
                   ? "Edit Sophia's draft, or send as-is…"
                   : 'Type a message to the client…'
               }
-              className="flex-1 rounded-xl px-4 py-3 text-sm resize-none overflow-hidden transition-all outline-none text-gray-900"
+              className="flex-1 rounded-xl px-4 py-3 text-sm resize-none transition-all outline-none text-gray-900 scrollbar-thin"
               style={{
                 background: '#faf8fd',
                 border: '1px solid rgba(109,40,217,0.12)',

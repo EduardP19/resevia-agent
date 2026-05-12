@@ -1,6 +1,8 @@
 import { supabase } from './supabase';
 
 type LogLevel = 'error' | 'warn' | 'info';
+type SystemLogLevel = 'info' | 'warning' | 'error' | 'critical';
+type SystemLogSource = 'edge_function' | 'sms_webhook' | 'ai_call' | 'auth' | 'billing' | 'cron';
 
 export type AppErrorLogInput = {
   source: string;
@@ -19,6 +21,22 @@ export type AppErrorLogInput = {
 
 function truncate(value: string, max = 4000) {
   return value.length > max ? `${value.slice(0, max)}...` : value;
+}
+
+function mapSystemLogLevel(level?: LogLevel): SystemLogLevel {
+  if (level === 'warn') return 'warning';
+  if (level === 'info') return 'info';
+  return 'error';
+}
+
+function mapSystemLogSource(source: string): SystemLogSource {
+  const normalized = source.toLowerCase();
+  if (normalized.includes('sms-webhook') || normalized.includes('sms_webhook')) return 'sms_webhook';
+  if (normalized.includes('cron')) return 'cron';
+  if (normalized.includes('billing')) return 'billing';
+  if (normalized.includes('auth')) return 'auth';
+  if (normalized.includes('ai') || normalized.includes('agent')) return 'ai_call';
+  return 'edge_function';
 }
 
 export function toErrorLogPayload(error: unknown, fallbackMessage = 'Unknown error') {
@@ -42,6 +60,27 @@ export function toErrorLogPayload(error: unknown, fallbackMessage = 'Unknown err
 
 export async function logAppError(input: AppErrorLogInput) {
   try {
+    const systemPayload = {
+      tenant_id: input.salon_id || null,
+      level: mapSystemLogLevel(input.level),
+      source: mapSystemLogSource(input.source || 'unknown'),
+      message: truncate(input.message || 'Unknown error'),
+      session_id: input.session_id || null,
+      metadata: {
+        stack: input.stack ? truncate(input.stack, 12000) : null,
+        context: input.context || {},
+        path: input.path || null,
+        method: input.method || null,
+        client_identifier: input.client_identifier || null,
+        user_agent: input.user_agent || null,
+        runtime: input.runtime || 'server',
+        original_source: truncate(input.source || 'unknown', 255),
+      },
+    };
+
+    await supabase.from('1_system_logs').insert(systemPayload);
+
+    // Keep legacy logs for now while parts of the app still look at app_error_logs.
     const payload = {
       level: input.level || 'error',
       source: truncate(input.source || 'unknown', 255),

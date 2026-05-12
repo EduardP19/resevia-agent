@@ -15,11 +15,31 @@ export async function POST(req: NextRequest) {
     if (!session || sError) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
 
     // 1. Send SMS via Twilio
-    await sendSMS(session.client_identifier, content);
+    const statusCallbackUrl =
+      process.env.TWILIO_STATUS_CALLBACK_URL || new URL('/api/twilio/status', req.url).toString();
+    const outboundMessage = await sendSMS(session.client_identifier, content, statusCallbackUrl);
 
     // 2. Save as final assistant message (remove draft if exists)
     // For simplicity, we just add the new one as 'assistant'
-    await saveMessage(sessionId, 'assistant', content);
+    const assistantMessage = await saveMessage(sessionId, 'assistant', content);
+    if (assistantMessage?.id) {
+      await supabase
+        .from('transcripts')
+        .update({
+          twilio_message_sid: outboundMessage.sid,
+          sms_direction: 'outbound',
+          sms_status: outboundMessage.status || null,
+          sms_price: outboundMessage.price || null,
+          sms_price_unit: outboundMessage.priceUnit || null,
+          sms_num_segments: outboundMessage.numSegments || null,
+          sms_error_code: outboundMessage.errorCode || null,
+          sms_error_message: outboundMessage.errorMessage || null,
+          sms_from_number: outboundMessage.from || null,
+          sms_to_number: outboundMessage.to || null,
+          sms_updated_at: new Date().toISOString(),
+        })
+        .eq('id', assistantMessage.id);
+    }
     
     // Delete any drafts for this session to clean up
     await supabase.from('transcripts').delete().eq('session_id', sessionId).eq('role', 'draft');
@@ -33,6 +53,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('[Approve Error]', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: error.message || 'Failed to send message',
+        code: error.code || null,
+        status: error.status || null,
+      },
+      { status: 500 }
+    );
   }
 }
