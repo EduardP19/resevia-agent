@@ -27,6 +27,20 @@ export interface ToolCallResult {
   updatedSystemPrompt?: string;
 }
 
+function isWithinSixMonthWindow(date?: string): boolean {
+  if (!date) return true;
+  const requestedDate = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(requestedDate.getTime())) return false;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const maxDate = new Date(today);
+  maxDate.setMonth(maxDate.getMonth() + 6);
+
+  return requestedDate >= today && requestedDate <= maxDate;
+}
+
 /**
  * Shared tool call dispatcher. Used by both /api/sms-webhook and /api/test/sms
  * to eliminate code duplication (SKILL Architecture Rule #10).
@@ -54,8 +68,12 @@ export async function executeToolCall(
 
   try {
     if (name === 'check_availability') {
+      if (!isWithinSixMonthWindow(args?.date)) {
+        toolResult = 'Failed: Bookings are available from today up to 6 months ahead only.';
+      } else {
       const slots = await fetchAvailability(args.date, args.serviceName, ctx.salonId, args.workerName);
       toolResult = slots.length > 0 ? `Available: ${slots.join(', ')}` : 'None found.';
+      }
 
     } else if (name === 'get_booking_requirements') {
       const { data: allWorkers } = await supabase
@@ -123,16 +141,20 @@ export async function executeToolCall(
         : `Failed: ${result.error}`;
 
     } else if (name === 'update_booking_state') {
+      const requestedDate = args?.date || currentBookingState?.date;
+      const validDate = isWithinSixMonthWindow(requestedDate);
       updatedBookingState = {
         ...currentBookingState,
         service: args.serviceName || currentBookingState?.service,
-        date: args.date || currentBookingState?.date,
+        date: validDate ? requestedDate : currentBookingState?.date,
         time: args.time || currentBookingState?.time,
         worker: args.workerName || currentBookingState?.worker
       };
       // Rebuild prompt with new state so AI knows it has been saved
       updatedSystemPrompt = buildSystemPrompt(ctx.salon, ctx.workers, ctx.faqs, updatedBookingState);
-      toolResult = 'Memory updated. I will remember these details.';
+      toolResult = validDate
+        ? 'Memory updated. I will remember these details.'
+        : 'Failed: Bookings are available from today up to 6 months ahead only.';
 
     } else {
       toolResult = 'Unknown tool.';
