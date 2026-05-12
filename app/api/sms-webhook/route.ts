@@ -56,15 +56,20 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      const inboundSmsPrice = normalizeSmsPrice(inboundPrice || inboundTwilioMessage?.price);
+      const inboundSmsPriceUnit = (inboundPriceUnit as string | null) || inboundTwilioMessage?.priceUnit || inboundTwilioMessage?.price_unit || null;
+      const inboundSmsNumSegments = (inboundNumSegments as string | null) || inboundTwilioMessage?.numSegments || inboundTwilioMessage?.num_segments || null;
+      const inboundSmsStatus = (formData.get('SmsStatus') as string | null) || inboundTwilioMessage?.status || 'received';
+
       await supabase
         .from('transcripts')
         .update({
           twilio_message_sid: inboundMessageSid,
           sms_direction: 'inbound',
-          sms_status: (formData.get('SmsStatus') as string | null) || inboundTwilioMessage?.status || 'received',
-          sms_price: normalizeSmsPrice(inboundPrice || inboundTwilioMessage?.price),
-          sms_price_unit: (inboundPriceUnit as string | null) || inboundTwilioMessage?.priceUnit || inboundTwilioMessage?.price_unit || null,
-          sms_num_segments: (inboundNumSegments as string | null) || inboundTwilioMessage?.numSegments || inboundTwilioMessage?.num_segments || null,
+          sms_status: inboundSmsStatus,
+          sms_price: inboundSmsPrice,
+          sms_price_unit: inboundSmsPriceUnit,
+          sms_num_segments: inboundSmsNumSegments,
           sms_error_code: (formData.get('ErrorCode') as string | null) || inboundTwilioMessage?.errorCode || null,
           sms_error_message: (formData.get('ErrorMessage') as string | null) || inboundTwilioMessage?.errorMessage || null,
           sms_from_number: fromNumber,
@@ -72,6 +77,20 @@ export async function POST(req: NextRequest) {
           sms_updated_at: new Date().toISOString(),
         })
         .eq('id', userMessage.id);
+
+      safeLog({
+        level: 'info',
+        category: 'sms',
+        event: 'sms_metadata_updated',
+        tenant_id: salon.id,
+        session_id: conversation.id,
+        twilio_message_sid: inboundMessageSid,
+        sms_direction: 'inbound',
+        sms_status: inboundSmsStatus,
+        sms_price: inboundSmsPrice,
+        sms_price_unit: inboundSmsPriceUnit,
+        sms_num_segments: inboundSmsNumSegments,
+      });
     }
 
     const [workers, faqs, activeHold, history] = await Promise.all([

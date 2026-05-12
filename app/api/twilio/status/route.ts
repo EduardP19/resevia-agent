@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { safeLog } from '@/lib/logger';
+import { log, safeLog } from '@/lib/logger';
 import { getSMSMessageWithPricing } from '@/lib/twilio';
 import { normalizeSmsPrice } from '@/lib/sms-pricing';
 
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     .from('transcripts')
     .update(updatePayload)
     .eq('twilio_message_sid', messageSid)
-    .select('session_id')
+    .select('session_id, sms_direction')
     .maybeSingle();
 
   if (error) {
@@ -72,6 +72,30 @@ export async function POST(req: NextRequest) {
       stack: error?.stack,
       query_description: 'Update Twilio SMS status callback',
       code: error?.code,
+    });
+  } else if (updatedTranscript) {
+    await log({
+      level: 'info',
+      category: 'sms',
+      event: 'sms_status_updated',
+      session_id: updatedTranscript.session_id,
+      twilio_message_sid: messageSid,
+      sms_direction: updatedTranscript.sms_direction,
+      sms_status: resolvedStatus,
+      sms_price: updatePayload.sms_price,
+      sms_price_unit: updatePayload.sms_price_unit,
+      sms_num_segments: updatePayload.sms_num_segments,
+    });
+  } else {
+    await log({
+      level: 'warning',
+      category: 'sms',
+      event: 'sms_status_unmatched',
+      twilio_message_sid: messageSid,
+      sms_status: resolvedStatus,
+      sms_price: updatePayload.sms_price,
+      sms_price_unit: updatePayload.sms_price_unit,
+      sms_num_segments: updatePayload.sms_num_segments,
     });
   }
 
