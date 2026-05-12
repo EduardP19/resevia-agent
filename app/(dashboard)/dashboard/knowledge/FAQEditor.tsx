@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { trackClientEvent } from '@/lib/client-events';
 
 interface FAQ {
   id: string;
@@ -23,6 +24,7 @@ export default function FAQEditor({ initialFaqs, salonId }: { initialFaqs: FAQ[]
 
   const handleAdd = async () => {
     if (!newFaq.question.trim() || !newFaq.answer.trim()) return;
+    trackClientEvent({ event: 'button_clicked', category: 'dashboard', action: 'faq_add_submit', tenant_id: salonId });
     setSaving(true);
     const res = await fetch('/api/dashboard/faqs', {
       method: 'POST',
@@ -31,6 +33,7 @@ export default function FAQEditor({ initialFaqs, salonId }: { initialFaqs: FAQ[]
     });
     setSaving(false);
     if (res.ok) {
+      trackClientEvent({ event: 'settings_updated', category: 'dashboard', tenant_id: salonId, fields_changed: ['faq_created'] });
       setIsAdding(false);
       setNewFaq({ category: 'General', question: '', answer: '' });
       router.refresh();
@@ -44,6 +47,7 @@ export default function FAQEditor({ initialFaqs, salonId }: { initialFaqs: FAQ[]
 
   const handleUpdate = async () => {
     if (!editData.question.trim() || !editData.answer.trim() || !editingId) return;
+    trackClientEvent({ event: 'button_clicked', category: 'dashboard', action: 'faq_update_submit', tenant_id: salonId });
     setSaving(true);
     const res = await fetch('/api/dashboard/faqs', {
       method: 'PATCH',
@@ -52,6 +56,7 @@ export default function FAQEditor({ initialFaqs, salonId }: { initialFaqs: FAQ[]
     });
     setSaving(false);
     if (res.ok) {
+      trackClientEvent({ event: 'settings_updated', category: 'dashboard', tenant_id: salonId, fields_changed: ['faq_updated'] });
       setEditingId(null);
       router.refresh();
     }
@@ -59,12 +64,16 @@ export default function FAQEditor({ initialFaqs, salonId }: { initialFaqs: FAQ[]
 
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this FAQ?')) return;
+    trackClientEvent({ event: 'button_clicked', category: 'dashboard', action: 'faq_delete_confirm', tenant_id: salonId });
     const res = await fetch('/api/dashboard/faqs', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id }),
     });
-    if (res.ok) router.refresh();
+    if (res.ok) {
+      trackClientEvent({ event: 'settings_updated', category: 'dashboard', tenant_id: salonId, fields_changed: ['faq_deleted'] });
+      router.refresh();
+    }
   };
 
   return (
@@ -72,7 +81,10 @@ export default function FAQEditor({ initialFaqs, salonId }: { initialFaqs: FAQ[]
       {/* Add FAQ button */}
       <div className="flex justify-end">
         <button
-          onClick={() => setIsAdding(true)}
+          onClick={() => {
+            trackClientEvent({ event: 'button_clicked', category: 'dashboard', action: 'faq_add_open', tenant_id: salonId });
+            setIsAdding(true);
+          }}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all duration-200 active:scale-95"
           style={{ background: 'linear-gradient(135deg, #6D28D9 0%, #7C3AED 100%)', boxShadow: '0 4px 16px rgba(109,40,217,0.25)' }}
         >

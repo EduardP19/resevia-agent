@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import { trackClientEvent } from '@/lib/client-events';
 
 export default function SearchPage() {
   const [query, setQuery] = useState('');
@@ -12,14 +13,28 @@ export default function SearchPage() {
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim()) return;
+    trackClientEvent({
+      event: 'search_submitted',
+      category: 'dashboard',
+      query_length: query.trim().length,
+    });
     setLoading(true);
     setSearched(true);
     try {
       const res = await fetch(`/api/dashboard/search?phone=${encodeURIComponent(query.trim())}`);
       const data = await res.json();
       setResults(data);
+      trackClientEvent({
+        event: 'search_results_loaded',
+        category: 'dashboard',
+        results_count: Array.isArray(data) ? data.length : 0,
+      });
     } catch {
-      // silent
+      trackClientEvent({
+        event: 'search_failed',
+        category: 'dashboard',
+        level: 'warn',
+      });
     } finally {
       setLoading(false);
     }

@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { trackClientEvent } from '@/lib/client-events';
 
 interface ApprovalContextValue {
   mode: boolean | null;
@@ -38,6 +39,13 @@ export function ApprovalProvider({
   const toggle = async () => {
     if (saving || mode === null || !salonId) return;
     const next = !mode;
+    trackClientEvent({
+      event: 'button_clicked',
+      category: 'dashboard',
+      action: 'approval_toggle',
+      tenant_id: salonId,
+      next_mode: next ? 'manual' : 'auto',
+    });
     setSaving(true);
     setMode(next);
     try {
@@ -52,8 +60,22 @@ export function ApprovalProvider({
       const data = await res.json().catch(() => null);
       if (data && typeof data.approval_mode === 'boolean') {
         setMode(data.approval_mode);
+        trackClientEvent({
+          event: 'settings_updated',
+          category: 'dashboard',
+          tenant_id: salonId,
+          fields_changed: ['approval_mode'],
+          mode: data.approval_mode ? 'manual' : 'auto',
+        });
       }
     } catch {
+      trackClientEvent({
+        event: 'settings_update_failed',
+        category: 'dashboard',
+        level: 'warn',
+        tenant_id: salonId,
+        fields_changed: ['approval_mode'],
+      });
       setMode(!next);
     } finally {
       setSaving(false);

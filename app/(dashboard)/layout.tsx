@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import NotificationBell from './NotificationBell';
 import Logo from './Logo';
 import ApprovalToggle from './ApprovalToggle';
 import { ApprovalProvider } from './ApprovalContext';
+import { trackClientEvent } from '@/lib/client-events';
 
 const navItems = [
   {
@@ -52,6 +53,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const pathname = usePathname();
 
+  useEffect(() => {
+    const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+    if (nav?.type === 'reload') {
+      trackClientEvent({
+        event: 'page_reload',
+        category: 'dashboard',
+        page: pathname || '/dashboard',
+      });
+    }
+  }, [pathname]);
+
   return (
     <ApprovalProvider>
     <div className="flex h-[100dvh] bg-[#f8f6fb] font-sans relative">
@@ -60,7 +72,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {isMobileMenuOpen && (
         <div
           className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden"
-          onClick={() => setIsMobileMenuOpen(false)}
+          onClick={() => {
+            trackClientEvent({ event: 'button_clicked', category: 'dashboard', action: 'close_mobile_menu_overlay' });
+            setIsMobileMenuOpen(false);
+          }}
         />
       )}
 
@@ -83,7 +98,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
           </div>
           <button
-            onClick={() => setIsMobileMenuOpen(false)}
+            onClick={() => {
+              trackClientEvent({ event: 'button_clicked', category: 'dashboard', action: 'close_mobile_menu' });
+              setIsMobileMenuOpen(false);
+            }}
             className="md:hidden p-1.5 text-white/40 hover:text-white rounded-lg transition-colors"
             aria-label="Close menu"
           >
@@ -101,7 +119,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <Link
                 key={item.href}
                 href={item.href}
-                onClick={() => setIsMobileMenuOpen(false)}
+                onClick={() => {
+                  trackClientEvent({ event: 'button_clicked', category: 'dashboard', action: 'sidebar_nav_click', page: item.href });
+                  setIsMobileMenuOpen(false);
+                }}
                 className={`
                   flex items-center space-x-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-150 group
                   ${isActive
@@ -144,7 +165,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {/* Left: hamburger (mobile) — invisible placeholder on desktop to preserve layout */}
           <div className="flex-1 flex items-center">
             <button
-              onClick={() => setIsMobileMenuOpen(true)}
+              onClick={() => {
+                trackClientEvent({ event: 'button_clicked', category: 'dashboard', action: 'open_mobile_menu' });
+                setIsMobileMenuOpen(true);
+              }}
               className="md:hidden p-2 -ml-1 text-gray-500 hover:bg-[#f0ebfa] rounded-lg transition-colors"
               aria-label="Open menu"
             >
@@ -184,6 +208,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <Link
               key={item.href}
               href={item.href}
+              onClick={() => {
+                trackClientEvent({ event: 'button_clicked', category: 'dashboard', action: 'mobile_nav_click', page: item.href });
+              }}
               className="flex-1 flex flex-col items-center justify-center py-2.5 gap-0.5 transition-colors"
               style={{ color: isActive ? '#6D28D9' : '#9CA3AF' }}
             >

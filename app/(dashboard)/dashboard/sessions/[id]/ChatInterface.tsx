@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { trackClientEvent } from '@/lib/client-events';
 
 interface Message {
   id: string;
@@ -136,11 +137,29 @@ export default function ChatInterface({
     };
   }, []);
 
-  const switchToManual = () => { setSendMode('manual'); setInput(''); setTimeout(() => textareaRef.current?.focus(), 50); };
-  const switchToApprove = () => { setSendMode('approve'); setInput(latestDraft?.content || ''); setTimeout(() => textareaRef.current?.focus(), 50); };
+  const switchToManual = () => {
+    trackClientEvent({ event: 'button_clicked', category: 'dashboard', action: 'switch_to_manual', session_id: sessionId });
+    setSendMode('manual');
+    setInput('');
+    setTimeout(() => textareaRef.current?.focus(), 50);
+  };
+  const switchToApprove = () => {
+    trackClientEvent({ event: 'button_clicked', category: 'dashboard', action: 'switch_to_approve', session_id: sessionId });
+    setSendMode('approve');
+    setInput(latestDraft?.content || '');
+    setTimeout(() => textareaRef.current?.focus(), 50);
+  };
 
   const handleSend = async () => {
     if (!input.trim() || isSending) return;
+    trackClientEvent({
+      event: 'button_clicked',
+      category: 'dashboard',
+      action: 'send_message',
+      session_id: sessionId,
+      mode: sendMode,
+      text_length: input.length,
+    });
     const sentContent = input;
     const optimisticMsg: Message = {
       id: `optimistic-${Date.now()}`,
@@ -161,17 +180,34 @@ export default function ChatInterface({
         body: JSON.stringify({ sessionId, content: sentContent, mode: sendMode }),
       });
       if (res.ok) {
+        trackClientEvent({ event: 'message_sent_from_dashboard', category: 'dashboard', session_id: sessionId, mode: sendMode });
         router.refresh();
       } else {
         const data = await res.json().catch(() => null);
         const details = data?.code ? `Twilio error ${data.code}: ${data.error}` : data?.error;
         setTranscript(prev => prev.filter(m => m.id !== optimisticMsg.id));
         setInput(sentContent);
+        trackClientEvent({
+          event: 'message_send_failed',
+          category: 'dashboard',
+          level: 'warn',
+          session_id: sessionId,
+          mode: sendMode,
+          error: details || 'Failed to send message',
+        });
         alert(details || 'Failed to send message');
       }
     } catch (error: any) {
       setTranscript(prev => prev.filter(m => m.id !== optimisticMsg.id));
       setInput(sentContent);
+      trackClientEvent({
+        event: 'message_send_failed',
+        category: 'dashboard',
+        level: 'error',
+        session_id: sessionId,
+        mode: sendMode,
+        error: error?.message || 'Error sending message',
+      });
       alert(error?.message || 'Error sending message');
     } finally {
       setIsSending(false);

@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ApprovalToggle from '@/app/(dashboard)/ApprovalToggle';
+import { trackClientEvent } from '@/lib/client-events';
 
 const inputClass = "w-full bg-[#faf8fd] border border-[#e8e0f0] rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-300 focus:outline-none focus:border-[#6D28D9] focus:ring-2 focus:ring-[#6D28D9]/10 transition-all";
 
@@ -18,6 +19,7 @@ export default function ProfileEditor({ salon }: { salon: any }) {
   const router = useRouter();
 
   const handleSave = async () => {
+    trackClientEvent({ event: 'button_clicked', category: 'dashboard', action: 'settings_save' });
     setIsSaving(true);
     setSaveState('idle');
     const res = await fetch('/api/dashboard/salon', {
@@ -27,10 +29,12 @@ export default function ProfileEditor({ salon }: { salon: any }) {
     });
     setIsSaving(false);
     if (res.ok) {
+      trackClientEvent({ event: 'settings_updated', category: 'dashboard', tenant_id: salon.id, fields_changed: Object.keys(formData) });
       setSaveState('saved');
       router.refresh();
       setTimeout(() => setSaveState('idle'), 3000);
     } else {
+      trackClientEvent({ event: 'settings_update_failed', category: 'dashboard', level: 'warn', tenant_id: salon.id, fields_changed: Object.keys(formData) });
       setSaveState('error');
     }
   };
