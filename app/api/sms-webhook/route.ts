@@ -203,6 +203,13 @@ export async function POST(req: NextRequest) {
         .eq('id', assistantMessage.id);
     }
 
+    // Auto mode should not retain pending drafts from previous manual cycles.
+    await supabase
+      .from('transcripts')
+      .delete()
+      .eq('session_id', conversation.id)
+      .eq('role', 'draft');
+
     if (triggerHandoff) {
        safeLog({
          level: 'warning',

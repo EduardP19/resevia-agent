@@ -41,11 +41,18 @@ export function ApprovalProvider({
     setSaving(true);
     setMode(next);
     try {
-      await fetch('/api/dashboard/salon', {
+      const res = await fetch('/api/dashboard/salon', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: salonId, approval_mode: next }),
       });
+      if (!res.ok) {
+        throw new Error(`Failed to update approval mode (${res.status})`);
+      }
+      const data = await res.json().catch(() => null);
+      if (data && typeof data.approval_mode === 'boolean') {
+        setMode(data.approval_mode);
+      }
     } catch {
       setMode(!next);
     } finally {

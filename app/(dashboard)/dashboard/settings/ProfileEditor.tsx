@@ -10,7 +10,6 @@ export default function ProfileEditor({ salon }: { salon: any }) {
   const [formData, setFormData] = useState({
     name: salon.name || '',
     tone_of_voice: salon.tone_of_voice || '',
-    approval_mode: salon.approval_mode || false,
     opening_hours: salon.opening_hours || '',
     twilio_number: salon.twilio_number || '',
   });
