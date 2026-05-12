@@ -62,3 +62,11 @@ export async function sendSMS(
     throw error;
   }
 }
+
+export async function getSMSMessage(messageSid: string): Promise<any> {
+  if (!client) {
+    throw new Error('[Twilio] Not configured. Missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN.');
+  }
+
+  return client.messages(messageSid).fetch();
+}
