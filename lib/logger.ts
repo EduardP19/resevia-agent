@@ -74,7 +74,7 @@ export async function log(data: LogEvent) {
 
     console.log(JSON.stringify(payload));
 
-    sendToGCP(payload).catch((err) => console.error('GCP log failed:', err));
+    await sendToGCP(payload);
   } catch (err) {
     console.error('Logger failed:', err);
   }

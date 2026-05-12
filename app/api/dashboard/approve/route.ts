@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase, saveMessage } from '@/lib/supabase';
 import { sendSMS } from '@/lib/twilio';
-import { safeLog } from '@/lib/logger';
+import { log, safeLog } from '@/lib/logger';
 
 export async function POST(req: NextRequest) {
   try {
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     }).eq('id', sessionId);
 
     const userId = req.headers.get('x-user-id') || undefined;
-    safeLog({
+    await log({
       level: 'info',
       category: 'dashboard',
       event: 'message_approved',
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
       session_id: sessionId,
       user_id: userId,
     });
-    safeLog({
+    await log({
       level: 'info',
       category: 'session',
       event: 'draft_approved',
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
       user_id: userId,
     });
     if (mode === 'manual') {
-      safeLog({
+      await log({
         level: 'info',
         category: 'dashboard',
         event: 'takeover_started',
