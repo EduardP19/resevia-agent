@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSalonBySmsNumber, getOrCreateConversation, getTranscriptHistory, saveMessage, getWorkers, getFAQs, getActiveHold, supabase } from '../../../lib/supabase';
 import { buildSystemPrompt } from '../../../lib/agent';
 import { callAI } from '../../../lib/ai';
-import { sendSMS } from '../../../lib/twilio';
+import { getSMSMessage, sendSMS } from '../../../lib/twilio';
 import { isHandoff } from '../../../lib/handoff';
 import { executeToolCall, ToolContext } from '../../../lib/tool-handler';
 import { logAppError, toErrorLogPayload } from '../../../lib/error-logger';
@@ -32,6 +32,47 @@ export async function POST(req: NextRequest) {
       session_id: conversation.id,
     });
     const userMessage = await saveMessage(conversation.id, 'user', userInput);
+
+    if (inboundMessageSid && userMessage?.id) {
+      let inboundTwilioMessage: any = null;
+      const inboundPrice = formData.get('Price');
+      const inboundPriceUnit = formData.get('PriceUnit');
+      const inboundNumSegments = formData.get('NumSegments');
+
+      if (!inboundPrice || !inboundPriceUnit || !inboundNumSegments) {
+        try {
+          inboundTwilioMessage = await getSMSMessage(inboundMessageSid);
+        } catch (error: any) {
+          safeLog({
+            level: 'warning',
+            category: 'sms',
+            event: 'sms_price_lookup_failed',
+            tenant_id: salon.id,
+            session_id: conversation.id,
+            twilio_message_sid: inboundMessageSid,
+            error: error?.message || String(error),
+            stack: error?.stack,
+          });
+        }
+      }
+
+      await supabase
+        .from('transcripts')
+        .update({
+          twilio_message_sid: inboundMessageSid,
+          sms_direction: 'inbound',
+          sms_status: (formData.get('SmsStatus') as string | null) || inboundTwilioMessage?.status || 'received',
+          sms_price: normalizeSmsPrice(inboundPrice || inboundTwilioMessage?.price),
+          sms_price_unit: (inboundPriceUnit as string | null) || inboundTwilioMessage?.priceUnit || null,
+          sms_num_segments: (inboundNumSegments as string | null) || inboundTwilioMessage?.numSegments || null,
+          sms_error_code: (formData.get('ErrorCode') as string | null) || inboundTwilioMessage?.errorCode || null,
+          sms_error_message: (formData.get('ErrorMessage') as string | null) || inboundTwilioMessage?.errorMessage || null,
+          sms_from_number: fromNumber,
+          sms_to_number: toNumber,
+          sms_updated_at: new Date().toISOString(),
+        })
+        .eq('id', userMessage.id);
+    }
 
     const [workers, faqs, activeHold, history] = await Promise.all([
       getWorkers(salon.id),
@@ -123,25 +164,6 @@ export async function POST(req: NextRequest) {
       session_id: conversation.id,
     });
     const assistantMessage = await saveMessage(conversation.id, 'assistant', reply);
-
-    if (inboundMessageSid && userMessage?.id) {
-      await supabase
-        .from('transcripts')
-        .update({
-          twilio_message_sid: inboundMessageSid,
-          sms_direction: 'inbound',
-          sms_status: formData.get('SmsStatus') as string | null,
-          sms_price: normalizeSmsPrice(formData.get('Price')),
-          sms_price_unit: formData.get('PriceUnit') as string | null,
-          sms_num_segments: formData.get('NumSegments') as string | null,
-          sms_error_code: formData.get('ErrorCode') as string | null,
-          sms_error_message: formData.get('ErrorMessage') as string | null,
-          sms_from_number: fromNumber,
-          sms_to_number: toNumber,
-          sms_updated_at: new Date().toISOString(),
-        })
-        .eq('id', userMessage.id);
-    }
 
     if (assistantMessage?.id) {
       await supabase
