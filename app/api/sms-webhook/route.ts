@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSalonBySmsNumber, getOrCreateConversation, getTranscriptHistory, saveMessage, getWorkers, getFAQs, getActiveHold, supabase } from '../../../lib/supabase';
 import { buildSystemPrompt } from '../../../lib/agent';
 import { callAI } from '../../../lib/ai';
-import { getSMSMessage, sendSMS } from '../../../lib/twilio';
+import { getSMSMessageWithPricing, sendSMS } from '../../../lib/twilio';
 import { isHandoff } from '../../../lib/handoff';
 import { executeToolCall, ToolContext } from '../../../lib/tool-handler';
 import { logAppError, toErrorLogPayload } from '../../../lib/error-logger';
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
 
       if (!inboundPrice || !inboundPriceUnit || !inboundNumSegments) {
         try {
-          inboundTwilioMessage = await getSMSMessage(inboundMessageSid);
+          inboundTwilioMessage = await getSMSMessageWithPricing(inboundMessageSid);
         } catch (error: any) {
           safeLog({
             level: 'warning',
@@ -63,8 +63,8 @@ export async function POST(req: NextRequest) {
           sms_direction: 'inbound',
           sms_status: (formData.get('SmsStatus') as string | null) || inboundTwilioMessage?.status || 'received',
           sms_price: normalizeSmsPrice(inboundPrice || inboundTwilioMessage?.price),
-          sms_price_unit: (inboundPriceUnit as string | null) || inboundTwilioMessage?.priceUnit || null,
-          sms_num_segments: (inboundNumSegments as string | null) || inboundTwilioMessage?.numSegments || null,
+          sms_price_unit: (inboundPriceUnit as string | null) || inboundTwilioMessage?.priceUnit || inboundTwilioMessage?.price_unit || null,
+          sms_num_segments: (inboundNumSegments as string | null) || inboundTwilioMessage?.numSegments || inboundTwilioMessage?.num_segments || null,
           sms_error_code: (formData.get('ErrorCode') as string | null) || inboundTwilioMessage?.errorCode || null,
           sms_error_message: (formData.get('ErrorMessage') as string | null) || inboundTwilioMessage?.errorMessage || null,
           sms_from_number: fromNumber,

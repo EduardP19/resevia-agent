@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { safeLog } from '@/lib/logger';
-import { getSMSMessage } from '@/lib/twilio';
+import { getSMSMessageWithPricing } from '@/lib/twilio';
 import { normalizeSmsPrice } from '@/lib/sms-pricing';
 
 export async function POST(req: NextRequest) {
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   let twilioMessage: any = null;
   if (!callbackPrice || !callbackPriceUnit || !callbackNumSegments) {
     try {
-      twilioMessage = await getSMSMessage(messageSid);
+      twilioMessage = await getSMSMessageWithPricing(messageSid);
     } catch (error: any) {
       safeLog({
         level: 'warning',
@@ -45,8 +45,8 @@ export async function POST(req: NextRequest) {
   const updatePayload: Record<string, any> = {
     sms_status: resolvedStatus,
     sms_price: normalizeSmsPrice(callbackPrice || twilioMessage?.price),
-    sms_price_unit: callbackPriceUnit || twilioMessage?.priceUnit || null,
-    sms_num_segments: callbackNumSegments || twilioMessage?.numSegments || null,
+    sms_price_unit: callbackPriceUnit || twilioMessage?.priceUnit || twilioMessage?.price_unit || null,
+    sms_num_segments: callbackNumSegments || twilioMessage?.numSegments || twilioMessage?.num_segments || null,
     sms_error_code: resolvedErrorCode,
     sms_error_message: resolvedErrorMessage,
     sms_updated_at: new Date().toISOString(),

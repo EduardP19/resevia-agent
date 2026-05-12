@@ -70,3 +70,22 @@ export async function getSMSMessage(messageSid: string): Promise<any> {
 
   return client.messages(messageSid).fetch();
 }
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function getSMSMessageWithPricing(messageSid: string): Promise<any> {
+  const delays = [0, 1000, 2000];
+  let message: any = null;
+
+  for (const delay of delays) {
+    if (delay > 0) await wait(delay);
+    message = await getSMSMessage(messageSid);
+    if (message?.price !== null && message?.price !== undefined && message?.price !== '') {
+      return message;
+    }
+  }
+
+  return message;
+}
