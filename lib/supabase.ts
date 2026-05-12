@@ -158,7 +158,7 @@ export async function getTranscriptHistoryFromTable(
 
 // Save message to transcript
 export async function saveMessage(sessionId: string, role: 'user' | 'assistant' | 'system', content: string) {
-  await saveMessageToTable(sessionId, role, content, 'transcripts');
+  return saveMessageToTable(sessionId, role, content, 'transcripts');
 }
 
 export async function saveMessageToTable(
@@ -166,22 +166,24 @@ export async function saveMessageToTable(
   role: TranscriptRole,
   content: string,
   table: TranscriptTableName = 'transcripts',
-  t?: string
+  t?: string,
+  extraPayload?: Record<string, any>
 ) {
   const basePayload: Record<string, any> = {
     session_id: sessionId,
     role,
-    content
+    content,
+    ...(extraPayload || {})
   };
 
   const includeT = table === TEST_UI_TRANSCRIPTS_TABLE;
 
   if (!includeT) {
-    const { error } = await supabase.from(table).insert(basePayload);
+    const { data, error } = await supabase.from(table).insert(basePayload).select().single();
     if (error) {
       throw formatTranscriptTableError(error, table);
     }
-    return;
+    return data;
   }
 
   const payloadWithT = {
@@ -189,17 +191,17 @@ export async function saveMessageToTable(
     t: t?.trim() || null,
   };
 
-  const { error } = await supabase.from(table).insert(payloadWithT);
+  const { data, error } = await supabase.from(table).insert(payloadWithT).select().single();
 
-  if (!error) return;
+  if (!error) return data;
 
   if (table === TEST_UI_TRANSCRIPTS_TABLE && isMissingSophiaSandboxTColumnError(error)) {
-    const { error: fallbackError } = await supabase.from(table).insert(basePayload);
+    const { data: fallbackData, error: fallbackError } = await supabase.from(table).insert(basePayload).select().single();
 
     if (fallbackError) {
       throw formatTranscriptTableError(fallbackError, table);
     }
-    return;
+    return fallbackData;
   }
 
   throw formatTranscriptTableError(error, table);

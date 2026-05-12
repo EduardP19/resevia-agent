@@ -13,12 +13,13 @@ export async function POST(req: NextRequest) {
     const userInput = formData.get('Body') as string;
     const fromNumber = formData.get('From') as string;
     const toNumber = formData.get('To') as string;
+    const inboundMessageSid = (formData.get('MessageSid') || formData.get('SmsMessageSid')) as string | null;
 
     const salon = await getSalonBySmsNumber(toNumber);
     if (!salon) return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
 
     const conversation = await getOrCreateConversation(salon.id, fromNumber);
-    await saveMessage(conversation.id, 'user', userInput);
+    const userMessage = await saveMessage(conversation.id, 'user', userInput);
 
     const [workers, faqs, activeHold, history] = await Promise.all([
       getWorkers(salon.id),
@@ -87,8 +88,48 @@ export async function POST(req: NextRequest) {
       updated_at: new Date().toISOString()
     }).eq('id', conversation.id);
 
-    await saveMessage(conversation.id, 'assistant', reply);
-    await sendSMS(fromNumber, reply);
+    const statusCallbackUrl =
+      process.env.TWILIO_STATUS_CALLBACK_URL || new URL('/api/twilio/status', req.url).toString();
+    const outboundMessage = await sendSMS(fromNumber, reply, statusCallbackUrl);
+    const assistantMessage = await saveMessage(conversation.id, 'assistant', reply);
+
+    if (inboundMessageSid && userMessage?.id) {
+      await supabase
+        .from('transcripts')
+        .update({
+          twilio_message_sid: inboundMessageSid,
+          sms_direction: 'inbound',
+          sms_status: formData.get('SmsStatus') as string | null,
+          sms_price: formData.get('Price') as string | null,
+          sms_price_unit: formData.get('PriceUnit') as string | null,
+          sms_num_segments: formData.get('NumSegments') as string | null,
+          sms_error_code: formData.get('ErrorCode') as string | null,
+          sms_error_message: formData.get('ErrorMessage') as string | null,
+          sms_from_number: fromNumber,
+          sms_to_number: toNumber,
+          sms_updated_at: new Date().toISOString(),
+        })
+        .eq('id', userMessage.id);
+    }
+
+    if (assistantMessage?.id) {
+      await supabase
+        .from('transcripts')
+        .update({
+          twilio_message_sid: outboundMessage.sid,
+          sms_direction: 'outbound',
+          sms_status: outboundMessage.status || null,
+          sms_price: outboundMessage.price || null,
+          sms_price_unit: outboundMessage.priceUnit || null,
+          sms_num_segments: outboundMessage.numSegments || null,
+          sms_error_code: outboundMessage.errorCode || null,
+          sms_error_message: outboundMessage.errorMessage || null,
+          sms_from_number: outboundMessage.from || null,
+          sms_to_number: outboundMessage.to || null,
+          sms_updated_at: new Date().toISOString(),
+        })
+        .eq('id', assistantMessage.id);
+    }
 
     if (triggerHandoff) {
        const { notifyOwnerHandoff } = await import('../../../lib/handoff_service');
