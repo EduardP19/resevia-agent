@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { safeLog } from '@/lib/logger';
 import { getSMSMessage } from '@/lib/twilio';
+import { normalizeSmsPrice } from '@/lib/sms-pricing';
 
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
   const resolvedErrorMessage = errorMessage || twilioMessage?.errorMessage || null;
   const updatePayload: Record<string, any> = {
     sms_status: resolvedStatus,
-    sms_price: callbackPrice || twilioMessage?.price || null,
+    sms_price: normalizeSmsPrice(callbackPrice || twilioMessage?.price),
     sms_price_unit: callbackPriceUnit || twilioMessage?.priceUnit || null,
     sms_num_segments: callbackNumSegments || twilioMessage?.numSegments || null,
     sms_error_code: resolvedErrorCode,

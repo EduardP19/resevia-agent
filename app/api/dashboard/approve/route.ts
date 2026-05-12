@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase, saveMessage } from '@/lib/supabase';
 import { sendSMS } from '@/lib/twilio';
 import { log, safeLog } from '@/lib/logger';
+import { normalizeSmsPrice } from '@/lib/sms-pricing';
 
 export async function POST(req: NextRequest) {
   try {
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
           twilio_message_sid: outboundMessage.sid,
           sms_direction: 'outbound',
           sms_status: outboundMessage.status || null,
-          sms_price: outboundMessage.price || null,
+          sms_price: normalizeSmsPrice(outboundMessage.price),
           sms_price_unit: outboundMessage.priceUnit || null,
           sms_num_segments: outboundMessage.numSegments || null,
           sms_error_code: outboundMessage.errorCode || null,

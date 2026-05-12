@@ -7,6 +7,7 @@ import { isHandoff } from '../../../lib/handoff';
 import { executeToolCall, ToolContext } from '../../../lib/tool-handler';
 import { logAppError, toErrorLogPayload } from '../../../lib/error-logger';
 import { safeLog } from '@/lib/logger';
+import { normalizeSmsPrice } from '@/lib/sms-pricing';
 
 export async function POST(req: NextRequest) {
   try {
@@ -130,7 +131,7 @@ export async function POST(req: NextRequest) {
           twilio_message_sid: inboundMessageSid,
           sms_direction: 'inbound',
           sms_status: formData.get('SmsStatus') as string | null,
-          sms_price: formData.get('Price') as string | null,
+          sms_price: normalizeSmsPrice(formData.get('Price')),
           sms_price_unit: formData.get('PriceUnit') as string | null,
           sms_num_segments: formData.get('NumSegments') as string | null,
           sms_error_code: formData.get('ErrorCode') as string | null,
@@ -149,7 +150,7 @@ export async function POST(req: NextRequest) {
           twilio_message_sid: outboundMessage.sid,
           sms_direction: 'outbound',
           sms_status: outboundMessage.status || null,
-          sms_price: outboundMessage.price || null,
+          sms_price: normalizeSmsPrice(outboundMessage.price),
           sms_price_unit: outboundMessage.priceUnit || null,
           sms_num_segments: outboundMessage.numSegments || null,
           sms_error_code: outboundMessage.errorCode || null,
