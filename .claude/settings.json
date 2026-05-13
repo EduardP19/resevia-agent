@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/api/twilio/voice)",
+      "Bash(npm run *)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001/)",
+      "Bash(curl -s -X POST http://localhost:3001/api/twilio/voice -H 'Content-Type: application/x-www-form-urlencoded' -d 'Caller=%2B447700900123&Called=%2B447700900456&CallSid=CA1234567890abcdef&CallStatus=ringing&Direction=inbound')",
+      "Bash(cat /tmp/resevia-dev.log | grep -A2 \"\\\\[voice\\\\]\")",
+      "Read(//private/tmp/**)",
+      "Bash(curl -s -X POST http://localhost:3001/api/twilio/voice -H 'Content-Type: application/x-www-form-urlencoded' -d 'Caller=%2B447448929894&Called=%2B447700900456&CallSid=CAtest1234567890&CallStatus=ringing&Direction=inbound')",
+      "Bash(curl -s -X POST http://localhost:3001/api/twilio/voice -H 'Content-Type: application/x-www-form-urlencoded' -d 'Caller=%2B447448929894&Called=%2B447886083430&CallSid=CAtest1234567890&CallStatus=ringing&Direction=inbound')"
+    ]
+  }
+}
