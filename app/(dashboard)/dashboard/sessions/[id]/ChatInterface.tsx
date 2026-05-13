@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { trackClientEvent } from '@/lib/client-events';
 
@@ -50,6 +50,24 @@ export default function ChatInterface({
   hasDraftRef.current = !!latestDraft;
   const isArchived = currentStatus !== 'active' && currentStatus !== 'review';
   const isReview = !isArchived && (currentStatus === 'review' || !!latestDraft);
+  const visibleTranscript = useMemo(
+    () =>
+      transcript
+        .filter(msg => msg.role !== 'system')
+        .filter((msg, index, messages) => {
+          const previous = messages[index - 1];
+          if (!previous || previous.role !== msg.role || previous.content.trim() !== msg.content.trim()) {
+            return true;
+          }
+
+          const previousTime = new Date(previous.created_at).getTime();
+          const currentTime = new Date(msg.created_at).getTime();
+          return Number.isNaN(previousTime) || Number.isNaN(currentTime) || currentTime - previousTime > 30_000;
+        }),
+    [transcript]
+  );
+  const latestVisibleMessage = visibleTranscript[visibleTranscript.length - 1];
+  const showAgentPending = !isArchived && !isReview && !isSending && latestVisibleMessage?.role === 'user';
 
   useEffect(() => {
     setTranscript(initialTranscript);
@@ -128,7 +146,7 @@ export default function ChatInterface({
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [transcript]);
+  }, [visibleTranscript, showAgentPending]);
 
   useEffect(() => {
     (window as any).__focusApprovalInput = () => {
@@ -274,7 +292,7 @@ export default function ChatInterface({
 
       {/* Transcript */}
       <div className="flex-1 overflow-y-auto p-5 space-y-4 scrollbar-thin" style={{ background: '#faf8fd' }}>
-        {transcript.filter(msg => msg.role !== 'system').map((msg) => {
+        {visibleTranscript.map((msg) => {
           const isUser = msg.role === 'user';
           const isDraft = msg.role === 'draft';
           const isSystem = msg.role === 'system';
@@ -339,6 +357,34 @@ export default function ChatInterface({
             </div>
           );
         })}
+        {showAgentPending && (
+          <div className="flex justify-start">
+            <div className="max-w-[78%]">
+              <div className="text-[10px] font-bold uppercase tracking-widest mb-1 text-left text-gray-400">
+                Sophia
+              </div>
+              <div
+                className="rounded-2xl px-4 py-3 text-sm leading-relaxed"
+                style={{
+                  background: 'white',
+                  border: '1px solid rgba(109,40,217,0.08)',
+                  color: '#6B7280',
+                  borderTopLeftRadius: '4px',
+                  boxShadow: '0 2px 8px rgba(109,40,217,0.06)',
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold">Thinking</span>
+                  <span className="flex items-center gap-1" aria-hidden="true">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#6D28D9] animate-bounce [animation-delay:-0.2s]" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#6D28D9] animate-bounce [animation-delay:-0.1s]" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#6D28D9] animate-bounce" />
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 

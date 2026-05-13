@@ -2,17 +2,21 @@ import AutoRefresh from './AutoRefresh';
 import { getGroupedSessions } from '@/lib/supabase';
 import Link from 'next/link';
 import { safeLog } from '@/lib/logger';
+import { requireDashboardSession } from '@/lib/dashboard-auth';
+import TrackableLink from '@/app/(dashboard)/TrackableLink';
 
 export const revalidate = 0;
 
 export default async function InboxPage({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
+  const auth = requireDashboardSession();
   const { filter: filterParam } = await searchParams;
-  const allClients = await getGroupedSessions();
+  const allClients = await getGroupedSessions(auth.tenantId);
   const filter = filterParam || 'all';
   safeLog({
     level: 'info',
     category: 'dashboard',
     event: 'page_loaded',
+    tenant_id: auth.tenantId,
     page: 'dashboard/inbox',
     filter,
   });
@@ -30,8 +34,10 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   });
 
   const Tab = ({ id, label, count, active }: { id: string; label: string; count: number; active: boolean }) => (
-    <Link
+    <TrackableLink
       href={`/dashboard/inbox${id === 'all' ? '' : `?filter=${id}`}`}
+      trackEvent="tab_clicked"
+      trackProps={{ page: 'dashboard/inbox', tab: id }}
       className={`px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest transition-all duration-200 flex items-center gap-2 ${
         active
           ? 'text-white shadow-brand'
@@ -45,7 +51,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
       }`}>
         {count}
       </span>
-    </Link>
+    </TrackableLink>
   );
 
   const getStatusConfig = (c: any) => {
@@ -93,7 +99,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
         {filteredClients.map((c: any) => {
           const status = getStatusConfig(c);
           return (
-            <Link key={c.id} href={`/dashboard/sessions/${c.id}`} className="block group">
+            <TrackableLink key={c.id} href={`/dashboard/sessions/${c.id}`} className="block group" trackEvent="session_card_clicked" trackProps={{ page: 'dashboard/inbox', session_id: c.id, client_identifier: c.client_identifier, status: c.has_review ? 'needs_approval' : c.has_escalation ? 'escalated' : 'active' }}>
               <div
                 className="bg-white rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between transition-all duration-200 relative overflow-hidden shadow-card hover:shadow-card-hover"
                 style={{ border: '1px solid rgba(109,40,217,0.08)' }}
@@ -159,8 +165,8 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                   </div>
                 </div>
               </div>
-            </Link>
-          );
+    </TrackableLink>
+  );
         })}
       </div>
 

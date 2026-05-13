@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { trackClientEvent } from '@/lib/client-events';
 
 export default function NotificationBell() {
   const [count, setCount] = useState(0);
@@ -22,6 +23,7 @@ export default function NotificationBell() {
   return (
     <Link
       href="/dashboard/inbox"
+      onClick={() => trackClientEvent({ event: 'bell_clicked', category: 'dashboard', unread_count: count })}
       className="relative p-2 rounded-lg transition-colors text-gray-400 hover:text-[#6D28D9] hover:bg-[#6D28D9]/08"
     >
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

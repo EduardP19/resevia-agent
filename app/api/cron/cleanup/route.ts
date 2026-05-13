@@ -3,6 +3,11 @@ import { supabase, saveMessage, getSessionTranscript, isTestUiSession } from '@/
 import { sendSMS } from '@/lib/twilio';
 import { generateSummary } from '@/lib/ai';
 import { safeLog } from '@/lib/logger';
+import {
+  smsMetadataFromTwilioMessage,
+  updateTranscriptSmsMetadata,
+  upsertSmsMessage,
+} from '@/lib/sms-messages';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,13 +77,36 @@ export async function GET() {
       const summary = await generateSummary(transcript);
 
       const msg = "Session expired. Please start a new one by saying Hi if you still need assistance.";
-      await sendSMS(session.client_identifier!, msg, undefined, {
+      const outboundMessage = await sendSMS(session.client_identifier!, msg, undefined, {
         tenant_id: session.salon_id,
         session_id: session.id,
       });
+      await upsertSmsMessage({
+        twilioMessageSid: outboundMessage.sid,
+        direction: 'outbound',
+        sessionId: session.id,
+        salonId: session.salon_id,
+        ...smsMetadataFromTwilioMessage(outboundMessage),
+        rawPayload: outboundMessage,
+      });
       // Save as 'assistant' so test window shows what the client would receive via SMS.
       // In production this is sent via Twilio; in test mode it appears in the chat.
-      await saveMessage(session.id, 'assistant', msg);
+      const assistantMessage = await saveMessage(session.id, 'assistant', msg);
+      if (assistantMessage?.id) {
+        const outboundMetadata = {
+          twilioMessageSid: outboundMessage.sid,
+          direction: 'outbound' as const,
+          ...smsMetadataFromTwilioMessage(outboundMessage),
+        };
+        await updateTranscriptSmsMetadata(assistantMessage.id, outboundMetadata);
+        await upsertSmsMessage({
+          ...outboundMetadata,
+          sessionId: session.id,
+          transcriptId: assistantMessage.id,
+          salonId: session.salon_id,
+          rawPayload: outboundMessage,
+        });
+      }
       await supabase.from('sessions').update({ summary }).eq('id', session.id);
       safeLog({
         level: 'info',
@@ -124,12 +152,35 @@ export async function GET() {
       if (!claimed) continue;
 
       const msg = "Just checking if you're still there! In 1 minute this session will expire and you'll have to start a new one by saying Hi.";
-      await sendSMS(session.client_identifier!, msg, undefined, {
+      const outboundMessage = await sendSMS(session.client_identifier!, msg, undefined, {
         tenant_id: session.salon_id,
         session_id: session.id,
       });
+      await upsertSmsMessage({
+        twilioMessageSid: outboundMessage.sid,
+        direction: 'outbound',
+        sessionId: session.id,
+        salonId: session.salon_id,
+        ...smsMetadataFromTwilioMessage(outboundMessage),
+        rawPayload: outboundMessage,
+      });
       // Save as 'assistant' so test window shows what the client would receive via SMS.
-      await saveMessage(session.id, 'assistant', msg);
+      const assistantMessage = await saveMessage(session.id, 'assistant', msg);
+      if (assistantMessage?.id) {
+        const outboundMetadata = {
+          twilioMessageSid: outboundMessage.sid,
+          direction: 'outbound' as const,
+          ...smsMetadataFromTwilioMessage(outboundMessage),
+        };
+        await updateTranscriptSmsMetadata(assistantMessage.id, outboundMetadata);
+        await upsertSmsMessage({
+          ...outboundMetadata,
+          sessionId: session.id,
+          transcriptId: assistantMessage.id,
+          salonId: session.salon_id,
+          rawPayload: outboundMessage,
+        });
+      }
       safeLog({
         level: 'info',
         category: 'session',

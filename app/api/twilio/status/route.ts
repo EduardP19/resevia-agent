@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { log, safeLog } from '@/lib/logger';
-import { getSMSMessageWithPricing } from '@/lib/twilio';
 import { normalizeSmsPrice } from '@/lib/sms-pricing';
+import {
+  formDataToRecord,
+  numberOrNull,
+  transcriptSmsPayload,
+  upsertSmsMessage,
+} from '@/lib/sms-messages';
 
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
+  const rawSmsPayload = formDataToRecord(formData);
   const messageSid = formData.get('MessageSid') as string | null;
   const status = formData.get('MessageStatus') as string | null;
   const errorCode = formData.get('ErrorCode') as string | null;
@@ -23,45 +29,33 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  let twilioMessage: any = null;
-  if (!callbackPrice || !callbackPriceUnit || !callbackNumSegments) {
-    try {
-      twilioMessage = await getSMSMessageWithPricing(messageSid);
-    } catch (error: any) {
-      safeLog({
-        level: 'warning',
-        category: 'sms',
-        event: 'sms_price_lookup_failed',
-        twilio_message_sid: messageSid,
-        error: error?.message || String(error),
-        stack: error?.stack,
-      });
-    }
-  }
-
-  const resolvedStatus = status || twilioMessage?.status || null;
-  const resolvedErrorCode = errorCode || twilioMessage?.errorCode || null;
-  const resolvedErrorMessage = errorMessage || twilioMessage?.errorMessage || null;
-  const updatePayload: Record<string, any> = {
-    sms_status: resolvedStatus,
-    sms_price: normalizeSmsPrice(callbackPrice || twilioMessage?.price),
-    sms_price_unit: callbackPriceUnit || twilioMessage?.priceUnit || twilioMessage?.price_unit || null,
-    sms_num_segments: callbackNumSegments || twilioMessage?.numSegments || twilioMessage?.num_segments || null,
-    sms_error_code: resolvedErrorCode,
-    sms_error_message: resolvedErrorMessage,
-    sms_updated_at: new Date().toISOString(),
+  const statusMetadata = {
+    twilioMessageSid: messageSid,
+    status,
+    price: normalizeSmsPrice(callbackPrice),
+    priceUnit: callbackPriceUnit,
+    numSegments: numberOrNull(callbackNumSegments),
+    errorCode,
+    errorMessage,
+    fromNumber: callbackFrom,
+    toNumber: callbackTo,
   };
-  const resolvedFrom = callbackFrom || twilioMessage?.from || null;
-  const resolvedTo = callbackTo || twilioMessage?.to || null;
-  if (resolvedFrom) updatePayload.sms_from_number = resolvedFrom;
-  if (resolvedTo) updatePayload.sms_to_number = resolvedTo;
+  const updatePayload = transcriptSmsPayload(statusMetadata);
 
   const { data: updatedTranscript, error } = await supabase
     .from('transcripts')
     .update(updatePayload)
     .eq('twilio_message_sid', messageSid)
-    .select('session_id, sms_direction')
+    .select('id, session_id, sms_direction')
     .maybeSingle();
+
+  const ledgerRow = await upsertSmsMessage({
+    ...statusMetadata,
+    direction: updatedTranscript?.sms_direction as any,
+    sessionId: updatedTranscript?.session_id,
+    transcriptId: updatedTranscript?.id,
+    rawPayload: rawSmsPayload,
+  });
 
   if (error) {
     safeLog({
@@ -81,10 +75,10 @@ export async function POST(req: NextRequest) {
       session_id: updatedTranscript.session_id,
       twilio_message_sid: messageSid,
       sms_direction: updatedTranscript.sms_direction,
-      sms_status: resolvedStatus,
-      sms_price: updatePayload.sms_price,
-      sms_price_unit: updatePayload.sms_price_unit,
-      sms_num_segments: updatePayload.sms_num_segments,
+      sms_status: statusMetadata.status,
+      sms_price: statusMetadata.price,
+      sms_price_unit: statusMetadata.priceUnit,
+      sms_num_segments: statusMetadata.numSegments,
     });
   } else {
     await log({
@@ -92,22 +86,23 @@ export async function POST(req: NextRequest) {
       category: 'sms',
       event: 'sms_status_unmatched',
       twilio_message_sid: messageSid,
-      sms_status: resolvedStatus,
-      sms_price: updatePayload.sms_price,
-      sms_price_unit: updatePayload.sms_price_unit,
-      sms_num_segments: updatePayload.sms_num_segments,
+      sms_status: statusMetadata.status,
+      sms_price: statusMetadata.price,
+      sms_price_unit: statusMetadata.priceUnit,
+      sms_num_segments: statusMetadata.numSegments,
+      sms_message_id: ledgerRow?.id,
     });
   }
 
-  if (resolvedStatus === 'failed' || resolvedStatus === 'undelivered' || resolvedErrorCode) {
+  if (status === 'failed' || status === 'undelivered' || errorCode) {
     safeLog({
       level: 'error',
       category: 'sms',
       event: 'sms_failed',
       session_id: updatedTranscript?.session_id,
       twilio_message_sid: messageSid,
-      sms_status: resolvedStatus,
-      error: resolvedErrorMessage || resolvedErrorCode || 'Twilio reported SMS delivery failure',
+      sms_status: status,
+      error: errorMessage || errorCode || 'Twilio reported SMS delivery failure',
     });
   }
 

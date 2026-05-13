@@ -267,6 +267,37 @@ export async function saveMessageToTable(
   throw formatTranscriptTableError(error, table);
 }
 
+function normalizeTranscriptContent(content: string) {
+  return content.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+export async function findRecentDuplicateUserMessage(
+  sessionId: string,
+  content: string,
+  excludeMessageId?: string,
+  windowMs = 30_000
+) {
+  const normalizedContent = normalizeTranscriptContent(content);
+  if (!normalizedContent) return null;
+
+  const since = new Date(Date.now() - windowMs).toISOString();
+  const { data, error } = await supabase
+    .from('transcripts')
+    .select('id, content, created_at')
+    .eq('session_id', sessionId)
+    .eq('role', 'user')
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(10);
+
+  if (error) throw error;
+
+  return (data || []).find((message: any) => {
+    if (excludeMessageId && message.id === excludeMessageId) return false;
+    return normalizeTranscriptContent(message.content || '') === normalizedContent;
+  }) || null;
+}
+
 export async function deleteMessagesByRoleFromTable(
   sessionId: string,
   role: TranscriptRole,
@@ -606,6 +637,56 @@ export async function getGroupedSessions(salonId?: string) {
   return sessions;
 }
 
+/**
+ * Dashboard: archived/expired sessions.
+ * This intentionally returns one row per session, so repeat conversations from
+ * the same phone number remain visible as separate history entries.
+ */
+export async function getHistorySessions(salonId?: string, limit = 100) {
+  let query = supabase
+    .from('sessions')
+    .select('id, client_identifier, status, platform, created_at, updated_at, metadata, salon_id, summary, business_profiles(name)')
+    .order('updated_at', { ascending: false })
+    .limit(limit);
+
+  if (salonId) {
+    query = query.eq('salon_id', salonId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  const liveStatuses = new Set(['active', 'review', 'handed_over']);
+
+  return (data || [])
+    .filter((session: any) => {
+      if (isTestUiSession(session)) return false;
+
+      const metadata = session.metadata && typeof session.metadata === 'object' ? session.metadata : {};
+      const isExpired = typeof metadata.expired_at === 'string' && metadata.expired_at.length > 0;
+
+      return isExpired || !liveStatuses.has(session.status);
+    })
+    .map((session: any) => {
+      const metadata = session.metadata && typeof session.metadata === 'object' ? session.metadata : {};
+      const expiredAt = typeof metadata.expired_at === 'string' ? metadata.expired_at : null;
+      const occurredAt = expiredAt || session.updated_at || session.created_at;
+
+      let outcome = session.summary;
+      if (!outcome && expiredAt) outcome = 'Session expired before the conversation was completed.';
+      if (!outcome && session.status === 'completed') outcome = 'Conversation completed.';
+      if (!outcome && session.status === 'handed_over') outcome = 'Conversation was escalated to the team.';
+      if (!outcome) outcome = 'Outcome summary pending.';
+
+      return {
+        ...session,
+        occurred_at: occurredAt,
+        outcome,
+        is_expired: Boolean(expiredAt),
+      };
+    });
+}
+
 // FAQ Management
 export async function createFAQ(faq: { salon_id: string; category: string; question: string; answer: string; sort_order?: number }) {
   const { data, error } = await supabase.from('faqs').insert(faq).select().single();
@@ -624,16 +705,91 @@ export async function deleteFAQ(id: string) {
   if (error) throw error;
 }
 
-export async function searchSessionsByPhone(phone: string) {
-  const { data: sessions, error: sError } = await supabase
+function getPhoneSearchTerms(phone: string) {
+  const trimmed = phone.trim().replace(/[%_]/g, '');
+  const digits = trimmed.replace(/\D/g, '');
+  const terms = [trimmed];
+
+  if (digits) {
+    terms.push(digits);
+
+    if (digits.startsWith('00') && digits.length > 2) {
+      terms.push(`+${digits.slice(2)}`, digits.slice(2));
+    }
+
+    if (digits.startsWith('0') && digits.length > 1) {
+      terms.push(`+44${digits.slice(1)}`, `44${digits.slice(1)}`);
+    }
+
+    if (!digits.startsWith('0') && !digits.startsWith('00')) {
+      terms.push(`+${digits}`);
+    }
+  }
+
+  return Array.from(new Set(terms.filter(term => term.length >= 2)));
+}
+
+export async function searchSessionsByPhone(phone: string, salonId?: string) {
+  const terms = getPhoneSearchTerms(phone);
+
+  if (terms.length === 0) {
+    return [];
+  }
+
+  const matchQueries = await Promise.all(
+    terms.map(term => {
+      let query = supabase
+        .from('sessions')
+        .select('client_identifier, metadata')
+        .ilike('client_identifier', `%${term}%`)
+        .limit(50);
+
+      if (salonId) {
+        query = query.eq('salon_id', salonId);
+      }
+
+      return query;
+    })
+  );
+
+  const matchError = matchQueries.find(result => result.error)?.error;
+  if (matchError) throw matchError;
+
+  const matchedPhones = Array.from(
+    new Set(
+      matchQueries
+        .flatMap(result => result.data || [])
+        .filter((session: any) => !isTestUiSession(session))
+        .map((session: any) => session.client_identifier)
+        .filter(Boolean)
+    )
+  );
+
+  if (matchedPhones.length === 0) {
+    return [];
+  }
+
+  let sessionsQuery = supabase
     .from('sessions')
-    .select('id, created_at, status, salon_id, metadata, business_profiles(name)')
-    .eq('client_identifier', phone)
+    .select('id, client_identifier, created_at, status, salon_id, metadata, summary, business_profiles(name)')
+    .in('client_identifier', matchedPhones)
     .order('created_at', { ascending: false });
-  
+
+  if (salonId) {
+    sessionsQuery = sessionsQuery.eq('salon_id', salonId);
+  }
+
+  const { data: sessions, error: sError } = await sessionsQuery;
+
   if (sError) throw sError;
 
-  const visibleSessions = (sessions || []).filter((session: any) => !isTestUiSession(session));
+  const visibleSessions = Array.from(
+    new Map(
+      (sessions || [])
+        .filter((session: any) => !isTestUiSession(session))
+        .map((session: any) => [session.id, session])
+    ).values()
+  );
 
   // For each session, get the first user message for context and determine outcome
   const results = await Promise.all(visibleSessions.map(async (s: any) => {
@@ -646,7 +802,7 @@ export async function searchSessionsByPhone(phone: string) {
     const firstUserMsg = transcript?.find(m => m.role === 'user')?.content || 'No user messages yet';
     
     // Determine outcome
-    let outcome = 'Enquiry';
+    let outcome = s.summary || 'Enquiry';
     if (s.status === 'handed_over') outcome = 'Escalated';
     if (s.status === 'review') outcome = 'Awaiting Approval';
     if (transcript?.some(m => m.content.includes('confirmed') || m.content.includes('book_direct'))) {

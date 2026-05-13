@@ -1,16 +1,21 @@
 import React from 'react';
 import { isTestUiSession, supabase } from '@/lib/supabase';
 import Link from 'next/link';
+import { requireDashboardSession } from '@/lib/dashboard-auth';
+import PageViewTracker from '@/app/(dashboard)/PageViewTracker';
+import TrackableLink from '@/app/(dashboard)/TrackableLink';
 
 export const revalidate = 0;
 
 export default async function ClientHistoryPage({ params }: { params: { phone: string } }) {
+  const auth = requireDashboardSession();
   const decodedPhone = decodeURIComponent(params.phone);
 
   const { data: sessions } = await supabase
     .from('sessions')
     .select('*, business_profiles(name)')
     .eq('client_identifier', decodedPhone)
+    .eq('salon_id', auth.tenantId)
     .order('created_at', { ascending: false });
 
   const visibleSessions = (sessions || []).filter((session: any) => !isTestUiSession(session));
@@ -52,7 +57,7 @@ export default async function ClientHistoryPage({ params }: { params: { phone: s
     const date = new Date(session.created_at);
 
     return (
-      <Link href={`/dashboard/sessions/${session.id}`} className="block group">
+      <TrackableLink href={`/dashboard/sessions/${session.id}`} className="block group" trackEvent="session_card_clicked" trackProps={{ page: 'dashboard/client', session_id: session.id, status: session.status }}>
         <div className={`relative bg-white rounded-2xl border overflow-hidden flex flex-col transition-all duration-300 hover:shadow-xl h-full ${
           isLive ? 'border-emerald-400 shadow-lg shadow-emerald-50/50' : 'border-gray-100 shadow-sm hover:border-indigo-100'
         }`}>
@@ -111,20 +116,21 @@ export default async function ClientHistoryPage({ params }: { params: { phone: s
             </div>
           </div>
         </div>
-      </Link>
+      </TrackableLink>
     );
   };
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-12">
+      <PageViewTracker page="dashboard/client" extra={{ phone: decodedPhone, session_count: visibleSessions.length }} />
       {/* Header */}
       <div className="mb-10">
-        <Link href="/dashboard/inbox" className="inline-flex items-center text-xs font-black uppercase tracking-widest text-brand-purple hover:translate-x-[-4px] transition-transform mb-6">
+        <TrackableLink href="/dashboard/inbox" trackEvent="back_link_clicked" trackProps={{ page: 'dashboard/client', destination: 'dashboard/inbox' }} className="inline-flex items-center text-xs font-black uppercase tracking-widest text-brand-purple hover:translate-x-[-4px] transition-transform mb-6">
           <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7" />
           </svg>
           Back to Inbox
-        </Link>
+        </TrackableLink>
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
           <div>
             <h2 className="text-4xl font-extrabold text-gray-900 tracking-tight">Conversation History</h2>

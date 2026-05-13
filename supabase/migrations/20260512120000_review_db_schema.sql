@@ -8,6 +8,7 @@ create table if not exists public."1_business_profiles" (
   name text not null,
   phone text not null,
   email text not null,
+  password text,
   address text not null,
   whatsapp_number text not null,
   agent_name text not null,

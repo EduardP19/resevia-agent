@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSalonById, getOrCreateConversation, getTranscriptHistory, saveMessage, getWorkers, getFAQs, getActiveHold, supabase } from '../../../../lib/supabase';
+import {
+  findRecentDuplicateUserMessage,
+  getActiveHold,
+  getFAQs,
+  getOrCreateConversation,
+  getSalonById,
+  getTranscriptHistory,
+  getWorkers,
+  saveMessage,
+  supabase,
+} from '../../../../lib/supabase';
 import { buildSystemPrompt } from '../../../../lib/agent';
 import { callAI } from '../../../../lib/ai';
 import { isHandoff } from '../../../../lib/handoff';
 import { executeToolCall, ToolContext } from '../../../../lib/tool-handler';
 import { logAppError, toErrorLogPayload } from '../../../../lib/error-logger';
-import { safeLog } from '@/lib/logger';
+import { log, safeLog } from '@/lib/logger';
 
 // Same logic as /api/sms-webhook but returns JSON instead of sending via Twilio
 export async function POST(req: NextRequest) {
@@ -28,7 +38,7 @@ export async function POST(req: NextRequest) {
     if (!salon) return NextResponse.json({ error: 'No salon found' }, { status: 404 });
 
     const conversation = await getOrCreateConversation(salon.id, from, sessionId);
-    safeLog({
+    await log({
       level: 'info',
       category: 'sms',
       event: 'sms_received',
@@ -39,6 +49,20 @@ export async function POST(req: NextRequest) {
       session_id: conversation.id,
       source: 'test_sms',
     });
+
+    const duplicateUserMessage = await findRecentDuplicateUserMessage(conversation.id, message);
+    if (duplicateUserMessage) {
+      safeLog({
+        level: 'info',
+        category: 'sms',
+        event: 'duplicate_test_message_ignored',
+        tenant_id: salon.id,
+        session_id: conversation.id,
+        source: 'test_sms',
+      });
+      return NextResponse.json({ duplicate: true, sessionId: conversation.id });
+    }
+
     await saveMessage(conversation.id, 'user', message);
 
     const [workers, faqs, activeHold, history] = await Promise.all([

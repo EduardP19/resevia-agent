@@ -2,11 +2,13 @@ import React from 'react';
 import { getFAQs, supabase } from '@/lib/supabase';
 import FAQEditor from './FAQEditor';
 import { safeLog } from '@/lib/logger';
+import { requireDashboardSession } from '@/lib/dashboard-auth';
 
 export const revalidate = 0;
 
 export default async function KnowledgeBasePage() {
-  const { data: salon } = await supabase.from('business_profiles').select('*').limit(1).single();
+  const auth = requireDashboardSession();
+  const { data: salon } = await supabase.from('business_profiles').select('*').eq('id', auth.tenantId).single();
   const faqs = salon ? await getFAQs(salon.id) : [];
   safeLog({
     level: 'info',

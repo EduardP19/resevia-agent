@@ -413,6 +413,11 @@ export default function TestPage() {
         throw new Error(data.error || 'Unable to send the message.');
       }
 
+      if (data.duplicate) {
+        setMessages((currentMessages) => currentMessages.filter((message) => message.id !== localUserId));
+        return;
+      }
+
       const resolvedSessionId = data.sessionId || sessionIdRef.current || null;
 
       if (resolvedSessionId && resolvedSessionId !== sessionIdRef.current) {

@@ -1,17 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSalonBySmsNumber, getOrCreateConversation, getTranscriptHistory, saveMessage, getWorkers, getFAQs, getActiveHold, supabase } from '../../../lib/supabase';
+import {
+  findRecentDuplicateUserMessage,
+  getActiveHold,
+  getFAQs,
+  getOrCreateConversation,
+  getSalonBySmsNumber,
+  getTranscriptHistory,
+  getWorkers,
+  saveMessage,
+  saveMessageToTable,
+  supabase,
+} from '../../../lib/supabase';
 import { buildSystemPrompt } from '../../../lib/agent';
 import { callAI } from '../../../lib/ai';
-import { getSMSMessageWithPricing, sendSMS } from '../../../lib/twilio';
+import { sendSMS } from '../../../lib/twilio';
 import { isHandoff } from '../../../lib/handoff';
 import { executeToolCall, ToolContext } from '../../../lib/tool-handler';
 import { logAppError, toErrorLogPayload } from '../../../lib/error-logger';
-import { safeLog } from '@/lib/logger';
-import { normalizeSmsPrice } from '@/lib/sms-pricing';
+import { log, safeLog } from '@/lib/logger';
+import {
+  formDataToRecord,
+  numberOrNull,
+  smsMetadataFromTwilioMessage,
+  updateTranscriptSmsMetadata,
+  upsertSmsMessage,
+} from '@/lib/sms-messages';
 
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
+    const rawSmsPayload = formDataToRecord(formData);
     const userInput = formData.get('Body') as string;
     const fromNumber = formData.get('From') as string;
     const toNumber = formData.get('To') as string;
@@ -21,7 +39,7 @@ export async function POST(req: NextRequest) {
     if (!salon) return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
 
     const conversation = await getOrCreateConversation(salon.id, fromNumber);
-    safeLog({
+    await log({
       level: 'info',
       category: 'sms',
       event: 'sms_received',
@@ -31,52 +49,82 @@ export async function POST(req: NextRequest) {
       tenant_id: salon.id,
       session_id: conversation.id,
     });
-    const userMessage = await saveMessage(conversation.id, 'user', userInput);
+
+    if (inboundMessageSid) {
+      const { data: existingInbound } = await supabase
+        .from('transcripts')
+        .select('id')
+        .eq('twilio_message_sid', inboundMessageSid)
+        .maybeSingle();
+
+      if (existingInbound) {
+        safeLog({
+          level: 'info',
+          category: 'sms',
+          event: 'duplicate_inbound_sms_ignored',
+          tenant_id: salon.id,
+          session_id: conversation.id,
+          twilio_message_sid: inboundMessageSid,
+        });
+        return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
+      }
+    }
+
+    const duplicateUserMessage = await findRecentDuplicateUserMessage(conversation.id, userInput);
+    if (duplicateUserMessage) {
+      safeLog({
+        level: 'info',
+        category: 'sms',
+        event: 'duplicate_inbound_content_ignored',
+        tenant_id: salon.id,
+        session_id: conversation.id,
+      });
+      return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
+    }
+
+    let userMessage;
+    try {
+      userMessage = inboundMessageSid
+        ? await saveMessageToTable(conversation.id, 'user', userInput, 'transcripts', undefined, {
+            twilio_message_sid: inboundMessageSid,
+          })
+        : await saveMessage(conversation.id, 'user', userInput);
+    } catch (error: any) {
+      if (inboundMessageSid && error?.code === '23505') {
+        safeLog({
+          level: 'info',
+          category: 'sms',
+          event: 'duplicate_inbound_sms_ignored',
+          tenant_id: salon.id,
+          session_id: conversation.id,
+          twilio_message_sid: inboundMessageSid,
+        });
+        return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
+      }
+      throw error;
+    }
 
     if (inboundMessageSid && userMessage?.id) {
-      let inboundTwilioMessage: any = null;
-      const inboundPrice = formData.get('Price');
-      const inboundPriceUnit = formData.get('PriceUnit');
-      const inboundNumSegments = formData.get('NumSegments');
+      const inboundSmsStatus = (formData.get('SmsStatus') as string | null) || 'received';
+      const inboundMetadata = {
+        twilioMessageSid: inboundMessageSid,
+        direction: 'inbound' as const,
+        status: inboundSmsStatus,
+        numSegments: numberOrNull(formData.get('NumSegments')),
+        errorCode: (formData.get('ErrorCode') as string | null) || null,
+        errorMessage: (formData.get('ErrorMessage') as string | null) || null,
+        fromNumber,
+        toNumber,
+      };
 
-      if (!inboundPrice || !inboundPriceUnit || !inboundNumSegments) {
-        try {
-          inboundTwilioMessage = await getSMSMessageWithPricing(inboundMessageSid);
-        } catch (error: any) {
-          safeLog({
-            level: 'warning',
-            category: 'sms',
-            event: 'sms_price_lookup_failed',
-            tenant_id: salon.id,
-            session_id: conversation.id,
-            twilio_message_sid: inboundMessageSid,
-            error: error?.message || String(error),
-            stack: error?.stack,
-          });
-        }
-      }
-
-      const inboundSmsPrice = normalizeSmsPrice(inboundPrice || inboundTwilioMessage?.price);
-      const inboundSmsPriceUnit = (inboundPriceUnit as string | null) || inboundTwilioMessage?.priceUnit || inboundTwilioMessage?.price_unit || null;
-      const inboundSmsNumSegments = (inboundNumSegments as string | null) || inboundTwilioMessage?.numSegments || inboundTwilioMessage?.num_segments || null;
-      const inboundSmsStatus = (formData.get('SmsStatus') as string | null) || inboundTwilioMessage?.status || 'received';
-
-      await supabase
-        .from('transcripts')
-        .update({
-          twilio_message_sid: inboundMessageSid,
-          sms_direction: 'inbound',
-          sms_status: inboundSmsStatus,
-          sms_price: inboundSmsPrice,
-          sms_price_unit: inboundSmsPriceUnit,
-          sms_num_segments: inboundSmsNumSegments,
-          sms_error_code: (formData.get('ErrorCode') as string | null) || inboundTwilioMessage?.errorCode || null,
-          sms_error_message: (formData.get('ErrorMessage') as string | null) || inboundTwilioMessage?.errorMessage || null,
-          sms_from_number: fromNumber,
-          sms_to_number: toNumber,
-          sms_updated_at: new Date().toISOString(),
-        })
-        .eq('id', userMessage.id);
+      await updateTranscriptSmsMetadata(userMessage.id, inboundMetadata);
+      await upsertSmsMessage({
+        ...inboundMetadata,
+        sessionId: conversation.id,
+        transcriptId: userMessage.id,
+        salonId: salon.id,
+        rawPayload: rawSmsPayload,
+      });
 
       safeLog({
         level: 'info',
@@ -87,9 +135,7 @@ export async function POST(req: NextRequest) {
         twilio_message_sid: inboundMessageSid,
         sms_direction: 'inbound',
         sms_status: inboundSmsStatus,
-        sms_price: inboundSmsPrice,
-        sms_price_unit: inboundSmsPriceUnit,
-        sms_num_segments: inboundSmsNumSegments,
+        sms_num_segments: inboundMetadata.numSegments,
       });
     }
 
@@ -182,25 +228,31 @@ export async function POST(req: NextRequest) {
       tenant_id: salon.id,
       session_id: conversation.id,
     });
+    await upsertSmsMessage({
+      twilioMessageSid: outboundMessage.sid,
+      direction: 'outbound',
+      sessionId: conversation.id,
+      salonId: salon.id,
+      ...smsMetadataFromTwilioMessage(outboundMessage),
+      rawPayload: outboundMessage,
+    });
     const assistantMessage = await saveMessage(conversation.id, 'assistant', reply);
 
     if (assistantMessage?.id) {
-      await supabase
-        .from('transcripts')
-        .update({
-          twilio_message_sid: outboundMessage.sid,
-          sms_direction: 'outbound',
-          sms_status: outboundMessage.status || null,
-          sms_price: normalizeSmsPrice(outboundMessage.price),
-          sms_price_unit: outboundMessage.priceUnit || null,
-          sms_num_segments: outboundMessage.numSegments || null,
-          sms_error_code: outboundMessage.errorCode || null,
-          sms_error_message: outboundMessage.errorMessage || null,
-          sms_from_number: outboundMessage.from || null,
-          sms_to_number: outboundMessage.to || null,
-          sms_updated_at: new Date().toISOString(),
-        })
-        .eq('id', assistantMessage.id);
+      const outboundMetadata = {
+        twilioMessageSid: outboundMessage.sid,
+        direction: 'outbound' as const,
+        ...smsMetadataFromTwilioMessage(outboundMessage),
+      };
+
+      await updateTranscriptSmsMetadata(assistantMessage.id, outboundMetadata);
+      await upsertSmsMessage({
+        ...outboundMetadata,
+        sessionId: conversation.id,
+        transcriptId: assistantMessage.id,
+        salonId: salon.id,
+        rawPayload: outboundMessage,
+      });
     }
 
     // Auto mode should not retain pending drafts from previous manual cycles.

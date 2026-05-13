@@ -3,14 +3,19 @@ import Link from 'next/link';
 import ChatInterface from './ChatInterface';
 import HeaderActions from './HeaderActions';
 import { safeLog } from '@/lib/logger';
+import { requireDashboardSession } from '@/lib/dashboard-auth';
+import PageViewTracker from '@/app/(dashboard)/PageViewTracker';
+import TrackableLink from '@/app/(dashboard)/TrackableLink';
 
 export const revalidate = 0;
 
 export default async function SessionTranscriptPage({ params }: { params: { id: string } }) {
+  const auth = requireDashboardSession();
   const { data: session } = await supabase
     .from('sessions')
     .select('*, business_profiles(name)')
     .eq('id', params.id)
+    .eq('salon_id', auth.tenantId)
     .single();
 
   if (!session || isTestUiSession(session)) return <div>Session not found.</div>;
@@ -28,11 +33,14 @@ export default async function SessionTranscriptPage({ params }: { params: { id: 
 
   return (
     <div className="max-w-3xl mx-auto">
+      <PageViewTracker page="dashboard/session" session_id={params.id} tenant_id={session.salon_id} />
       {/* Header */}
       <div className="mb-6 flex flex-col gap-4 md:flex-row md:justify-between md:items-end">
         <div>
-          <Link
+          <TrackableLink
             href="/dashboard/inbox"
+            trackEvent="back_link_clicked"
+            trackProps={{ page: 'dashboard/session', destination: 'dashboard/inbox', session_id: params.id }}
             className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest mb-3 transition-colors"
             style={{ color: '#6D28D9' }}
           >
@@ -40,7 +48,7 @@ export default async function SessionTranscriptPage({ params }: { params: { id: 
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
             </svg>
             Back to Inbox
-          </Link>
+          </TrackableLink>
 
           <div className="flex items-center gap-2 mb-1.5">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.7)]" />

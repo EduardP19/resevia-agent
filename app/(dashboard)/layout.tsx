@@ -29,6 +29,15 @@ const navItems = [
     ),
   },
   {
+    href: '/dashboard/history',
+    label: 'History',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  },
+  {
     href: '/dashboard/knowledge',
     label: 'Knowledge',
     icon: (
@@ -51,18 +60,20 @@ const navItems = [
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [tenantName, setTenantName] = useState('Tenant');
   const pathname = usePathname();
 
+
   useEffect(() => {
-    const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
-    if (nav?.type === 'reload') {
-      trackClientEvent({
-        event: 'page_reload',
-        category: 'dashboard',
-        page: pathname || '/dashboard',
-      });
-    }
-  }, [pathname]);
+    fetch('/api/dashboard/salon')
+      .then(response => response.json())
+      .then(data => {
+        if (typeof data?.name === 'string' && data.name.trim()) {
+          setTenantName(data.name);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   return (
     <ApprovalProvider>
@@ -145,13 +156,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Status footer */}
         <div className="p-4 m-3 rounded-2xl border border-white/10 bg-white/5">
-          <div className="flex items-center space-x-2.5">
+          <div className="flex items-center space-x-2.5 min-w-0">
             <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse flex-shrink-0 shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
-            <div>
-              <p className="text-xs font-semibold text-white/80">Sophia Online</p>
-              <p className="text-[10px] text-white/30 uppercase tracking-widest">AI Agent Active</p>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-white/80 truncate">{tenantName}</p>
+              <p className="text-[10px] text-white/30 uppercase tracking-widest">Sophia Online</p>
             </div>
           </div>
+          <form action="/api/auth/logout" method="post" className="mt-3">
+            <button
+              type="submit"
+              className="w-full rounded-xl border border-white/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              Log out
+            </button>
+          </form>
         </div>
       </aside>
 
@@ -183,6 +202,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {/* Right: bell + toggle */}
           <div className="flex-1 flex items-center justify-end space-x-2 md:space-x-4">
+            <form action="/api/auth/logout" method="post" className="hidden md:block">
+              <button
+                type="submit"
+                className="rounded-lg border border-[#e8e0f0] px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-[#f6f1ff] hover:text-[#271549] transition-colors"
+              >
+                Log out
+              </button>
+            </form>
             <NotificationBell />
             <span className="h-5 w-px bg-gray-200 hidden md:block" />
             <div className="hidden md:block">

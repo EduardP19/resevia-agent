@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { logAppError } from '@/lib/error-logger';
+import { logAppError, logDashboardEvent } from '@/lib/error-logger';
 import { safeLog } from '@/lib/logger';
 
 export async function POST(req: NextRequest) {
@@ -9,7 +9,27 @@ export async function POST(req: NextRequest) {
     const mappedLogLevel = payload?.level === 'warn' ? 'warning' : payload?.level === 'info' ? 'info' : 'error';
     const hasEvent = typeof payload?.event === 'string' && payload.event.length > 0;
 
-    // Persist only warn/error client issues in system error logs.
+    // Persist all events to 1_system_logs for analytics.
+    await logDashboardEvent({
+      event: hasEvent ? payload.event : 'client_error',
+      category: typeof payload?.category === 'string' ? payload.category : 'dashboard',
+      level: mappedLevel,
+      tenant_id: typeof payload?.salon_id === 'string' ? payload.salon_id : undefined,
+      session_id: typeof payload?.session_id === 'string' ? payload.session_id : undefined,
+      path: typeof payload?.path === 'string' ? payload.path : req.nextUrl.pathname,
+      action: typeof payload?.action === 'string' ? payload.action : undefined,
+      page: typeof payload?.page === 'string' ? payload.page : undefined,
+      runtime: 'client',
+      ...(() => {
+        const extra: Record<string, any> = {};
+        for (const k of ['mode', 'text_length', 'query_length', 'results_count', 'interval_ms', 'next_mode', 'fields_changed', 'filter', 'error']) {
+          if (payload?.[k] !== undefined) extra[k] = payload[k];
+        }
+        return extra;
+      })(),
+    });
+
+    // Persist warn/error client issues in the legacy error log as well.
     if (mappedLevel !== 'info') {
       await logAppError({
         source: typeof payload?.source === 'string' ? payload.source : 'client',

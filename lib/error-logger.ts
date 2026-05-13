@@ -58,6 +58,37 @@ export function toErrorLogPayload(error: unknown, fallbackMessage = 'Unknown err
   }
 }
 
+export async function logDashboardEvent(payload: {
+  event: string;
+  category?: string;
+  level?: LogLevel;
+  tenant_id?: string;
+  session_id?: string;
+  path?: string;
+  [key: string]: any;
+}) {
+  try {
+    await supabase.from('1_system_logs').insert({
+      tenant_id: payload.tenant_id || null,
+      level: payload.level === 'warn' ? 'warning' : payload.level === 'error' ? 'error' : 'info',
+      source: 'dashboard_event',
+      message: payload.event,
+      session_id: payload.session_id || null,
+      metadata: {
+        category: payload.category || 'dashboard',
+        path: payload.path || null,
+        ...Object.fromEntries(
+          Object.entries(payload).filter(([k]) =>
+            !['event', 'category', 'level', 'tenant_id', 'session_id', 'path'].includes(k)
+          )
+        ),
+      },
+    });
+  } catch (e) {
+    console.error('[Dashboard Event Logger Failed]', e);
+  }
+}
+
 export async function logAppError(input: AppErrorLogInput) {
   try {
     const systemPayload = {
