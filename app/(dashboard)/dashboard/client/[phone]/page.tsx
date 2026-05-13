@@ -79,12 +79,12 @@ export default async function ClientHistoryPage({ params }: { params: { phone: s
   const liveSessions = visibleSessions.filter((s: any) => {
     const threeMinsAgo = new Date(Date.now() - 3 * 60 * 1000);
     const isRecentlyActive = new Date(s.updated_at) > threeMinsAgo;
-    return (s.status === 'active' || s.status === 'needs_approval') && isRecentlyActive;
+    return (s.status !== 'completed' && s.status !== 'expired') && isRecentlyActive;
   });
   const archivedSessions = visibleSessions.filter((s: any) => {
     const threeMinsAgo = new Date(Date.now() - 3 * 60 * 1000);
     const isRecentlyActive = new Date(s.updated_at) > threeMinsAgo;
-    return !(( s.status === 'active' || s.status === 'needs_approval') && isRecentlyActive);
+    return !((s.status !== 'completed' && s.status !== 'expired') && isRecentlyActive);
   });
 
   const statusConfig: Record<string, { label: string; classes: string }> = {
@@ -96,7 +96,7 @@ export default async function ClientHistoryPage({ params }: { params: { phone: s
   };
 
   const SessionCard = ({ session }: { session: any }) => {
-    const isLive = session.status === 'active' || session.status === 'needs_approval';
+    const isLive = session.status !== 'completed' && session.status !== 'expired';
     const cfg = statusConfig[session.status] || { label: session.status, classes: 'bg-gray-100 text-gray-500' };
     const date = new Date(session.created_at);
     const summaryText =

@@ -25,14 +25,14 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   });
 
   const stats = {
-    active: allClients.filter((c: any) => !c.has_review && !c.has_escalation).length,
+    active: allClients.length,
     needs_approval: allClients.filter((c: any) => c.has_review || c.has_escalation).length,
     history: historySessions.length,
   };
 
   const filteredClients = allClients.filter((c: any) => {
     if (isNeedsApprovalFilter) return c.has_review || c.has_escalation;
-    return !c.has_review && !c.has_escalation;
+    return true;
   });
 
   const Tab = ({ id, label, count, active, href, showCount = true }: { id: string; label: string; count: number; active: boolean; href: string; showCount?: boolean }) => (

@@ -42,6 +42,7 @@ export default function ChatInterface({
   const lastSyncedAt = useRef<string | null>(null);
   const seenIds = useRef<Set<string>>(new Set(initialTranscript.map(m => m.id)));
   const isSendingRef = useRef(false);
+  const lastApprovedDraftIdRef = useRef<string | null>(null);
 
   useEffect(() => { isSendingRef.current = isSending; }, [isSending]);
   const hasDraftRef = useRef(initialTranscript.some(m => m.role === 'draft'));
@@ -138,11 +139,14 @@ export default function ChatInterface({
   }, [sessionId]);
 
   useEffect(() => {
-    if (latestDraft && sendMode === 'approve') {
-      setInput(latestDraft.content);
-    }
+    // Keep the composer empty after approving/sending a draft.
+    // Only auto-fill when a genuinely new draft appears.
+    if (!latestDraft || sendMode !== 'approve') return;
+    if (latestDraft.id === lastApprovedDraftIdRef.current) return;
+    if (input.trim().length > 0) return;
+    setInput(latestDraft.content);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [latestDraft?.id]);
+  }, [latestDraft?.id, sendMode]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -179,6 +183,9 @@ export default function ChatInterface({
       text_length: input.length,
     });
     const sentContent = input;
+    if (sendMode === 'approve' && latestDraft?.id) {
+      lastApprovedDraftIdRef.current = latestDraft.id;
+    }
     const optimisticMsg: Message = {
       id: `optimistic-${Date.now()}`,
       role: 'assistant',
