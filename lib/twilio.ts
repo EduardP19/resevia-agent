@@ -1,5 +1,5 @@
 import twilio from 'twilio';
-import { safeLog } from '@/lib/logger';
+import { log } from '@/lib/logger';
 import { supabase } from '@/lib/supabase';
 import { logAppError, toErrorLogPayload } from '@/lib/error-logger';
 
@@ -58,7 +58,7 @@ export async function sendSMS(
       ...(statusCallbackUrl ? { statusCallback: statusCallbackUrl } : {})
     });
     console.log(`[Twilio] SMS sent to ${to}: ${message.sid}`);
-    safeLog({
+    await log({
       level: 'info',
       category: 'sms',
       event: 'sms_sent',
@@ -72,7 +72,7 @@ export async function sendSMS(
     return message;
   } catch (error: any) {
     console.error(`[Twilio Error] Failed to send SMS to ${to}:`, error.message);
-    safeLog({
+    await log({
       level: 'error',
       category: 'sms',
       event: 'sms_failed',

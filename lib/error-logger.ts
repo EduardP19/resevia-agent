@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { log } from './logger';
 
 type LogLevel = 'error' | 'warn' | 'info';
 type SystemLogLevel = 'info' | 'warning' | 'error' | 'critical';
@@ -91,6 +92,21 @@ export async function logDashboardEvent(payload: {
 
 export async function logAppError(input: AppErrorLogInput) {
   try {
+    // Mirror to GCP + event_logs via the unified log() path
+    void log({
+      level: input.level === 'warn' ? 'warning' : (input.level as any) || 'error',
+      category: 'system',
+      event: input.source,
+      tenant_id: input.salon_id,
+      session_id: input.session_id,
+      error: input.message,
+      stack: input.stack,
+      path: input.path,
+      method: input.method,
+      runtime: input.runtime,
+      ...(input.context || {}),
+    }).catch((err) => console.error('logAppError GCP mirror failed:', err));
+
     const systemPayload = {
       tenant_id: input.salon_id || null,
       level: mapSystemLogLevel(input.level),

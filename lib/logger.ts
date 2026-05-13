@@ -1,4 +1,5 @@
 import { Logging } from '@google-cloud/logging';
+import { createClient } from '@supabase/supabase-js';
 
 type LogLevel = 'info' | 'warning' | 'error';
 
@@ -23,6 +24,7 @@ export interface LogEvent {
 }
 
 let loggingClient: Logging | null = null;
+let supabaseClient: ReturnType<typeof createClient> | null = null;
 
 const SENSITIVE_KEY_PATTERN = /token|secret|password|authorization|auth|credential|private[_-]?key|api[_-]?key/i;
 
@@ -38,6 +40,15 @@ function getLoggingClient(): Logging | null {
     }
   }
   return loggingClient;
+}
+
+function getSupabaseClient(): ReturnType<typeof createClient> | null {
+  if (!process.env.SUPABASE_URL || (!process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.SUPABASE_ANON_KEY)) return null;
+  if (!supabaseClient) {
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!;
+    supabaseClient = createClient(process.env.SUPABASE_URL, key);
+  }
+  return supabaseClient;
 }
 
 function sanitizeForLogs(value: any, key = ''): any {
@@ -74,7 +85,10 @@ export async function log(data: LogEvent) {
 
     console.log(JSON.stringify(payload));
 
-    await sendToGCP(payload);
+    await Promise.allSettled([
+      sendToGCP(payload),
+      sendToSupabase(payload),
+    ]);
   } catch (err) {
     console.error('Logger failed:', err);
   }
@@ -99,4 +113,27 @@ async function sendToGCP(payload: LogEvent & { timestamp: string; environment: s
     payload
   );
   await gcpLog.write(entry);
+}
+
+async function sendToSupabase(payload: LogEvent & { timestamp: string; environment: string | undefined }) {
+  const client = getSupabaseClient();
+  if (!client) return;
+
+  const { level, category, event, tenant_id, session_id, environment, timestamp, ...rest } = payload;
+
+  // Strip fields already stored as columns so metadata stays clean
+  const metadata: Record<string, any> = {};
+  for (const [k, v] of Object.entries(rest)) {
+    if (v !== undefined) metadata[k] = v;
+  }
+
+  await client.from('event_logs').insert({
+    level,
+    category,
+    event,
+    tenant_id: tenant_id || null,
+    session_id: session_id || null,
+    environment,
+    metadata,
+  });
 }
