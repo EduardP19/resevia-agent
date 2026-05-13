@@ -113,7 +113,8 @@ The operator console at `/dashboard` gives salon staff visibility into:
   /(dashboard)             → Operator console
   /api
     /sophia-sandbox        → Test session endpoints (message, poll, approve, expire)
-    /sms-webhook           → Twilio inbound handler
+    /sms-webhook           → Twilio inbound SMS handler
+    /twilio/voice          → Twilio inbound voice handler (auto-SMS to caller)
     /dashboard             → Console data endpoints
 
 /lib
