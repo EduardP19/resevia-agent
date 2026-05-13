@@ -46,7 +46,7 @@ export default async function SessionTranscriptPage({
   const backHref = resolveBackDestination(source, session.client_identifier, queryPhone);
 
   const transcript = await getSessionTranscript(params.id);
-  const isReview = session.status === 'review' || transcript.some((m: any) => m.role === 'draft');
+  const isReview = session.status === 'needs_approval' || transcript.some((m: any) => m.role === 'draft');
   safeLog({
     level: 'info',
     category: 'dashboard',

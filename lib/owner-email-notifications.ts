@@ -17,7 +17,7 @@ function normalizeAttentionReason(status: AttentionStatus): 'needs_approval' | '
 }
 
 function getConversationUrl(conversationId: string) {
-  return `https://app.resevia.com/conversations/${conversationId}`;
+  return `https://app.resevia.co.uk/dashboard/sessions/${conversationId}`;
 }
 
 function buildEmailContent(params: {

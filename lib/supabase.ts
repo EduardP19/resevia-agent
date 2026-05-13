@@ -630,6 +630,7 @@ export async function getGroupedSessions(salonId?: string) {
       }
       if (t.role === 'draft' && !session.draft_response) {
         session.draft_response = t.content;
+        session.has_review = true;
       }
     }
   }
