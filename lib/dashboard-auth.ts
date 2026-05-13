@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { NextRequest, NextResponse } from 'next/server';
+import { supabase } from '@/lib/supabase';
 
 export const DASHBOARD_SESSION_COOKIE = 'resevia_dashboard_session';
 export const DASHBOARD_REMEMBER_COOKIE = 'resevia_dashboard_remember';
@@ -144,14 +145,42 @@ export function requireDashboardSessionFromRequest(req: NextRequest) {
   return { session, response: null };
 }
 
-export function findDashboardCredential(email: string, password: string) {
+function matchesStoredPassword(password: string, storedPassword: string) {
+  const normalizedStored = storedPassword.trim();
+
+  if (normalizedStored.startsWith('sha256:')) {
+    return secureCompare(sha256(password), normalizedStored.slice('sha256:'.length));
+  }
+
+  if (/^[a-f0-9]{64}$/i.test(normalizedStored)) {
+    return secureCompare(sha256(password), normalizedStored.toLowerCase());
+  }
+
+  return secureCompare(password, normalizedStored);
+}
+
+export async function findDashboardCredential(email: string, password: string) {
   const normalizedEmail = email.trim().toLowerCase();
+  const { data: dbCredential } = await supabase
+    .from('1_business_profiles')
+    .select('id, email, password')
+    .ilike('email', normalizedEmail)
+    .maybeSingle();
+
+  if (
+    dbCredential?.id &&
+    dbCredential?.email &&
+    typeof dbCredential.password === 'string' &&
+    matchesStoredPassword(password, dbCredential.password)
+  ) {
+    return { email: normalizedEmail, tenantId: dbCredential.id };
+  }
+
   const credential = parseCredentials().find(item => item.email?.trim().toLowerCase() === normalizedEmail);
   const tenantId = credential?.tenantId || credential?.salonId;
-
   if (!credential || !tenantId) return null;
 
-  if (credential.password && secureCompare(password, credential.password)) {
+  if (credential.password && matchesStoredPassword(password, credential.password)) {
     return { email: normalizedEmail, tenantId };
   }
 

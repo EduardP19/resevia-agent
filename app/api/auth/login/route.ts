@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
   const remember = String(formData.get('remember') || '').toLowerCase() === 'on';
   const next = sanitizeDashboardRedirect(String(formData.get('next') || '/dashboard'));
 
-  const credential = findDashboardCredential(email, password);
+  const credential = await findDashboardCredential(email, password);
   if (!credential) {
     return NextResponse.redirect(new URL(`/login?error=invalid&next=${encodeURIComponent(next)}`, req.url), {
       status: 303,

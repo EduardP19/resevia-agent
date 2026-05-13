@@ -16,6 +16,7 @@ import { isHandoff } from '../../../../lib/handoff';
 import { executeToolCall, ToolContext } from '../../../../lib/tool-handler';
 import { logAppError, toErrorLogPayload } from '../../../../lib/error-logger';
 import { log, safeLog } from '@/lib/logger';
+import { normalizeCustomerReply } from '@/lib/reply-format';
 
 // Same logic as /api/sms-webhook but returns JSON instead of sending via Twilio
 export async function POST(req: NextRequest) {
@@ -122,6 +123,7 @@ export async function POST(req: NextRequest) {
     let reply =
       aiResponse.reply ||
       "I'm sorry, I ran into an issue processing your previous message. Could you please rephrase your last question?";
+    reply = normalizeCustomerReply(reply);
     const triggerHandoff = isHandoff(reply);
 
     if (salon.approval_mode) {
