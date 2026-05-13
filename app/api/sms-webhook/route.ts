@@ -7,6 +7,7 @@ import {
   getSalonBySmsNumber,
   getTranscriptHistory,
   getWorkers,
+  refreshSessionSummary,
   saveMessage,
   saveMessageToTable,
   supabase,
@@ -216,6 +217,8 @@ export async function POST(req: NextRequest) {
         updated_at: new Date().toISOString()
       }).eq('id', conversation.id);
 
+      await refreshSessionSummary(conversation.id, 'needs_approval').catch(() => {});
+
       await notifyOwnerConversationAttention({
         conversationId: conversation.id,
         salonId: salon.id,
@@ -262,6 +265,8 @@ export async function POST(req: NextRequest) {
       .delete()
       .eq('session_id', conversation.id)
       .eq('role', 'draft');
+
+    await refreshSessionSummary(conversation.id, triggerHandoff ? 'escalated' : 'active').catch(() => {});
 
     if (triggerHandoff) {
        safeLog({

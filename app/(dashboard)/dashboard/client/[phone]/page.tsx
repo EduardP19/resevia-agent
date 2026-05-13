@@ -1,11 +1,25 @@
 import React from 'react';
 import { isTestUiSession, supabase } from '@/lib/supabase';
-import Link from 'next/link';
 import { requireDashboardSession } from '@/lib/dashboard-auth';
 import PageViewTracker from '@/app/(dashboard)/PageViewTracker';
 import TrackableLink from '@/app/(dashboard)/TrackableLink';
 
 export const revalidate = 0;
+
+function truncateSummary(raw: string, max = 180) {
+  const compact = raw.trim().replace(/\s+/g, ' ');
+  if (!compact) return '';
+  if (compact.length <= max) return compact;
+  return `${compact.slice(0, max - 1).trimEnd()}…`;
+}
+
+function getDefaultSummaryByStatus(status: string) {
+  if (status === 'expired') return 'Session timed out before completion.';
+  if (status === 'completed') return 'Conversation completed.';
+  if (status === 'escalated') return 'Escalated to the team for manual handling.';
+  if (status === 'needs_approval') return 'Awaiting owner approval.';
+  return 'Conversation summary pending...';
+}
 
 export default async function ClientHistoryPage({ params }: { params: { phone: string } }) {
   const auth = requireDashboardSession();
@@ -19,6 +33,35 @@ export default async function ClientHistoryPage({ params }: { params: { phone: s
     .order('created_at', { ascending: false });
 
   const visibleSessions = (sessions || []).filter((session: any) => !isTestUiSession(session));
+  const missingSummarySessionIds = visibleSessions
+    .filter((session: any) => !String(session.summary || '').trim())
+    .map((session: any) => session.id);
+  const summaryFallbackBySession: Record<string, string> = {};
+
+  if (missingSummarySessionIds.length > 0) {
+    const { data: transcriptSnippets } = await supabase
+      .from('transcripts')
+      .select('session_id, role, content, created_at')
+      .in('session_id', missingSummarySessionIds)
+      .in('role', ['user', 'assistant', 'draft'])
+      .order('created_at', { ascending: false });
+
+    for (const row of transcriptSnippets || []) {
+      const sessionId = String((row as any).session_id || '');
+      if (!sessionId || summaryFallbackBySession[sessionId]) continue;
+
+      const content = truncateSummary(String((row as any).content || ''));
+      if (!content) continue;
+
+      if ((row as any).role === 'draft') {
+        summaryFallbackBySession[sessionId] = truncateSummary(`Needs approval: ${content}`);
+      } else if ((row as any).role === 'user') {
+        summaryFallbackBySession[sessionId] = truncateSummary(`Client asked: ${content}`);
+      } else {
+        summaryFallbackBySession[sessionId] = content;
+      }
+    }
+  }
 
   if (visibleSessions.length === 0) {
     return (
@@ -56,6 +99,10 @@ export default async function ClientHistoryPage({ params }: { params: { phone: s
     const isLive = session.status === 'active' || session.status === 'needs_approval';
     const cfg = statusConfig[session.status] || { label: session.status, classes: 'bg-gray-100 text-gray-500' };
     const date = new Date(session.created_at);
+    const summaryText =
+      (typeof session.summary === 'string' ? session.summary.trim() : '') ||
+      summaryFallbackBySession[session.id] ||
+      getDefaultSummaryByStatus(session.status);
 
     return (
       <TrackableLink href={`/dashboard/sessions/${session.id}?from=client&phone=${encodeURIComponent(decodedPhone)}`} className="block group" trackEvent="session_card_clicked" trackProps={{ page: 'dashboard/client', session_id: session.id, status: session.status }}>
@@ -102,7 +149,7 @@ export default async function ClientHistoryPage({ params }: { params: { phone: s
               isLive ? 'bg-emerald-50/50 border border-emerald-100 text-emerald-900' : 'bg-gray-50/60 border border-gray-100 text-gray-600'
             }`}>
               <p className="italic line-clamp-3">
-                {session.summary || 'Conversation summary pending...'}
+                {summaryText}
               </p>
             </div>
 

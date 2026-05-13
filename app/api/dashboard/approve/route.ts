@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase, saveMessage } from '@/lib/supabase';
+import { refreshSessionSummary, saveMessage, supabase } from '@/lib/supabase';
 import { sendSMS } from '@/lib/twilio';
 import { log, safeLog } from '@/lib/logger';
 import { requireDashboardSessionFromRequest } from '@/lib/dashboard-auth';
@@ -60,6 +60,7 @@ export async function POST(req: NextRequest) {
       status: 'active',
       updated_at: new Date().toISOString()
     }).eq('id', sessionId);
+    await refreshSessionSummary(sessionId, 'active').catch(() => {});
 
     const userId = auth.session.email;
     await log({

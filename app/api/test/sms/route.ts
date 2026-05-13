@@ -7,6 +7,7 @@ import {
   getSalonById,
   getTranscriptHistory,
   getWorkers,
+  refreshSessionSummary,
   saveMessage,
   supabase,
 } from '../../../../lib/supabase';
@@ -142,6 +143,8 @@ export async function POST(req: NextRequest) {
         updated_at: new Date().toISOString()
       }).eq('id', conversation.id);
 
+      await refreshSessionSummary(conversation.id, 'needs_approval').catch(() => {});
+
       await notifyOwnerConversationAttention({
         conversationId: conversation.id,
         salonId: salon.id,
@@ -159,6 +162,7 @@ export async function POST(req: NextRequest) {
     }).eq('id', conversation.id);
 
     await saveMessage(conversation.id, 'assistant', reply);
+    await refreshSessionSummary(conversation.id, triggerHandoff ? 'escalated' : 'active').catch(() => {});
 
     if (triggerHandoff) {
        safeLog({

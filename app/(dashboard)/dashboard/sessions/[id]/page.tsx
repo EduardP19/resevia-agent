@@ -1,7 +1,6 @@
 import { getSessionTranscript, isTestUiSession, supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import ChatInterface from './ChatInterface';
-import HeaderActions from './HeaderActions';
 import { safeLog } from '@/lib/logger';
 import { requireDashboardSession } from '@/lib/dashboard-auth';
 import PageViewTracker from '@/app/(dashboard)/PageViewTracker';
@@ -101,7 +100,6 @@ export default async function SessionTranscriptPage({
             )}
           </div>
         </div>
-        <HeaderActions isReview={isReview} />
       </div>
 
       <ChatInterface

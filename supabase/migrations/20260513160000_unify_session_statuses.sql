@@ -8,7 +8,15 @@
 --   handed_over → escalated
 --   completed (with metadata.expired_at set) → expired
 
--- 1. Migrate existing data before changing the constraint
+-- 1. Temporarily widen the status constraint so data migration cannot fail
+alter table public.sessions
+  drop constraint if exists sessions_status_check;
+
+alter table public.sessions
+  add constraint sessions_status_check
+    check (status in ('active', 'review', 'completed', 'handed_over', 'needs_approval', 'escalated', 'expired'));
+
+-- 2. Migrate existing data
 update public.sessions set status = 'needs_approval' where status = 'review';
 update public.sessions set status = 'escalated'      where status = 'handed_over';
 update public.sessions
@@ -16,7 +24,7 @@ update public.sessions
   where status = 'completed'
     and coalesce(metadata->>'expired_at', '') <> '';
 
--- 2. Replace the status check constraint
+-- 3. Replace the status check constraint
 alter table public.sessions
   drop constraint if exists sessions_status_check;
 
@@ -24,7 +32,7 @@ alter table public.sessions
   add constraint sessions_status_check
     check (status in ('active', 'needs_approval', 'escalated', 'expired', 'completed'));
 
--- 3. Update the inactivity cron to use new status values
+-- 4. Update the inactivity cron to use new status values
 create or replace function public.expire_inactive_sessions_and_holds()
 returns jsonb
 language plpgsql
@@ -64,7 +72,7 @@ begin
 end;
 $$;
 
--- 4. Align 1_sessions constraint
+-- 5. Align 1_sessions constraint
 alter table public."1_sessions"
   drop constraint if exists one_sessions_status_check;
 

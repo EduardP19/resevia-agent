@@ -9,6 +9,7 @@ export const TEST_UI_TRANSCRIPTS_TABLE = 'transcripts-sophia-sandbox';
 
 type TranscriptTableName = 'transcripts' | typeof TEST_UI_TRANSCRIPTS_TABLE;
 type TranscriptRole = 'user' | 'assistant' | 'system' | 'draft';
+const SESSION_SUMMARY_MAX_CHARS = 180;
 
 export function isTestUiSession(session: { metadata?: any } | null | undefined) {
   const metadata = session?.metadata;
@@ -271,6 +272,98 @@ function normalizeTranscriptContent(content: string) {
   return content.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
+function truncateSummaryText(raw: string, max = SESSION_SUMMARY_MAX_CHARS) {
+  const compact = raw.trim().replace(/\s+/g, ' ');
+  if (!compact) return '';
+  if (compact.length <= max) return compact;
+  return `${compact.slice(0, max - 1).trimEnd()}…`;
+}
+
+function deriveSessionSummary(status: string, transcript: Array<{ role: TranscriptRole; content: string }>) {
+  const latestByRole: Partial<Record<TranscriptRole, string>> = {};
+  for (const row of transcript) {
+    if (!latestByRole[row.role]) {
+      latestByRole[row.role] = row.content;
+    }
+  }
+
+  const latestUser = latestByRole.user ? truncateSummaryText(latestByRole.user) : '';
+  const latestAssistant = latestByRole.assistant ? truncateSummaryText(latestByRole.assistant) : '';
+  const latestDraft = latestByRole.draft ? truncateSummaryText(latestByRole.draft) : '';
+
+  if (status === 'needs_approval') {
+    return latestDraft
+      ? truncateSummaryText(`Needs approval: ${latestDraft}`)
+      : 'Awaiting owner approval.';
+  }
+
+  if (status === 'escalated') {
+    return latestUser
+      ? truncateSummaryText(`Escalated after client request: ${latestUser}`)
+      : 'Escalated to the team for manual handling.';
+  }
+
+  if (status === 'completed') {
+    if (latestAssistant) return truncateSummaryText(`Completed: ${latestAssistant}`);
+    return 'Conversation completed.';
+  }
+
+  if (status === 'expired') {
+    if (latestUser) return truncateSummaryText(`Expired after client message: ${latestUser}`);
+    return 'Session timed out before completion.';
+  }
+
+  if (latestUser) return truncateSummaryText(`Client asked: ${latestUser}`);
+  if (latestAssistant) return latestAssistant;
+  if (latestDraft) return truncateSummaryText(`Draft: ${latestDraft}`);
+  return '';
+}
+
+export async function refreshSessionSummary(sessionId: string, statusOverride?: string) {
+  const { data: session, error: sessionError } = await supabase
+    .from('sessions')
+    .select('status, summary')
+    .eq('id', sessionId)
+    .maybeSingle();
+
+  if (sessionError) throw sessionError;
+  if (!session) return null;
+
+  const status = String(statusOverride || session.status || 'active');
+
+  const { data: transcriptRows, error: transcriptError } = await supabase
+    .from('transcripts')
+    .select('role, content, created_at')
+    .eq('session_id', sessionId)
+    .in('role', ['user', 'assistant', 'draft'])
+    .order('created_at', { ascending: false })
+    .limit(30);
+
+  if (transcriptError) throw transcriptError;
+
+  const summary = deriveSessionSummary(
+    status,
+    (transcriptRows || []).map((row: any) => ({
+      role: row.role as TranscriptRole,
+      content: String(row.content || ''),
+    }))
+  );
+
+  if (!summary) return session.summary || null;
+
+  const existing = typeof session.summary === 'string' ? session.summary.trim() : '';
+  if (existing === summary) return summary;
+
+  const { error: updateError } = await supabase
+    .from('sessions')
+    .update({ summary })
+    .eq('id', sessionId);
+
+  if (updateError) throw updateError;
+
+  return summary;
+}
+
 export async function findRecentDuplicateUserMessage(
   sessionId: string,
   content: string,
@@ -457,6 +550,11 @@ export async function expireSessionById(sessionId: string, metadataPatch?: Recor
       session_id: sessionId,
       reason: 'timeout',
     });
+    try {
+      await refreshSessionSummary(sessionId, 'expired');
+    } catch {
+      // Best effort: session expiry should not fail if summary refresh fails.
+    }
   }
 
   return (
@@ -470,12 +568,13 @@ export async function expireSessionById(sessionId: string, metadataPatch?: Recor
 
 // Mark a session as completed
 export async function completeSession(salonId: string, clientIdentifier: string) {
-  const { error } = await supabase
+  const { data: completedRows, error } = await supabase
     .from('sessions')
     .update({ status: 'completed', updated_at: new Date().toISOString() })
     .eq('salon_id', salonId)
     .eq('client_identifier', clientIdentifier)
-    .in('status', ['active', 'needs_approval']);
+    .in('status', ['active', 'needs_approval'])
+    .select('id');
 
   if (error) {
     safeLog({
@@ -498,6 +597,14 @@ export async function completeSession(salonId: string, clientIdentifier: string)
     tenant_id: salonId,
     reason: 'completed',
   });
+
+  for (const row of completedRows || []) {
+    try {
+      await refreshSessionSummary(row.id, 'completed');
+    } catch {
+      // Best effort: completion should not fail if summary refresh fails.
+    }
+  }
 }
 
 // Dashboard: all messages within a single session
