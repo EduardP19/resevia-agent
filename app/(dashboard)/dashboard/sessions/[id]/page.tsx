@@ -5,6 +5,7 @@ import { safeLog } from '@/lib/logger';
 import { requireDashboardSession } from '@/lib/dashboard-auth';
 import PageViewTracker from '@/app/(dashboard)/PageViewTracker';
 import TrackableLink from '@/app/(dashboard)/TrackableLink';
+import CompleteSessionButton from './CompleteSessionButton';
 
 export const revalidate = 0;
 
@@ -100,6 +101,7 @@ export default async function SessionTranscriptPage({
             )}
           </div>
         </div>
+        <CompleteSessionButton sessionId={params.id} />
       </div>
 
       <ChatInterface

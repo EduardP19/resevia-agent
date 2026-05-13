@@ -9,7 +9,10 @@
       "Bash(cat /tmp/resevia-dev.log | grep -A2 \"\\\\[voice\\\\]\")",
       "Read(//private/tmp/**)",
       "Bash(curl -s -X POST http://localhost:3001/api/twilio/voice -H 'Content-Type: application/x-www-form-urlencoded' -d 'Caller=%2B447448929894&Called=%2B447700900456&CallSid=CAtest1234567890&CallStatus=ringing&Direction=inbound')",
-      "Bash(curl -s -X POST http://localhost:3001/api/twilio/voice -H 'Content-Type: application/x-www-form-urlencoded' -d 'Caller=%2B447448929894&Called=%2B447886083430&CallSid=CAtest1234567890&CallStatus=ringing&Direction=inbound')"
+      "Bash(curl -s -X POST http://localhost:3001/api/twilio/voice -H 'Content-Type: application/x-www-form-urlencoded' -d 'Caller=%2B447448929894&Called=%2B447886083430&CallSid=CAtest1234567890&CallStatus=ringing&Direction=inbound')",
+      "Bash(curl -s -X POST http://localhost:3001/api/twilio/voice -H 'Content-Type: application/x-www-form-urlencoded' -d 'Caller=%2B447448929894&Called=%2B447886083430&CallSid=CAtest999&CallStatus=ringing&Direction=inbound')",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' -X POST https://resevia.co.uk/api/twilio/voice -H 'Content-Type: application/x-www-form-urlencoded' -d 'Caller=%2B447448929894&Called=%2B447886083430&CallSid=CAtest999')",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' -X POST https://www.resevia.co.uk/api/twilio/voice -H 'Content-Type: application/x-www-form-urlencoded' -d 'Caller=%2B447448929894&Called=%2B447886083430&CallSid=CAtest999')"
     ]
   }
 }
