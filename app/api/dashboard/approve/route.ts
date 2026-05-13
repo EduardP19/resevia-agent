@@ -32,34 +32,25 @@ export async function POST(req: NextRequest) {
       tenant_id: session.salon_id,
       session_id: sessionId,
     });
-    await upsertSmsMessage({
+
+    // 2. Save as final assistant message
+    const assistantMessage = await saveMessage(sessionId, 'assistant', content);
+
+    const outboundMetadata = {
       twilioMessageSid: outboundMessage.sid,
-      direction: 'outbound',
-      sessionId,
-      salonId: session.salon_id,
+      direction: 'outbound' as const,
       ...smsMetadataFromTwilioMessage(outboundMessage),
+    };
+    if (assistantMessage?.id) {
+      await updateTranscriptSmsMetadata(assistantMessage.id, outboundMetadata);
+    }
+    await upsertSmsMessage({
+      ...outboundMetadata,
+      sessionId,
+      transcriptId: assistantMessage?.id ?? null,
+      salonId: session.salon_id,
       rawPayload: outboundMessage,
     });
-
-    // 2. Save as final assistant message (remove draft if exists)
-    // For simplicity, we just add the new one as 'assistant'
-    const assistantMessage = await saveMessage(sessionId, 'assistant', content);
-    if (assistantMessage?.id) {
-      const outboundMetadata = {
-        twilioMessageSid: outboundMessage.sid,
-        direction: 'outbound' as const,
-        ...smsMetadataFromTwilioMessage(outboundMessage),
-      };
-
-      await updateTranscriptSmsMetadata(assistantMessage.id, outboundMetadata);
-      await upsertSmsMessage({
-        ...outboundMetadata,
-        sessionId,
-        transcriptId: assistantMessage.id,
-        salonId: session.salon_id,
-        rawPayload: outboundMessage,
-      });
-    }
     
     // Delete any drafts for this session to clean up
     await supabase.from('transcripts').delete().eq('session_id', sessionId).eq('role', 'draft');

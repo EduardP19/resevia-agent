@@ -230,32 +230,23 @@ export async function POST(req: NextRequest) {
       tenant_id: salon.id,
       session_id: conversation.id,
     });
-    await upsertSmsMessage({
-      twilioMessageSid: outboundMessage.sid,
-      direction: 'outbound',
-      sessionId: conversation.id,
-      salonId: salon.id,
-      ...smsMetadataFromTwilioMessage(outboundMessage),
-      rawPayload: outboundMessage,
-    });
     const assistantMessage = await saveMessage(conversation.id, 'assistant', reply);
 
+    const outboundMetadata = {
+      twilioMessageSid: outboundMessage.sid,
+      direction: 'outbound' as const,
+      ...smsMetadataFromTwilioMessage(outboundMessage),
+    };
     if (assistantMessage?.id) {
-      const outboundMetadata = {
-        twilioMessageSid: outboundMessage.sid,
-        direction: 'outbound' as const,
-        ...smsMetadataFromTwilioMessage(outboundMessage),
-      };
-
       await updateTranscriptSmsMetadata(assistantMessage.id, outboundMetadata);
-      await upsertSmsMessage({
-        ...outboundMetadata,
-        sessionId: conversation.id,
-        transcriptId: assistantMessage.id,
-        salonId: salon.id,
-        rawPayload: outboundMessage,
-      });
     }
+    await upsertSmsMessage({
+      ...outboundMetadata,
+      sessionId: conversation.id,
+      transcriptId: assistantMessage?.id ?? null,
+      salonId: salon.id,
+      rawPayload: outboundMessage,
+    });
 
     // Auto mode should not retain pending drafts from previous manual cycles.
     await supabase

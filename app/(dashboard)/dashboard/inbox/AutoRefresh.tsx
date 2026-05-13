@@ -9,12 +9,8 @@ export default function AutoRefresh({ intervalMs = 10000 }: { intervalMs?: numbe
   const router = useRouter();
 
   useEffect(() => {
-    const triggerCleanup = () => fetch('/api/cron/cleanup').catch(() => {});
-    triggerCleanup();
-
     const interval = setInterval(() => {
       trackClientEvent({ event: 'dashboard_auto_refresh_tick', category: 'dashboard', interval_ms: intervalMs });
-      triggerCleanup();
       router.refresh();
     }, intervalMs);
 

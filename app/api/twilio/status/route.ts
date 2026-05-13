@@ -51,7 +51,9 @@ export async function POST(req: NextRequest) {
 
   const ledgerRow = await upsertSmsMessage({
     ...statusMetadata,
-    direction: updatedTranscript?.sms_direction as any,
+    // Only set direction when we can confirm it from the transcript; omitting it
+    // lets upsertSmsMessage preserve whatever direction is already in the ledger row.
+    ...(updatedTranscript?.sms_direction ? { direction: updatedTranscript.sms_direction as any } : {}),
     sessionId: updatedTranscript?.session_id,
     transcriptId: updatedTranscript?.id,
     rawPayload: rawSmsPayload,

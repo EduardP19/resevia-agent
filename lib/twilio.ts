@@ -1,16 +1,38 @@
 import twilio from 'twilio';
 import { safeLog } from '@/lib/logger';
+import { supabase } from '@/lib/supabase';
 
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
-const fromNumber = process.env.TWILIO_PHONE_NUMBER || process.env.TWILIO_PHONE;
+const fallbackFromNumber = process.env.TWILIO_PHONE_NUMBER || process.env.TWILIO_PHONE;
 
 const client = (accountSid && authToken) ? twilio(accountSid, authToken) : null;
 
 type SMSLogContext = {
   tenant_id?: string;
   session_id?: string;
+  fromNumber?: string;
 };
+
+async function resolveFromNumber(context: SMSLogContext): Promise<string | null> {
+  if (context.fromNumber) {
+    return context.fromNumber;
+  }
+
+  if (context.tenant_id) {
+    const { data } = await supabase
+      .from('business_profiles')
+      .select('twilio_number')
+      .eq('id', context.tenant_id)
+      .maybeSingle();
+
+    if (data?.twilio_number) {
+      return data.twilio_number;
+    }
+  }
+
+  return fallbackFromNumber || null;
+}
 
 export async function sendSMS(
   to: string,
@@ -21,9 +43,12 @@ export async function sendSMS(
   if (!client) {
     throw new Error('[Twilio] Not configured. Missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN.');
   }
+
+  const fromNumber = await resolveFromNumber(context);
   if (!fromNumber) {
-    throw new Error('[Twilio] Missing TWILIO_PHONE_NUMBER (or TWILIO_PHONE). Cannot send SMS.');
+    throw new Error('[Twilio] Missing sender number. Set business_profiles.twilio_number for tenant or TWILIO_PHONE_NUMBER fallback.');
   }
+
   try {
     const message = await client.messages.create({
       body: body,
