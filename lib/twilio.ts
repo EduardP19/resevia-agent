@@ -1,6 +1,7 @@
 import twilio from 'twilio';
 import { safeLog } from '@/lib/logger';
 import { supabase } from '@/lib/supabase';
+import { logAppError, toErrorLogPayload } from '@/lib/error-logger';
 
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
@@ -83,6 +84,23 @@ export async function sendSMS(
       stack: error?.stack,
       code: error?.code || null,
       status: error?.status || null,
+    });
+    const payload = toErrorLogPayload(error, 'Twilio SMS send failed');
+    await logAppError({
+      source: 'lib.twilio.sendSMS',
+      message: payload.message,
+      level: 'error',
+      stack: payload.stack || undefined,
+      session_id: context.session_id,
+      salon_id: context.tenant_id,
+      context: {
+        to,
+        fromNumber,
+        statusCallbackUrl: statusCallbackUrl || null,
+        twilio_code: error?.code || null,
+        twilio_status: error?.status || null,
+      },
+      runtime: 'server',
     });
     throw error;
   }

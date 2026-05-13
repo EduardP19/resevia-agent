@@ -111,7 +111,6 @@ export async function logAppError(input: AppErrorLogInput) {
 
     await supabase.from('1_system_logs').insert(systemPayload);
 
-    // Keep legacy logs for now while parts of the app still look at app_error_logs.
     const payload = {
       level: input.level || 'error',
       source: truncate(input.source || 'unknown', 255),
@@ -127,6 +126,10 @@ export async function logAppError(input: AppErrorLogInput) {
       runtime: input.runtime || 'server',
     };
 
+    // Canonical durable error table.
+    await supabase.from('error_logs').insert(payload);
+
+    // Keep legacy logs for now while parts of the app still look at app_error_logs.
     await supabase.from('app_error_logs').insert(payload);
   } catch (logError) {
     console.error('[App Error Logger Failed]', logError);

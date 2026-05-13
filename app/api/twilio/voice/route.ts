@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import twilio from 'twilio';
 import { sendSMS } from '@/lib/twilio';
 import { getOrCreateConversation, getSalonBySmsNumber, saveMessage } from '@/lib/supabase';
-import { safeLog } from '@/lib/logger';
+import { log } from '@/lib/logger';
+import { logAppError, toErrorLogPayload } from '@/lib/error-logger';
 
 const DEFAULT_INBOUND_CALL_SMS = "Hi, sorry we can't pickup. Looking for a new appointment?";
 
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
     const smsBody = (process.env.TWILIO_INBOUND_CALL_SMS_BODY || DEFAULT_INBOUND_CALL_SMS).trim();
 
     if (!fromNumber || !toNumber) {
-      safeLog({
+      await log({
         level: 'warning',
         category: 'sms',
         event: 'voice_webhook_invalid_numbers',
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
     const senderNumber = profileTwilioNumber || toNumber;
 
     if (profileTwilioNumber && profileTwilioNumber !== toNumber) {
-      safeLog({
+      await log({
         level: 'warning',
         category: 'sms',
         event: 'voice_webhook_to_number_mismatch',
@@ -74,7 +75,7 @@ export async function POST(req: NextRequest) {
       await saveMessage(conversation.id, 'system', `[Voice webhook] Missed call from ${fromNumber}. Auto-SMS sent.`);
     }
 
-    safeLog({
+    await log({
       level: 'info',
       category: 'sms',
       event: 'voice_call_auto_sms_sent',
@@ -88,12 +89,25 @@ export async function POST(req: NextRequest) {
 
     return new NextResponse(buildVoiceTwiML(), { status: 200, headers: xmlHeaders });
   } catch (error: any) {
-    safeLog({
+    const payload = toErrorLogPayload(error, 'Twilio voice webhook error');
+    await log({
       level: 'error',
       category: 'sms',
       event: 'voice_webhook_error',
-      error: error?.message || String(error),
-      stack: error?.stack,
+      error: payload.message,
+      stack: payload.stack,
+    });
+    await logAppError({
+      source: 'api.twilio.voice',
+      message: payload.message,
+      level: 'error',
+      stack: payload.stack || undefined,
+      context: {
+        path: '/api/twilio/voice',
+      },
+      path: '/api/twilio/voice',
+      method: 'POST',
+      runtime: 'server',
     });
     return new NextResponse(buildVoiceTwiML(), { status: 200, headers: xmlHeaders });
   }
