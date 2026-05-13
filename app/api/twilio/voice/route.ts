@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import twilio from 'twilio';
 import { sendSMS } from '@/lib/twilio';
-import { getOrCreateConversation, getSalonBySmsNumber, saveMessage } from '@/lib/supabase';
+import { getDefaultSalon, getOrCreateConversation, getSalonBySmsNumber, saveMessage } from '@/lib/supabase';
 import { log } from '@/lib/logger';
 import { logAppError, toErrorLogPayload } from '@/lib/error-logger';
 
@@ -17,8 +17,9 @@ function normalizeE164Candidate(value: string | null): string | null {
   if (!value) return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
-  if (!trimmed.startsWith('+')) return null;
-  const normalized = `+${trimmed.slice(1).replace(/\D/g, '')}`;
+  const plusIndex = trimmed.indexOf('+');
+  if (plusIndex === -1) return null;
+  const normalized = `+${trimmed.slice(plusIndex + 1).replace(/\D/g, '')}`;
   if (normalized.length < 8) return null;
   return normalized;
 }
@@ -35,11 +36,11 @@ export async function POST(req: NextRequest) {
     const callSid = (formData.get('CallSid') as string | null)?.trim() || null;
     const smsBody = (process.env.TWILIO_INBOUND_CALL_SMS_BODY || DEFAULT_INBOUND_CALL_SMS).trim();
 
-    if (!fromNumber || !toNumber) {
+    if (!fromNumber) {
       await log({
         level: 'warning',
         category: 'sms',
-        event: 'voice_webhook_invalid_numbers',
+        event: 'voice_webhook_invalid_caller',
         from: callerRaw,
         to: calledRaw,
         call_sid: callSid,
@@ -47,10 +48,22 @@ export async function POST(req: NextRequest) {
       return new NextResponse(buildVoiceTwiML(), { status: 200, headers: xmlHeaders });
     }
 
-    const salon = await getSalonBySmsNumber(toNumber);
-    const conversation = salon ? await getOrCreateConversation(salon.id, fromNumber) : null;
+    const salon = toNumber ? await getSalonBySmsNumber(toNumber) : await getDefaultSalon();
+    if (!salon) {
+      await log({
+        level: 'error',
+        category: 'sms',
+        event: 'voice_webhook_missing_salon',
+        from: callerRaw,
+        to: calledRaw,
+        call_sid: callSid,
+      });
+      return new NextResponse(buildVoiceTwiML(), { status: 200, headers: xmlHeaders });
+    }
+
+    const conversation = await getOrCreateConversation(salon.id, fromNumber);
     const profileTwilioNumber = normalizeE164Candidate((salon as any)?.twilio_number || null);
-    const senderNumber = profileTwilioNumber || toNumber;
+    const senderNumber = profileTwilioNumber || toNumber || undefined;
 
     if (profileTwilioNumber && profileTwilioNumber !== toNumber) {
       await log({
@@ -66,21 +79,19 @@ export async function POST(req: NextRequest) {
     }
 
     await sendSMS(fromNumber, smsBody, undefined, {
-      tenant_id: salon?.id,
-      session_id: conversation?.id,
+      tenant_id: salon.id,
+      session_id: conversation.id,
       fromNumber: senderNumber,
     });
 
-    if (conversation?.id) {
-      await saveMessage(conversation.id, 'system', `[Voice webhook] Missed call from ${fromNumber}. Auto-SMS sent.`);
-    }
+    await saveMessage(conversation.id, 'system', `[Voice webhook] Missed call from ${fromNumber}. Auto-SMS sent.`);
 
     await log({
       level: 'info',
       category: 'sms',
       event: 'voice_call_auto_sms_sent',
-      tenant_id: salon?.id,
-      session_id: conversation?.id,
+      tenant_id: salon.id,
+      session_id: conversation.id,
       from: fromNumber,
       to: toNumber,
       call_sid: callSid,
