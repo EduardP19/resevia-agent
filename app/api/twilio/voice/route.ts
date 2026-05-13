@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import twilio from 'twilio';
 import { sendSMS } from '@/lib/twilio';
-import { getSalonBySmsNumber } from '@/lib/supabase';
+import { getOrCreateConversation, getSalonBySmsNumber, saveMessage } from '@/lib/supabase';
 import { safeLog } from '@/lib/logger';
 
 const DEFAULT_INBOUND_CALL_SMS = "Hi, sorry we can't pickup. Looking for a new appointment?";
@@ -12,13 +12,25 @@ function buildVoiceTwiML(): string {
   return voiceResponse.toString();
 }
 
+function normalizeE164Candidate(value: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (!trimmed.startsWith('+')) return null;
+  const normalized = `+${trimmed.slice(1).replace(/\D/g, '')}`;
+  if (normalized.length < 8) return null;
+  return normalized;
+}
+
 export async function POST(req: NextRequest) {
   const xmlHeaders = { 'Content-Type': 'text/xml' };
 
   try {
     const formData = await req.formData();
-    const fromNumber = (formData.get('From') as string | null)?.trim() || null;
-    const toNumber = (formData.get('To') as string | null)?.trim() || null;
+    const callerRaw = ((formData.get('Caller') as string | null) || (formData.get('From') as string | null))?.trim() || null;
+    const calledRaw = ((formData.get('Called') as string | null) || (formData.get('To') as string | null))?.trim() || null;
+    const fromNumber = normalizeE164Candidate(callerRaw);
+    const toNumber = normalizeE164Candidate(calledRaw);
     const callSid = (formData.get('CallSid') as string | null)?.trim() || null;
     const smsBody = (process.env.TWILIO_INBOUND_CALL_SMS_BODY || DEFAULT_INBOUND_CALL_SMS).trim();
 
@@ -26,26 +38,33 @@ export async function POST(req: NextRequest) {
       safeLog({
         level: 'warning',
         category: 'sms',
-        event: 'voice_webhook_missing_numbers',
-        from: fromNumber,
-        to: toNumber,
+        event: 'voice_webhook_invalid_numbers',
+        from: callerRaw,
+        to: calledRaw,
         call_sid: callSid,
       });
       return new NextResponse(buildVoiceTwiML(), { status: 200, headers: xmlHeaders });
     }
 
     const salon = await getSalonBySmsNumber(toNumber);
+    const conversation = salon ? await getOrCreateConversation(salon.id, fromNumber) : null;
 
     await sendSMS(fromNumber, smsBody, undefined, {
       tenant_id: salon?.id,
+      session_id: conversation?.id,
       fromNumber: toNumber,
     });
+
+    if (conversation?.id) {
+      await saveMessage(conversation.id, 'system', `[Voice webhook] Missed call from ${fromNumber}. Auto-SMS sent.`);
+    }
 
     safeLog({
       level: 'info',
       category: 'sms',
       event: 'voice_call_auto_sms_sent',
       tenant_id: salon?.id,
+      session_id: conversation?.id,
       from: fromNumber,
       to: toNumber,
       call_sid: callSid,
