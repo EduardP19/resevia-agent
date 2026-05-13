@@ -48,11 +48,26 @@ export async function POST(req: NextRequest) {
 
     const salon = await getSalonBySmsNumber(toNumber);
     const conversation = salon ? await getOrCreateConversation(salon.id, fromNumber) : null;
+    const profileTwilioNumber = normalizeE164Candidate((salon as any)?.twilio_number || null);
+    const senderNumber = profileTwilioNumber || toNumber;
+
+    if (profileTwilioNumber && profileTwilioNumber !== toNumber) {
+      safeLog({
+        level: 'warning',
+        category: 'sms',
+        event: 'voice_webhook_to_number_mismatch',
+        tenant_id: salon?.id,
+        session_id: conversation?.id,
+        inbound_to: toNumber,
+        profile_twilio_number: profileTwilioNumber,
+        call_sid: callSid,
+      });
+    }
 
     await sendSMS(fromNumber, smsBody, undefined, {
       tenant_id: salon?.id,
       session_id: conversation?.id,
-      fromNumber: toNumber,
+      fromNumber: senderNumber,
     });
 
     if (conversation?.id) {
