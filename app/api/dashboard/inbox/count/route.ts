@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     .from('sessions')
     .select('id, metadata')
     .eq('salon_id', auth.session.tenantId)
-    .in('status', ['handed_over', 'review']);
+    .in('status', ['escalated', 'needs_approval']);
 
   if (error) {
     safeLog({

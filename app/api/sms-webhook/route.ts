@@ -19,6 +19,7 @@ import { executeToolCall, ToolContext } from '../../../lib/tool-handler';
 import { logAppError, toErrorLogPayload } from '../../../lib/error-logger';
 import { log, safeLog } from '@/lib/logger';
 import { normalizeCustomerReply } from '@/lib/reply-format';
+import { notifyOwnerConversationAttention } from '@/lib/owner-email-notifications';
 import {
   formDataToRecord,
   numberOrNull,
@@ -211,16 +212,23 @@ export async function POST(req: NextRequest) {
       });
       await supabase.from('sessions').update({
         metadata: { ...conversation.metadata, tokens: aiResponse.tokens, booking_state: updatedBookingState },
-        status: 'review',
+        status: 'needs_approval',
         updated_at: new Date().toISOString()
       }).eq('id', conversation.id);
+
+      await notifyOwnerConversationAttention({
+        conversationId: conversation.id,
+        salonId: salon.id,
+        status: 'needs_approval',
+        clientPhone: conversation.client_identifier || fromNumber,
+      }).catch(() => {});
       
       return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
     }
 
     await supabase.from('sessions').update({
       metadata: { ...conversation.metadata, tokens: aiResponse.tokens, booking_state: updatedBookingState },
-      status: triggerHandoff ? 'handed_over' : 'active',
+      status: triggerHandoff ? 'escalated' : 'active',
       updated_at: new Date().toISOString()
     }).eq('id', conversation.id);
 
@@ -264,8 +272,12 @@ export async function POST(req: NextRequest) {
          session_id: conversation.id,
          customer_phone: fromNumber,
        });
-       const { notifyOwnerHandoff } = await import('../../../lib/handoff_service');
-       await notifyOwnerHandoff(conversation.id, salon.id);
+       await notifyOwnerConversationAttention({
+         conversationId: conversation.id,
+         salonId: salon.id,
+         status: 'escalated',
+         clientPhone: conversation.client_identifier || fromNumber,
+       }).catch(() => {});
     }
 
     return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });

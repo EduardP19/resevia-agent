@@ -47,8 +47,11 @@ export default function SearchClient() {
   };
 
   const statusColor: Record<string, string> = {
-    active: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    review: 'bg-amber-50 text-amber-700 border-amber-200',
+    active:         'bg-emerald-50 text-emerald-700 border-emerald-200',
+    needs_approval: 'bg-amber-50 text-amber-700 border-amber-200',
+    escalated:      'bg-rose-50 text-rose-600 border-rose-200',
+    expired:        'bg-slate-50 text-slate-600 border-slate-200',
+    completed:      'bg-gray-50 text-gray-500 border-gray-200',
   };
 
   return (
@@ -90,7 +93,7 @@ export default function SearchClient() {
           {results.map(session => (
             <Link
               key={session.id}
-              href={`/dashboard/sessions/${session.id}`}
+              href={`/dashboard/sessions/${session.id}?from=search`}
               className="group block bg-white rounded-2xl p-5 transition-all duration-200 shadow-card hover:shadow-card-hover"
               style={{ border: '1px solid rgba(109,40,217,0.08)' }}
             >

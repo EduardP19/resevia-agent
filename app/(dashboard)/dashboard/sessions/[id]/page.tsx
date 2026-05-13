@@ -9,7 +9,28 @@ import TrackableLink from '@/app/(dashboard)/TrackableLink';
 
 export const revalidate = 0;
 
-export default async function SessionTranscriptPage({ params }: { params: { id: string } }) {
+function resolveBackDestination(
+  source: string | undefined,
+  sessionClientIdentifier: string,
+  phoneFromQuery: string | undefined
+) {
+  if (source === 'home') return '/dashboard/home';
+  if (source === 'search') return '/dashboard/search';
+  if (source === 'history') return '/dashboard/history';
+  if (source === 'client') {
+    return `/dashboard/client/${encodeURIComponent(phoneFromQuery || sessionClientIdentifier)}`;
+  }
+
+  return `/dashboard/client/${encodeURIComponent(sessionClientIdentifier)}`;
+}
+
+export default async function SessionTranscriptPage({
+  params,
+  searchParams,
+}: {
+  params: { id: string };
+  searchParams?: { from?: string; phone?: string };
+}) {
   const auth = requireDashboardSession();
   const { data: session } = await supabase
     .from('sessions')
@@ -19,6 +40,10 @@ export default async function SessionTranscriptPage({ params }: { params: { id: 
     .single();
 
   if (!session || isTestUiSession(session)) return <div>Session not found.</div>;
+
+  const source = typeof searchParams?.from === 'string' ? searchParams.from : undefined;
+  const queryPhone = typeof searchParams?.phone === 'string' ? searchParams.phone : undefined;
+  const backHref = resolveBackDestination(source, session.client_identifier, queryPhone);
 
   const transcript = await getSessionTranscript(params.id);
   const isReview = session.status === 'review' || transcript.some((m: any) => m.role === 'draft');
@@ -38,16 +63,16 @@ export default async function SessionTranscriptPage({ params }: { params: { id: 
       <div className="mb-6 flex flex-col gap-4 md:flex-row md:justify-between md:items-end">
         <div>
           <TrackableLink
-            href="/dashboard/inbox"
+            href={backHref}
             trackEvent="back_link_clicked"
-            trackProps={{ page: 'dashboard/session', destination: 'dashboard/inbox', session_id: params.id }}
+            trackProps={{ page: 'dashboard/session', destination: backHref, session_id: params.id }}
             className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest mb-3 transition-colors"
             style={{ color: '#6D28D9' }}
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
             </svg>
-            Back to Inbox
+            Back
           </TrackableLink>
 
           <div className="flex items-center gap-2 mb-1.5">

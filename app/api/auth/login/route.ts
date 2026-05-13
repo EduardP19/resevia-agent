@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
   const email = String(formData.get('email') || '');
   const password = String(formData.get('password') || '');
   const remember = String(formData.get('remember') || '').toLowerCase() === 'on';
-  const next = sanitizeDashboardRedirect(String(formData.get('next') || '/dashboard'));
+  const next = sanitizeDashboardRedirect(String(formData.get('next') || '/dashboard/home'));
 
   const credential = await findDashboardCredential(email, password);
   if (!credential) {

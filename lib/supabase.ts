@@ -84,19 +84,19 @@ export async function getOrCreateConversation(salonId: string, customerPhone: st
   let query = supabase.from('sessions').select('*');
 
   if (sessionId) {
-    // If an ID is provided, try to find it and ensure it's not completed
+    // If an ID is provided, try to find it and ensure it's still open
     const { data: byId } = await query
       .eq('id', sessionId)
-      .neq('status', 'completed')
+      .not('status', 'in', '("expired","completed")')
       .single();
     if (byId) return byId;
   }
 
-  // Fallback to finding existing active/review/handed_over session for this phone
+  // Fallback to finding existing open session for this phone
   let { data } = await query
     .eq('salon_id', salonId)
     .eq('client_identifier', customerPhone)
-    .in('status', ['active', 'review', 'handed_over'])
+    .in('status', ['active', 'needs_approval', 'escalated'])
     .order('updated_at', { ascending: false })
     .limit(1)
     .single();
@@ -122,7 +122,7 @@ export async function getOrCreateConversation(salonId: string, customerPhone: st
           .select('*')
           .eq('salon_id', salonId)
           .eq('client_identifier', customerPhone)
-          .in('status', ['active', 'review', 'handed_over'])
+          .in('status', ['active', 'needs_approval', 'escalated'])
           .order('updated_at', { ascending: false })
           .limit(1)
           .single();
@@ -345,7 +345,7 @@ export async function createTestUiConversation(salonId: string, sessionId?: stri
       .from('sessions')
       .select('*')
       .eq('id', sessionId)
-      .neq('status', 'completed')
+      .not('status', 'in', '("expired","completed")')
       .contains('metadata', { source: 'sophia-sandbox' })
       .maybeSingle();
 
@@ -416,7 +416,7 @@ export async function expireSessionById(sessionId: string, metadataPatch?: Recor
     expired_at: expiredAt,
   };
 
-  if (existingSession.status === 'completed') {
+  if (existingSession.status === 'expired' || existingSession.status === 'completed') {
     return {
       ...existingSession,
       metadata: nextMetadata,
@@ -426,12 +426,12 @@ export async function expireSessionById(sessionId: string, metadataPatch?: Recor
   const { data: updatedSession, error: updateError } = await supabase
     .from('sessions')
     .update({
-      status: 'completed',
+      status: 'expired',
       updated_at: new Date().toISOString(),
       metadata: nextMetadata,
     })
     .eq('id', sessionId)
-    .neq('status', 'completed')
+    .not('status', 'in', '("expired","completed")')
     .select('id, status, metadata')
     .maybeSingle();
 
@@ -462,7 +462,7 @@ export async function expireSessionById(sessionId: string, metadataPatch?: Recor
   return (
     updatedSession || {
       ...existingSession,
-      status: 'completed',
+      status: 'expired',
       metadata: nextMetadata,
     }
   );
@@ -475,7 +475,7 @@ export async function completeSession(salonId: string, clientIdentifier: string)
     .update({ status: 'completed', updated_at: new Date().toISOString() })
     .eq('salon_id', salonId)
     .eq('client_identifier', clientIdentifier)
-    .eq('status', 'active');
+    .in('status', ['active', 'needs_approval']);
 
   if (error) {
     safeLog({
@@ -591,7 +591,7 @@ export async function getGroupedSessions(salonId?: string) {
       salon_id,
       business_profiles(name)
     `)
-    .in('status', ['active', 'review', 'handed_over'])
+    .in('status', ['active', 'needs_approval', 'escalated'])
     .order('updated_at', { ascending: false });
 
   if (salonId) {
@@ -605,8 +605,8 @@ export async function getGroupedSessions(salonId?: string) {
 
   const sessions = visibleSessions.map((s: any) => ({
     ...s,
-    has_review: s.status === 'review',
-    has_escalation: s.status === 'handed_over',
+    has_review: s.status === 'needs_approval',
+    has_escalation: s.status === 'escalated',
     last_question: null as string | null,
     draft_response: null as string | null,
   }));
@@ -656,33 +656,27 @@ export async function getHistorySessions(salonId?: string, limit = 100) {
   const { data, error } = await query;
   if (error) throw error;
 
-  const liveStatuses = new Set(['active', 'review', 'handed_over']);
+  const liveStatuses = new Set(['active', 'needs_approval', 'escalated']);
 
   return (data || [])
     .filter((session: any) => {
       if (isTestUiSession(session)) return false;
-
-      const metadata = session.metadata && typeof session.metadata === 'object' ? session.metadata : {};
-      const isExpired = typeof metadata.expired_at === 'string' && metadata.expired_at.length > 0;
-
-      return isExpired || !liveStatuses.has(session.status);
+      return !liveStatuses.has(session.status);
     })
     .map((session: any) => {
-      const metadata = session.metadata && typeof session.metadata === 'object' ? session.metadata : {};
-      const expiredAt = typeof metadata.expired_at === 'string' ? metadata.expired_at : null;
-      const occurredAt = expiredAt || session.updated_at || session.created_at;
+      const occurredAt = session.updated_at || session.created_at;
 
       let outcome = session.summary;
-      if (!outcome && expiredAt) outcome = 'Session expired before the conversation was completed.';
+      if (!outcome && session.status === 'expired') outcome = 'Session timed out before the conversation was completed.';
       if (!outcome && session.status === 'completed') outcome = 'Conversation completed.';
-      if (!outcome && session.status === 'handed_over') outcome = 'Conversation was escalated to the team.';
+      if (!outcome && session.status === 'escalated') outcome = 'Conversation was escalated to the team.';
       if (!outcome) outcome = 'Outcome summary pending.';
 
       return {
         ...session,
         occurred_at: occurredAt,
         outcome,
-        is_expired: Boolean(expiredAt),
+        is_expired: session.status === 'expired',
       };
     });
 }
@@ -803,8 +797,8 @@ export async function searchSessionsByPhone(phone: string, salonId?: string) {
     
     // Determine outcome
     let outcome = s.summary || 'Enquiry';
-    if (s.status === 'handed_over') outcome = 'Escalated';
-    if (s.status === 'review') outcome = 'Awaiting Approval';
+    if (s.status === 'escalated') outcome = 'Escalated';
+    if (s.status === 'needs_approval') outcome = 'Awaiting Approval';
     if (transcript?.some(m => m.content.includes('confirmed') || m.content.includes('book_direct'))) {
       outcome = 'Booked';
     } else if (s.status === 'completed') {

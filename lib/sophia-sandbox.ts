@@ -142,7 +142,7 @@ export async function createTestUiResponse(options: {
       .from('sessions')
       .update({
         metadata: nextMetadata,
-        status: 'review',
+        status: 'needs_approval',
         updated_at: new Date().toISOString(),
       })
       .eq('id', conversation.id);
@@ -150,7 +150,7 @@ export async function createTestUiResponse(options: {
     return {
       reply,
       draft: true,
-      status: 'review',
+      status: 'needs_approval',
       sessionId: conversation.id,
       approvalMode: true,
     };

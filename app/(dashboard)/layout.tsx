@@ -11,8 +11,8 @@ import { trackClientEvent } from '@/lib/client-events';
 
 const navItems = [
   {
-    href: '/dashboard/inbox',
-    label: 'Inbox',
+    href: '/dashboard/home',
+    label: 'Home',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0H4m8-7v7" />
@@ -202,14 +202,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {/* Right: bell + toggle */}
           <div className="flex-1 flex items-center justify-end space-x-2 md:space-x-4">
-            <form action="/api/auth/logout" method="post" className="hidden md:block">
-              <button
-                type="submit"
-                className="rounded-lg border border-[#e8e0f0] px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-[#f6f1ff] hover:text-[#271549] transition-colors"
-              >
-                Log out
-              </button>
-            </form>
             <NotificationBell />
             <span className="h-5 w-px bg-gray-200 hidden md:block" />
             <div className="hidden md:block">

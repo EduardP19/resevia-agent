@@ -81,8 +81,8 @@ export async function GET(req: NextRequest) {
   const draft = draftMessages?.[0] || null;
   const hasDraft = Boolean(draft);
   const status = hasDraft
-    ? session?.status || 'review'
-    : session?.status === 'review'
+    ? session?.status || 'needs_approval'
+    : session?.status === 'needs_approval'
       ? 'active'
       : session?.status || 'active';
 

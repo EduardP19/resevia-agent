@@ -48,8 +48,8 @@ export default function ChatInterface({
 
   const latestDraft = [...transcript].reverse().find(m => m.role === 'draft');
   hasDraftRef.current = !!latestDraft;
-  const isArchived = currentStatus !== 'active' && currentStatus !== 'review';
-  const isReview = !isArchived && (currentStatus === 'review' || !!latestDraft);
+  const isArchived = currentStatus !== 'active' && currentStatus !== 'needs_approval';
+  const isReview = !isArchived && (currentStatus === 'needs_approval' || !!latestDraft);
   const visibleTranscript = useMemo(
     () =>
       transcript

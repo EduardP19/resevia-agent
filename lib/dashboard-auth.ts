@@ -129,7 +129,7 @@ export function getDashboardSessionFromRequest(req: NextRequest) {
 
 export function requireDashboardSession() {
   const session = getDashboardSession();
-  if (!session) redirect('/login?next=/dashboard');
+  if (!session) redirect('/login?next=/dashboard/home');
   return session;
 }
 
@@ -213,6 +213,6 @@ export function dashboardRememberCookieOptions(enabled: boolean) {
 }
 
 export function sanitizeDashboardRedirect(value?: string | null) {
-  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/dashboard';
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/dashboard/home';
   return value;
 }

@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     .from('sessions')
     .select('id, status')
     .eq('client_identifier', phone)
-    .in('status', ['active', 'review', 'handed_over'])
+    .in('status', ['active', 'needs_approval', 'escalated'])
     .order('updated_at', { ascending: false })
     .limit(1)
     .single();

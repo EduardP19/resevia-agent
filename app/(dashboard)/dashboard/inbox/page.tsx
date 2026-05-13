@@ -55,9 +55,9 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   );
 
   const getStatusConfig = (c: any) => {
-    if (c.has_review) return { label: 'Needs Approval', dot: 'bg-rose-500', badge: 'bg-rose-50 text-rose-600 border border-rose-200', pulse: true };
-    if (c.has_escalation) return { label: 'Escalated', dot: 'bg-amber-500', badge: 'bg-amber-50 text-amber-700 border border-amber-200', pulse: false };
-    return { label: c.status.replace('_', ' '), dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border border-emerald-200', pulse: false };
+    if (c.has_review) return { label: 'Needs Approval', dot: 'bg-amber-500', badge: 'bg-amber-50 text-amber-700 border border-amber-200', pulse: true };
+    if (c.has_escalation) return { label: 'Escalated', dot: 'bg-rose-500', badge: 'bg-rose-50 text-rose-600 border border-rose-200', pulse: false };
+    return { label: 'Active', dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border border-emerald-200', pulse: false };
   };
 
   return (
@@ -99,7 +99,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
         {filteredClients.map((c: any) => {
           const status = getStatusConfig(c);
           return (
-            <TrackableLink key={c.id} href={`/dashboard/sessions/${c.id}`} className="block group" trackEvent="session_card_clicked" trackProps={{ page: 'dashboard/inbox', session_id: c.id, client_identifier: c.client_identifier, status: c.has_review ? 'needs_approval' : c.has_escalation ? 'escalated' : 'active' }}>
+            <TrackableLink key={c.id} href={`/dashboard/sessions/${c.id}?from=home`} className="block group" trackEvent="session_card_clicked" trackProps={{ page: 'dashboard/inbox', session_id: c.id, client_identifier: c.client_identifier, status: c.has_review ? 'needs_approval' : c.has_escalation ? 'escalated' : 'active' }}>
               <div
                 className="bg-white rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between transition-all duration-200 relative overflow-hidden shadow-card hover:shadow-card-hover"
                 style={{ border: '1px solid rgba(109,40,217,0.08)' }}

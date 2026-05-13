@@ -17,6 +17,7 @@ import { executeToolCall, ToolContext } from '../../../../lib/tool-handler';
 import { logAppError, toErrorLogPayload } from '../../../../lib/error-logger';
 import { log, safeLog } from '@/lib/logger';
 import { normalizeCustomerReply } from '@/lib/reply-format';
+import { notifyOwnerConversationAttention } from '@/lib/owner-email-notifications';
 
 // Same logic as /api/sms-webhook but returns JSON instead of sending via Twilio
 export async function POST(req: NextRequest) {
@@ -137,16 +138,23 @@ export async function POST(req: NextRequest) {
       });
       await supabase.from('sessions').update({
         metadata: { ...conversation.metadata, tokens: aiResponse.tokens, booking_state: updatedBookingState },
-        status: 'review',
+        status: 'needs_approval',
         updated_at: new Date().toISOString()
       }).eq('id', conversation.id);
 
-      return NextResponse.json({ reply, draft: true, status: 'review', sessionId: conversation.id });
+      await notifyOwnerConversationAttention({
+        conversationId: conversation.id,
+        salonId: salon.id,
+        status: 'needs_approval',
+        clientPhone: conversation.client_identifier || from,
+      }).catch(() => {});
+
+      return NextResponse.json({ reply, draft: true, status: 'needs_approval', sessionId: conversation.id });
     }
 
     await supabase.from('sessions').update({
       metadata: { ...conversation.metadata, tokens: aiResponse.tokens, booking_state: updatedBookingState },
-      status: triggerHandoff ? 'handed_over' : 'active',
+      status: triggerHandoff ? 'escalated' : 'active',
       updated_at: new Date().toISOString()
     }).eq('id', conversation.id);
 
@@ -161,8 +169,12 @@ export async function POST(req: NextRequest) {
          session_id: conversation.id,
          customer_phone: from,
        });
-       const { notifyOwnerHandoff } = await import('../../../../lib/handoff_service');
-       await notifyOwnerHandoff(conversation.id, salon.id);
+       await notifyOwnerConversationAttention({
+         conversationId: conversation.id,
+         salonId: salon.id,
+         status: 'escalated',
+         clientPhone: conversation.client_identifier || from,
+       }).catch(() => {});
     }
 
     return NextResponse.json({ reply, handoff: triggerHandoff, sessionId: conversation.id });

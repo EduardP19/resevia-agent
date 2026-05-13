@@ -36,28 +36,29 @@ export default async function ClientHistoryPage({ params }: { params: { phone: s
   const liveSessions = visibleSessions.filter((s: any) => {
     const threeMinsAgo = new Date(Date.now() - 3 * 60 * 1000);
     const isRecentlyActive = new Date(s.updated_at) > threeMinsAgo;
-    return (s.status === 'active' || s.status === 'review') && isRecentlyActive;
+    return (s.status === 'active' || s.status === 'needs_approval') && isRecentlyActive;
   });
   const archivedSessions = visibleSessions.filter((s: any) => {
     const threeMinsAgo = new Date(Date.now() - 3 * 60 * 1000);
     const isRecentlyActive = new Date(s.updated_at) > threeMinsAgo;
-    return !(( s.status === 'active' || s.status === 'review') && isRecentlyActive);
+    return !(( s.status === 'active' || s.status === 'needs_approval') && isRecentlyActive);
   });
 
   const statusConfig: Record<string, { label: string; classes: string }> = {
-    active:      { label: 'Active',       classes: 'bg-emerald-100 text-emerald-700' },
-    review:      { label: 'Needs Approval', classes: 'bg-amber-100 text-amber-700 animate-pulse' },
-    completed:   { label: 'Completed',    classes: 'bg-gray-100 text-gray-500' },
-    handed_over: { label: 'Escalated',    classes: 'bg-rose-100 text-rose-600' },
+    active:         { label: 'Active',          classes: 'bg-emerald-100 text-emerald-700' },
+    needs_approval: { label: 'Needs Approval',  classes: 'bg-amber-100 text-amber-700 animate-pulse' },
+    escalated:      { label: 'Escalated',       classes: 'bg-rose-100 text-rose-600' },
+    expired:        { label: 'Expired',         classes: 'bg-slate-100 text-slate-600' },
+    completed:      { label: 'Completed',       classes: 'bg-gray-100 text-gray-500' },
   };
 
   const SessionCard = ({ session }: { session: any }) => {
-    const isLive = session.status === 'active' || session.status === 'review';
+    const isLive = session.status === 'active' || session.status === 'needs_approval';
     const cfg = statusConfig[session.status] || { label: session.status, classes: 'bg-gray-100 text-gray-500' };
     const date = new Date(session.created_at);
 
     return (
-      <TrackableLink href={`/dashboard/sessions/${session.id}`} className="block group" trackEvent="session_card_clicked" trackProps={{ page: 'dashboard/client', session_id: session.id, status: session.status }}>
+      <TrackableLink href={`/dashboard/sessions/${session.id}?from=client&phone=${encodeURIComponent(decodedPhone)}`} className="block group" trackEvent="session_card_clicked" trackProps={{ page: 'dashboard/client', session_id: session.id, status: session.status }}>
         <div className={`relative bg-white rounded-2xl border overflow-hidden flex flex-col transition-all duration-300 hover:shadow-xl h-full ${
           isLive ? 'border-emerald-400 shadow-lg shadow-emerald-50/50' : 'border-gray-100 shadow-sm hover:border-indigo-100'
         }`}>
@@ -125,11 +126,11 @@ export default async function ClientHistoryPage({ params }: { params: { phone: s
       <PageViewTracker page="dashboard/client" extra={{ phone: decodedPhone, session_count: visibleSessions.length }} />
       {/* Header */}
       <div className="mb-10">
-        <TrackableLink href="/dashboard/inbox" trackEvent="back_link_clicked" trackProps={{ page: 'dashboard/client', destination: 'dashboard/inbox' }} className="inline-flex items-center text-xs font-black uppercase tracking-widest text-brand-purple hover:translate-x-[-4px] transition-transform mb-6">
+        <TrackableLink href="/dashboard/history" trackEvent="back_link_clicked" trackProps={{ page: 'dashboard/client', destination: 'dashboard/history' }} className="inline-flex items-center text-xs font-black uppercase tracking-widest text-brand-purple hover:translate-x-[-4px] transition-transform mb-6">
           <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7" />
           </svg>
-          Back to Inbox
+          Back
         </TrackableLink>
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
           <div>
