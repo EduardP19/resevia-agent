@@ -127,7 +127,7 @@ async function sendToSupabase(payload: LogEvent & { timestamp: string; environme
     if (v !== undefined) metadata[k] = v;
   }
 
-  await client.from('event_logs').insert({
+  await (client as any).from('event_logs').insert({
     level,
     category,
     event,
