@@ -27,16 +27,24 @@ function normalizeE164Candidate(value: string | null): string | null {
 export async function POST(req: NextRequest) {
   const xmlHeaders = { 'Content-Type': 'text/xml' };
 
+  console.log('[voice] ▶ webhook received');
+
   try {
     const formData = await req.formData();
     const callerRaw = ((formData.get('Caller') as string | null) || (formData.get('From') as string | null))?.trim() || null;
     const calledRaw = ((formData.get('Called') as string | null) || (formData.get('To') as string | null))?.trim() || null;
+    const callSid = (formData.get('CallSid') as string | null)?.trim() || null;
+
+    console.log(`[voice] parsed form — Caller: ${callerRaw}, Called: ${calledRaw}, CallSid: ${callSid}`);
+
     const fromNumber = normalizeE164Candidate(callerRaw);
     const toNumber = normalizeE164Candidate(calledRaw);
-    const callSid = (formData.get('CallSid') as string | null)?.trim() || null;
     const smsBody = (process.env.TWILIO_INBOUND_CALL_SMS_BODY || DEFAULT_INBOUND_CALL_SMS).trim();
 
+    console.log(`[voice] normalized — from: ${fromNumber}, to: ${toNumber}`);
+
     if (!fromNumber) {
+      console.warn(`[voice] ✗ invalid caller number — raw: ${callerRaw}`);
       await log({
         level: 'warning',
         category: 'sms',
@@ -48,8 +56,11 @@ export async function POST(req: NextRequest) {
       return new NextResponse(buildVoiceTwiML(), { status: 200, headers: xmlHeaders });
     }
 
+    console.log(`[voice] looking up salon for toNumber: ${toNumber}`);
     const salon = toNumber ? await getSalonBySmsNumber(toNumber) : await getDefaultSalon();
+
     if (!salon) {
+      console.warn(`[voice] ✗ no salon found for toNumber: ${toNumber}`);
       await log({
         level: 'error',
         category: 'sms',
@@ -61,11 +72,19 @@ export async function POST(req: NextRequest) {
       return new NextResponse(buildVoiceTwiML(), { status: 200, headers: xmlHeaders });
     }
 
+    console.log(`[voice] salon found — id: ${salon.id}, name: ${(salon as any).name}`);
+
+    console.log(`[voice] getting or creating conversation — salonId: ${salon.id}, from: ${fromNumber}`);
     const conversation = await getOrCreateConversation(salon.id, fromNumber);
+    console.log(`[voice] conversation ready — id: ${conversation.id}, status: ${conversation.status}`);
+
     const profileTwilioNumber = normalizeE164Candidate((salon as any)?.twilio_number || null);
     const senderNumber = profileTwilioNumber || toNumber || undefined;
 
+    console.log(`[voice] sender resolution — profile twilio_number: ${profileTwilioNumber}, toNumber: ${toNumber}, using: ${senderNumber}`);
+
     if (profileTwilioNumber && profileTwilioNumber !== toNumber) {
+      console.warn(`[voice] ⚠ twilio number mismatch — profile: ${profileTwilioNumber}, inbound to: ${toNumber}`);
       await log({
         level: 'warning',
         category: 'sms',
@@ -78,13 +97,16 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    console.log(`[voice] sending SMS — to: ${fromNumber}, from: ${senderNumber}, body: "${smsBody}"`);
     await sendSMS(fromNumber, smsBody, undefined, {
       tenant_id: salon.id,
       session_id: conversation.id,
       fromNumber: senderNumber,
     });
+    console.log(`[voice] ✓ SMS sent`);
 
     await saveMessage(conversation.id, 'system', `[Voice webhook] Missed call from ${fromNumber}. Auto-SMS sent.`);
+    console.log(`[voice] ✓ system message saved`);
 
     await log({
       level: 'info',
@@ -98,8 +120,10 @@ export async function POST(req: NextRequest) {
       body: smsBody,
     });
 
+    console.log(`[voice] ✓ complete`);
     return new NextResponse(buildVoiceTwiML(), { status: 200, headers: xmlHeaders });
   } catch (error: any) {
+    console.error(`[voice] ✗ uncaught error — ${error?.message}`, error?.stack);
     const payload = toErrorLogPayload(error, 'Twilio voice webhook error');
     await log({
       level: 'error',
