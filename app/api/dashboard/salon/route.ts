@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase, updateSalonProfile } from '@/lib/supabase';
 import { safeLog } from '@/lib/logger';
 import { requireDashboardSessionFromRequest } from '@/lib/dashboard-auth';
+import { encrypt } from '@/lib/crypto';
 
 const allowedProfileFields = new Set([
   'name',
@@ -10,6 +11,9 @@ const allowedProfileFields = new Set([
   'tone_of_voice',
   'services',
   'twilio_number',
+  'twilio_account_sid',
+  'twilio_auth_token',
+  'notify_sms_to',
   'approval_mode',
 ]);
 
@@ -34,6 +38,11 @@ export async function PATCH(req: NextRequest) {
     const safeUpdates = Object.fromEntries(
       Object.entries(updates).filter(([key]) => allowedProfileFields.has(key))
     );
+
+    if (typeof safeUpdates.twilio_auth_token === 'string' && safeUpdates.twilio_auth_token.length > 0) {
+      safeUpdates.twilio_auth_token = encrypt(safeUpdates.twilio_auth_token);
+    }
+
     const data = await updateSalonProfile(auth.session.tenantId, safeUpdates);
     safeLog({
       level: 'info',

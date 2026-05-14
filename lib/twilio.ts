@@ -2,12 +2,13 @@ import twilio from 'twilio';
 import { log } from '@/lib/logger';
 import { supabase } from '@/lib/supabase';
 import { logAppError, toErrorLogPayload } from '@/lib/error-logger';
+import { decrypt } from '@/lib/crypto';
 
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken = process.env.TWILIO_AUTH_TOKEN;
+const globalAccountSid = process.env.TWILIO_ACCOUNT_SID;
+const globalAuthToken = process.env.TWILIO_AUTH_TOKEN;
 const fallbackFromNumber = process.env.TWILIO_PHONE_NUMBER || process.env.TWILIO_PHONE;
 
-const client = (accountSid && authToken) ? twilio(accountSid, authToken) : null;
+const globalClient = (globalAccountSid && globalAuthToken) ? twilio(globalAccountSid, globalAuthToken) : null;
 
 type SMSLogContext = {
   tenant_id?: string;
@@ -15,24 +16,46 @@ type SMSLogContext = {
   fromNumber?: string;
 };
 
-async function resolveFromNumber(context: SMSLogContext): Promise<string | null> {
-  if (context.fromNumber) {
-    return context.fromNumber;
+type BusinessTwilioCredentials = {
+  twilio_number?: string | null;
+  twilio_account_sid?: string | null;
+  twilio_auth_token?: string | null;
+};
+
+function getClientForCredentials(creds: BusinessTwilioCredentials): ReturnType<typeof twilio> | null {
+  if (creds.twilio_account_sid && creds.twilio_auth_token) {
+    let authToken: string;
+    try {
+      authToken = decrypt(creds.twilio_auth_token);
+    } catch {
+      // Not encrypted (legacy plain value) — use as-is
+      authToken = creds.twilio_auth_token;
+    }
+    return twilio(creds.twilio_account_sid, authToken);
+  }
+  return null;
+}
+
+async function resolveClientAndFromNumber(
+  context: SMSLogContext
+): Promise<{ client: ReturnType<typeof twilio> | null; fromNumber: string | null }> {
+  if (context.fromNumber && !context.tenant_id) {
+    return { client: globalClient, fromNumber: context.fromNumber };
   }
 
   if (context.tenant_id) {
     const { data } = await supabase
       .from('business_profiles')
-      .select('twilio_number')
+      .select('twilio_number, twilio_account_sid, twilio_auth_token')
       .eq('id', context.tenant_id)
       .maybeSingle();
 
-    if (data?.twilio_number) {
-      return data.twilio_number;
-    }
+    const perBusinessClient = data ? getClientForCredentials(data) : null;
+    const fromNumber = context.fromNumber || data?.twilio_number || fallbackFromNumber || null;
+    return { client: perBusinessClient ?? globalClient, fromNumber };
   }
 
-  return fallbackFromNumber || null;
+  return { client: globalClient, fromNumber: context.fromNumber || fallbackFromNumber || null };
 }
 
 export async function sendSMS(
@@ -41,11 +64,12 @@ export async function sendSMS(
   statusCallbackUrl?: string,
   context: SMSLogContext = {}
 ): Promise<any> {
+  const { client, fromNumber } = await resolveClientAndFromNumber(context);
+
   if (!client) {
     throw new Error('[Twilio] Not configured. Missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN.');
   }
 
-  const fromNumber = await resolveFromNumber(context);
   if (!fromNumber) {
     throw new Error('[Twilio] Missing sender number. Set business_profiles.twilio_number for tenant or TWILIO_PHONE_NUMBER fallback.');
   }
@@ -107,11 +131,11 @@ export async function sendSMS(
 }
 
 export async function getSMSMessage(messageSid: string): Promise<any> {
-  if (!client) {
+  if (!globalClient) {
     throw new Error('[Twilio] Not configured. Missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN.');
   }
 
-  return client.messages(messageSid).fetch();
+  return globalClient.messages(messageSid).fetch();
 }
 
 function wait(ms: number) {
