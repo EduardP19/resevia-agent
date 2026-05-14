@@ -29,6 +29,16 @@ export async function POST(req: NextRequest) {
 
   console.log('[voice] ▶ webhook received');
 
+  // Respond to Twilio immediately so the call is terminated as fast as possible.
+  // Continue the existing missed-call SMS flow asynchronously.
+  void handleVoiceWebhook(req).catch((error: any) => {
+    console.error(`[voice] ✗ uncaught async error — ${error?.message}`, error?.stack);
+  });
+
+  return new NextResponse(buildVoiceTwiML(), { status: 200, headers: xmlHeaders });
+}
+
+async function handleVoiceWebhook(req: NextRequest) {
   try {
     const formData = await req.formData();
     const callerRaw = ((formData.get('Caller') as string | null) || (formData.get('From') as string | null))?.trim() || null;
@@ -53,7 +63,7 @@ export async function POST(req: NextRequest) {
         to: calledRaw,
         call_sid: callSid,
       });
-      return new NextResponse(buildVoiceTwiML(), { status: 200, headers: xmlHeaders });
+      return;
     }
 
     console.log(`[voice] looking up salon for toNumber: ${toNumber}`);
@@ -69,7 +79,7 @@ export async function POST(req: NextRequest) {
         to: calledRaw,
         call_sid: callSid,
       });
-      return new NextResponse(buildVoiceTwiML(), { status: 200, headers: xmlHeaders });
+      return;
     }
 
     console.log(`[voice] salon found — id: ${salon.id}, name: ${(salon as any).name}`);
@@ -121,7 +131,6 @@ export async function POST(req: NextRequest) {
     });
 
     console.log(`[voice] ✓ complete`);
-    return new NextResponse(buildVoiceTwiML(), { status: 200, headers: xmlHeaders });
   } catch (error: any) {
     console.error(`[voice] ✗ uncaught error — ${error?.message}`, error?.stack);
     const payload = toErrorLogPayload(error, 'Twilio voice webhook error');
@@ -144,6 +153,5 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       runtime: 'server',
     });
-    return new NextResponse(buildVoiceTwiML(), { status: 200, headers: xmlHeaders });
   }
 }
