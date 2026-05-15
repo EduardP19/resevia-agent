@@ -3,23 +3,7 @@ import { supabase, updateSalonProfile } from '@/lib/supabase';
 import { safeLog } from '@/lib/logger';
 import { requireDashboardSessionFromRequest } from '@/lib/dashboard-auth';
 import { encrypt } from '@/lib/crypto';
-
-const profileCache = new Map<string, { data: any; expiresAt: number }>();
-const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
-
-function getCachedProfile(tenantId: string) {
-  const entry = profileCache.get(tenantId);
-  if (entry && entry.expiresAt > Date.now()) return entry.data;
-  return null;
-}
-
-function setCachedProfile(tenantId: string, data: any) {
-  profileCache.set(tenantId, { data, expiresAt: Date.now() + PROFILE_CACHE_TTL_MS });
-}
-
-export function invalidateProfileCache(tenantId: string) {
-  profileCache.delete(tenantId);
-}
+import { getCachedProfile, setCachedProfile, invalidateProfileCache } from '@/lib/profile-cache';
 
 const allowedProfileFields = new Set([
   'name',
