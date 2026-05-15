@@ -16,7 +16,9 @@ export default function NotificationBell() {
       } catch {/* silent */}
     };
     check();
-    const interval = setInterval(check, 10000);
+    const interval = setInterval(() => {
+      if (document.visibilityState !== 'hidden') check();
+    }, 60000);
     return () => clearInterval(interval);
   }, []);
 

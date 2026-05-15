@@ -6,11 +6,19 @@ import TrackableLink from '@/app/(dashboard)/TrackableLink';
 function formatHistoryDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Date unavailable';
-  return date.toLocaleDateString('en-GB', {
+  
+  const dateString = date.toLocaleDateString('en-GB', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
   });
+  
+  const timeString = date.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  
+  return `${dateString} · ${timeString}`;
 }
 
 type Card = {
@@ -122,7 +130,7 @@ export default function HistoryClient({ phoneCards }: { phoneCards: Card[] }) {
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div className="rounded-xl border border-gray-100 bg-gray-50/70 px-3 py-2">
                   <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Date</p>
-                  <p className="text-sm font-semibold text-gray-700">{formatHistoryDate(card.latest.occurred_at)}</p>
+                  <p suppressHydrationWarning className="text-sm font-semibold text-gray-700">{formatHistoryDate(card.latest.occurred_at)}</p>
                 </div>
                 <div className="rounded-xl border border-gray-100 bg-gray-50/70 px-3 py-2">
                   <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Convos</p>

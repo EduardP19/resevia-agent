@@ -4,15 +4,15 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { trackClientEvent } from '@/lib/client-events';
 
-export default function CompleteSessionButton({ sessionId }: { sessionId: string }) {
+export default function CompleteSessionButton({ sessionId, isArchived }: { sessionId: string; isArchived?: boolean }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
 
   const handleComplete = async () => {
-    const firstConfirm = window.confirm('Mark this session as completed? This will remove it from active conversations.');
+    const firstConfirm = window.confirm('End this chat? This will remove it from active conversations.');
     if (!firstConfirm) return;
 
-    const secondConfirm = window.confirm('Please confirm again: complete this session now?');
+    const secondConfirm = window.confirm('Please confirm again: end this chat now?');
     if (!secondConfirm) return;
 
     setIsSubmitting(true);
@@ -36,11 +36,27 @@ export default function CompleteSessionButton({ sessionId }: { sessionId: string
       });
       router.refresh();
     } catch (error: any) {
-      alert(error?.message || 'Failed to complete session');
+      alert(error?.message || 'Failed to end chat');
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  if (isArchived) {
+    return (
+      <button
+        disabled
+        className="px-3 py-2 rounded-xl text-xs font-bold uppercase tracking-widest opacity-50 cursor-not-allowed"
+        style={{
+          background: '#f3f4f6',
+          border: '1px solid #d1d5db',
+          color: '#9ca3af',
+        }}
+      >
+        Chat Ended
+      </button>
+    );
+  }
 
   return (
     <button
@@ -53,7 +69,7 @@ export default function CompleteSessionButton({ sessionId }: { sessionId: string
         color: '#be185d',
       }}
     >
-      {isSubmitting ? 'Completing…' : 'Complete Session'}
+      {isSubmitting ? 'Ending…' : 'End Chat'}
     </button>
   );
 }

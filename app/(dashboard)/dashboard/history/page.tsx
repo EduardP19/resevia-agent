@@ -95,7 +95,7 @@ export default async function HistoryPage() {
           <h2 className="text-3xl font-bold tracking-tight" style={{ color: '#271549' }}>
             History
           </h2>
-          <p className="text-sm text-gray-400 mt-1">Filter by date, status, or search.</p>
+          <p className="text-sm text-gray-400 mt-1">Showing last 3 days. Filter by date, status, or search.</p>
         </div>
       </div>
 

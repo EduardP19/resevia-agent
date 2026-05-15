@@ -69,7 +69,7 @@ export async function logDashboardEvent(payload: {
   [key: string]: any;
 }) {
   try {
-    await supabase.from('1_system_logs').insert({
+    await supabase.from('system_logs').insert({
       tenant_id: payload.tenant_id || null,
       level: payload.level === 'warn' ? 'warning' : payload.level === 'error' ? 'error' : 'info',
       source: 'dashboard_event',
@@ -125,7 +125,7 @@ export async function logAppError(input: AppErrorLogInput) {
       },
     };
 
-    await supabase.from('1_system_logs').insert(systemPayload);
+    await supabase.from('system_logs').insert(systemPayload);
 
     const payload = {
       level: input.level || 'error',

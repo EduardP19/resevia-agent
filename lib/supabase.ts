@@ -751,9 +751,12 @@ export async function getGroupedSessions(salonId?: string) {
  * the same phone number remain visible as separate history entries.
  */
 export async function getHistorySessions(salonId?: string, limit = 100) {
+  const cutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+
   let query = supabase
     .from('sessions')
     .select('id, client_identifier, status, platform, created_at, updated_at, metadata, salon_id, summary, business_profiles(name)')
+    .gte('updated_at', cutoff)
     .order('updated_at', { ascending: false })
     .limit(limit);
 
@@ -893,32 +896,37 @@ export async function searchSessionsByPhone(phone: string, salonId?: string) {
     ).values()
   );
 
-  // For each session, get the first user message for context and determine outcome
-  const results = await Promise.all(visibleSessions.map(async (s: any) => {
-    const { data: transcript } = await supabase
-      .from('transcripts')
-      .select('content, role')
-      .eq('session_id', s.id)
-      .order('created_at', { ascending: true });
-    
-    const firstUserMsg = transcript?.find(m => m.role === 'user')?.content || 'No user messages yet';
-    
-    // Determine outcome
+  const sessionIds = visibleSessions.map((s: any) => s.id);
+
+  // Single bulk fetch instead of one query per session
+  const { data: allTranscripts } = await supabase
+    .from('transcripts')
+    .select('session_id, content, role')
+    .in('session_id', sessionIds)
+    .order('created_at', { ascending: true });
+
+  const transcriptsBySession = new Map<string, { content: string; role: string }[]>();
+  for (const row of allTranscripts || []) {
+    const bucket = transcriptsBySession.get(row.session_id) ?? [];
+    bucket.push(row);
+    transcriptsBySession.set(row.session_id, bucket);
+  }
+
+  const results = visibleSessions.map((s: any) => {
+    const transcript = transcriptsBySession.get(s.id) ?? [];
+    const firstUserMsg = transcript.find(m => m.role === 'user')?.content || 'No user messages yet';
+
     let outcome = s.summary || 'Enquiry';
     if (s.status === 'escalated') outcome = 'Escalated';
     if (s.status === 'needs_approval') outcome = 'Awaiting Approval';
-    if (transcript?.some(m => m.content.includes('confirmed') || m.content.includes('book_direct'))) {
+    if (transcript.some(m => m.content.includes('confirmed') || m.content.includes('book_direct'))) {
       outcome = 'Booked';
     } else if (s.status === 'completed') {
       outcome = 'Completed';
     }
 
-    return {
-      ...s,
-      context: firstUserMsg,
-      outcome
-    };
-  }));
+    return { ...s, context: firstUserMsg, outcome };
+  });
 
   return results;
 }

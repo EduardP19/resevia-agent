@@ -56,6 +56,8 @@ export default async function SessionTranscriptPage({
     page: 'dashboard/session',
   });
 
+  const isArchived = session.status !== 'active' && session.status !== 'needs_approval';
+
   return (
     <div className="max-w-3xl mx-auto">
       <PageViewTracker page="dashboard/session" session_id={params.id} tenant_id={session.salon_id} />
@@ -74,11 +76,6 @@ export default async function SessionTranscriptPage({
             </svg>
             Back
           </TrackableLink>
-
-          <div className="flex items-center gap-2 mb-1.5">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.7)]" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Live</span>
-          </div>
 
           <h2 className="text-2xl font-bold tracking-tight" style={{ color: '#271549' }}>
             Conversation
@@ -101,7 +98,7 @@ export default async function SessionTranscriptPage({
             )}
           </div>
         </div>
-        <CompleteSessionButton sessionId={params.id} />
+        <CompleteSessionButton sessionId={params.id} isArchived={isArchived} />
       </div>
 
       <ChatInterface

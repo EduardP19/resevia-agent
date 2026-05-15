@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     const mappedLogLevel = payload?.level === 'warn' ? 'warning' : payload?.level === 'info' ? 'info' : 'error';
     const hasEvent = typeof payload?.event === 'string' && payload.event.length > 0;
 
-    // Persist all events to 1_system_logs for analytics.
+    // Persist all events to system_logs for analytics.
     await logDashboardEvent({
       event: hasEvent ? payload.event : 'client_error',
       category: typeof payload?.category === 'string' ? payload.category : 'dashboard',

@@ -6,11 +6,19 @@ alter table public.business_profiles
   add column if not exists email    text,
   add column if not exists password text;
 
-update public.business_profiles bp
-set
-  email    = src.email,
-  password = src.password
-from public."1_business_profiles" src
-where bp.id = src.id;
+do $$
+begin
+  if exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = '1_business_profiles'
+  ) then
+    update public.business_profiles bp
+    set
+      email    = src.email,
+      password = src.password
+    from public."1_business_profiles" src
+    where bp.id = src.id;
 
-drop table if exists public."1_business_profiles" cascade;
+    drop table public."1_business_profiles" cascade;
+  end if;
+end $$;

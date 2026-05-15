@@ -55,6 +55,7 @@ export default function ChatInterface({
     () =>
       transcript
         .filter(msg => msg.role !== 'system')
+        .filter(msg => !(isArchived && msg.role === 'draft'))
         .filter((msg, index, messages) => {
           const previous = messages[index - 1];
           if (!previous || previous.role !== msg.role || previous.content.trim() !== msg.content.trim()) {
@@ -133,7 +134,9 @@ export default function ChatInterface({
       lastSyncedAt.current = initialTranscript[initialTranscript.length - 1].created_at;
     }
     void syncTranscript();
-    const pid = setInterval(syncTranscript, 3000);
+    const pid = setInterval(() => {
+      if (document.visibilityState !== 'hidden') syncTranscript();
+    }, 8000);
     return () => clearInterval(pid);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
@@ -403,7 +406,7 @@ export default function ChatInterface({
         >
           <div className="w-2 h-2 rounded-full bg-gray-300 flex-shrink-0" />
           <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-            Session archived — no further messages can be sent
+            This session has been ended.
           </p>
         </div>
       ) : (

@@ -4,6 +4,23 @@ import { safeLog } from '@/lib/logger';
 import { requireDashboardSessionFromRequest } from '@/lib/dashboard-auth';
 import { encrypt } from '@/lib/crypto';
 
+const profileCache = new Map<string, { data: any; expiresAt: number }>();
+const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+function getCachedProfile(tenantId: string) {
+  const entry = profileCache.get(tenantId);
+  if (entry && entry.expiresAt > Date.now()) return entry.data;
+  return null;
+}
+
+function setCachedProfile(tenantId: string, data: any) {
+  profileCache.set(tenantId, { data, expiresAt: Date.now() + PROFILE_CACHE_TTL_MS });
+}
+
+export function invalidateProfileCache(tenantId: string) {
+  profileCache.delete(tenantId);
+}
+
 const allowedProfileFields = new Set([
   'name',
   'industry',
@@ -21,11 +38,16 @@ export async function GET(req: NextRequest) {
   const auth = requireDashboardSessionFromRequest(req);
   if (auth.response) return auth.response;
 
+  const cached = getCachedProfile(auth.session.tenantId);
+  if (cached) return NextResponse.json(cached);
+
   const { data } = await supabase
     .from('business_profiles')
     .select('id, name, approval_mode')
     .eq('id', auth.session.tenantId)
     .single();
+
+  if (data) setCachedProfile(auth.session.tenantId, data);
   return NextResponse.json(data ?? {});
 }
 
@@ -44,6 +66,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     const data = await updateSalonProfile(auth.session.tenantId, safeUpdates);
+    invalidateProfileCache(auth.session.tenantId);
     safeLog({
       level: 'info',
       category: 'dashboard',
