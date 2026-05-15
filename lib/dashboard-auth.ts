@@ -162,7 +162,7 @@ function matchesStoredPassword(password: string, storedPassword: string) {
 export async function findDashboardCredential(email: string, password: string) {
   const normalizedEmail = email.trim().toLowerCase();
   const { data: dbCredential } = await supabase
-    .from('1_business_profiles')
+    .from('business_profiles')
     .select('id, email, password')
     .ilike('email', normalizedEmail)
     .maybeSingle();

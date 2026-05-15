@@ -112,7 +112,7 @@ async function sendViaResend(to: string, subject: string, html: string, text: st
 
 async function resolveOwnerEmail(salonId: string) {
   const { data: tenantProfile } = await supabase
-    .from('1_business_profiles')
+    .from('business_profiles')
     .select('email, name')
     .eq('id', salonId)
     .maybeSingle();
