@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { unstable_noStore as noStore } from 'next/cache';
 import { supabase } from '@/lib/supabase';
 import { safeLog } from '@/lib/logger';
+import { cancelDeferredNotification } from '@/lib/deferred-notifications';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -16,6 +17,9 @@ export async function GET(req: NextRequest) {
   const since = req.nextUrl.searchParams.get('since');
 
   if (!sessionId) return NextResponse.json({ messages: [] });
+
+  // Cancel any pending deferred notification — the owner has the session open.
+  void cancelDeferredNotification(sessionId).catch(() => {});
 
   const baseQuery = supabase
     .from('transcripts')

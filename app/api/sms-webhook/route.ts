@@ -20,7 +20,7 @@ import { executeToolCall, ToolContext } from '../../../lib/tool-handler';
 import { logAppError, toErrorLogPayload } from '../../../lib/error-logger';
 import { log, safeLog } from '@/lib/logger';
 import { normalizeCustomerReply } from '@/lib/reply-format';
-import { notifyOwnerConversationAttention } from '@/lib/owner-email-notifications';
+import { scheduleDeferredNotification } from '@/lib/deferred-notifications';
 import {
   formDataToRecord,
   numberOrNull,
@@ -219,7 +219,7 @@ export async function POST(req: NextRequest) {
 
       await refreshSessionSummary(conversation.id, 'needs_approval').catch(() => {});
 
-      await notifyOwnerConversationAttention({
+      await scheduleDeferredNotification({
         conversationId: conversation.id,
         salonId: salon.id,
         status: 'needs_approval',
@@ -277,7 +277,7 @@ export async function POST(req: NextRequest) {
          session_id: conversation.id,
          customer_phone: fromNumber,
        });
-       await notifyOwnerConversationAttention({
+       await scheduleDeferredNotification({
          conversationId: conversation.id,
          salonId: salon.id,
          status: 'escalated',
