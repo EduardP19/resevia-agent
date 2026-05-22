@@ -22,6 +22,13 @@ export default function LoginPage({
       : searchParams?.error
       ? 'Email or password is incorrect.'
       : null;
+  const forgotPasswordHref =
+    'mailto:eduard@resevia.co.uk?subject=' +
+    encodeURIComponent('Password reset request') +
+    '&body=' +
+    encodeURIComponent(
+      'Hi Eduard,\n\nI need help resetting my Resevia dashboard password.\n\nMy account email:\n\nThanks.'
+    );
 
   return (
     <main className="min-h-[100dvh] bg-[#f8f6fb] flex items-center justify-center px-4 py-10">
@@ -90,6 +97,13 @@ export default function LoginPage({
           >
             Log in
           </button>
+
+          <a
+            href={forgotPasswordHref}
+            className="block text-center text-sm font-medium text-[#6D28D9] hover:text-[#5B21B6] hover:underline"
+          >
+            forgot your password?
+          </a>
         </form>
       </div>
     </main>
