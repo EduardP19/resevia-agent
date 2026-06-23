@@ -1,11 +1,13 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { getAgentName } from '@/lib/agent-name';
 import { trackClientEvent } from '@/lib/client-events';
 
 interface ApprovalContextValue {
   mode: boolean | null;
   salonId: string | null;
+  agentName: string;
   saving: boolean;
   toggle: () => Promise<void>;
 }
@@ -16,13 +18,16 @@ export function ApprovalProvider({
   children,
   initialMode,
   initialSalonId,
+  initialAgentName,
 }: {
   children: ReactNode;
   initialMode?: boolean;
   initialSalonId?: string;
+  initialAgentName?: string | null;
 }) {
   const [mode, setMode] = useState<boolean | null>(initialMode ?? null);
   const [salonId, setSalonId] = useState<string | null>(initialSalonId ?? null);
+  const [agentName, setAgentName] = useState(getAgentName({ agent_name: initialAgentName }));
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -30,10 +35,24 @@ export function ApprovalProvider({
     fetch('/api/dashboard/salon')
       .then(r => r.json())
       .then(d => {
-        if (d?.id) { setSalonId(d.id); setMode(!!d.approval_mode); }
+        if (d?.id) {
+          setSalonId(d.id);
+          setMode(!!d.approval_mode);
+          setAgentName(getAgentName(d));
+        }
       })
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const handleAgentNameUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ agentName?: string | null }>).detail;
+      setAgentName(getAgentName({ agent_name: detail?.agentName }));
+    };
+
+    window.addEventListener('agent-name-updated', handleAgentNameUpdated);
+    return () => window.removeEventListener('agent-name-updated', handleAgentNameUpdated);
   }, []);
 
   const toggle = async () => {
@@ -83,7 +102,7 @@ export function ApprovalProvider({
   };
 
   return (
-    <ApprovalContext.Provider value={{ mode, salonId, saving, toggle }}>
+    <ApprovalContext.Provider value={{ mode, salonId, agentName, saving, toggle }}>
       {children}
     </ApprovalContext.Provider>
   );

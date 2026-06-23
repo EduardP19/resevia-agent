@@ -669,7 +669,7 @@ export async function getFAQs(salonId: string) {
 export async function getSalonSessions(salonId?: string, limit = 50) {
   let query = supabase
     .from('sessions')
-    .select('id, client_identifier, status, platform, created_at, updated_at, metadata, salon_id, summary, business_profiles(name)')
+    .select('id, client_identifier, status, platform, created_at, updated_at, metadata, salon_id, summary, business_profiles(name, agent_name)')
     .order('updated_at', { ascending: false })
     .limit(limit);
   
@@ -696,7 +696,7 @@ export async function getGroupedSessions(salonId?: string) {
       updated_at,
       metadata,
       salon_id,
-      business_profiles(name)
+      business_profiles(name, agent_name)
     `)
     .in('status', ['active', 'needs_approval', 'escalated'])
     .order('updated_at', { ascending: false });
@@ -755,7 +755,7 @@ export async function getHistorySessions(salonId?: string, limit = 100) {
 
   let query = supabase
     .from('sessions')
-    .select('id, client_identifier, status, platform, created_at, updated_at, metadata, salon_id, summary, business_profiles(name)')
+    .select('id, client_identifier, status, platform, created_at, updated_at, metadata, salon_id, summary, business_profiles(name, agent_name)')
     .gte('updated_at', cutoff)
     .order('updated_at', { ascending: false })
     .limit(limit);
@@ -876,7 +876,7 @@ export async function searchSessionsByPhone(phone: string, salonId?: string) {
 
   let sessionsQuery = supabase
     .from('sessions')
-    .select('id, client_identifier, created_at, status, salon_id, metadata, summary, business_profiles(name)')
+    .select('id, client_identifier, created_at, status, salon_id, metadata, summary, business_profiles(name, agent_name)')
     .in('client_identifier', matchedPhones)
     .order('created_at', { ascending: false });
 

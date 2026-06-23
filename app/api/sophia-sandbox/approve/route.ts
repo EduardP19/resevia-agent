@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
       event: 'db_error',
       error: payload.message,
       stack: payload.stack || undefined,
-      query_description: 'Approve Sophia sandbox draft',
+      query_description: 'Approve agent sandbox draft',
     });
     await logAppError({
       source: 'api.sophia-sandbox.approve',

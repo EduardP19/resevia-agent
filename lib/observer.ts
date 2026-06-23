@@ -1,15 +1,15 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { supabase, TEST_UI_TRANSCRIPTS_TABLE } from './supabase';
-import { getSalonUsage } from './token-usage';
 import { safeLog } from '@/lib/logger';
 import { ERROR_FALLBACK_REPLY } from './reply-format';
+import { getAgentName, getAgentPossessiveName } from './agent-name';
 
 /**
  * Lightweight observer / supervisor agent.
  *
  * Runs *after* the customer-facing reply has been dispatched, so it never adds
  * latency to the conversation. Every turn it applies cheap deterministic
- * heuristics (loops, repeated/failed tool calls, confusion, plan-limit). On a
+ * heuristics (loops, repeated/failed tool calls, confusion). On a
  * periodic checkpoint it also asks a small LLM for a second opinion on harder
  * signals (off-topic drift, hallucination, confusion). Findings are written to
  * the observer_flags table for owner/admin review.
@@ -21,7 +21,6 @@ export type ObserverFlagType =
   | 'tool_failure'
   | 'tool_thrash'
   | 'confusion'
-  | 'limit'
   | 'hallucination';
 
 export type ObserverSeverity = 'info' | 'warning' | 'critical';
@@ -33,6 +32,7 @@ export interface ObserverContext {
   userMessage: string;
   reply: string;
   status: string;
+  agentName?: string | null;
   toolTrace?: Array<{ name: string; result: string }>;
   toolCallCount?: number;
 }
@@ -247,13 +247,13 @@ function runHeuristics(
   return flags;
 }
 
-function buildLlmModel() {
+function buildLlmModel(agentName: string) {
   if (!genAI) return null;
   return genAI.getGenerativeModel({
     model: process.env.AI_MODEL_NAME || 'gemini-2.5-flash',
     systemInstruction:
-      'You are a QA supervisor monitoring a salon booking assistant ("Sophia") talking to a customer over SMS. ' +
-      'Sophia should only help with bookings, salon services/pricing, opening hours, and salon FAQs. ' +
+      `You are a QA supervisor monitoring a salon booking assistant ("${agentName}") talking to a customer over SMS. ` +
+      `${agentName} should only help with bookings, salon services/pricing, opening hours, and salon FAQs. ` +
       'Review the recent exchange and decide whether there is an anomaly the salon owner should review: ' +
       'a loop or repetition, confusion/self-contradiction, drifting off-topic away from salon matters, ' +
       'mishandling a failed tool call, or stating facts that look fabricated (hallucination). ' +
@@ -267,13 +267,14 @@ async function runLlmCheck(
   ctx: ObserverContext,
   recent: Array<{ role: string; content: string }>
 ): Promise<PendingFlag | null> {
-  const model = buildLlmModel();
+  const agentName = getAgentName({ agent_name: ctx.agentName });
+  const model = buildLlmModel(agentName);
   if (!model) return null;
 
   const transcript = recent
     .map(m => `${m.role.toUpperCase()}: ${m.content}`)
     .join('\n');
-  const prompt = `Recent conversation:\n${transcript}\n\nLatest customer message: ${ctx.userMessage}\nSophia's reply: ${ctx.reply}\n\nReturn the JSON verdict.`;
+  const prompt = `Recent conversation:\n${transcript}\n\nLatest customer message: ${ctx.userMessage}\n${getAgentPossessiveName(agentName)} reply: ${ctx.reply}\n\nReturn the JSON verdict.`;
 
   try {
     const result = await model.generateContent(prompt);
@@ -316,32 +317,9 @@ export async function runObserver(ctx: ObserverContext): Promise<void> {
 
     const flags = runHeuristics(ctx, recent);
 
-    // Plan-limit check (independent of the conversation content).
-    const usage = await getSalonUsage(ctx.salonId);
-    if (usage && usage.usageRatio != null) {
-      if (usage.overLimit) {
-        flags.push({
-          flagType: 'limit',
-          severity: 'critical',
-          source: 'heuristic',
-          detail: `Salon is over its monthly token limit (${usage.tokensUsedThisMonth}/${usage.monthlyTokenLimit}).`,
-          metadata: { plan: usage.plan, used: usage.tokensUsedThisMonth, limit: usage.monthlyTokenLimit },
-        });
-      } else if (usage.usageRatio >= 0.9) {
-        flags.push({
-          flagType: 'limit',
-          severity: 'warning',
-          source: 'heuristic',
-          detail: `Salon has used ${Math.round(usage.usageRatio * 100)}% of its monthly token limit.`,
-          metadata: { plan: usage.plan, used: usage.tokensUsedThisMonth, limit: usage.monthlyTokenLimit },
-        });
-      }
-    }
-
     // Periodic LLM checkpoint, only when cheap heuristics are quiet (saves cost).
-    const conversationalFlags = flags.filter(f => f.flagType !== 'limit');
     const llmEnabled = process.env.OBSERVER_LLM_DISABLED !== 'true';
-    if (llmEnabled && conversationalFlags.length === 0) {
+    if (llmEnabled && flags.length === 0) {
       const userTurns = await countUserTurns(ctx.sessionId, table);
       const isCheckpoint = userTurns >= 3 && userTurns % LLM_CHECKPOINT_EVERY === 0;
       if (isCheckpoint) {

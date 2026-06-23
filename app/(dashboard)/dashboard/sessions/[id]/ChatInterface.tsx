@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { trackClientEvent } from '@/lib/client-events';
+import { getAgentName, getAgentPossessiveName } from '@/lib/agent-name';
 
 interface Message {
   id: string;
@@ -32,12 +33,16 @@ export default function ChatInterface({
   initialTranscript,
   clientPhone,
   sessionStatus,
+  agentName: rawAgentName,
 }: {
   sessionId: string;
   initialTranscript: Message[];
   clientPhone: string;
   sessionStatus: string;
+  agentName?: string | null;
 }) {
+  const agentName = getAgentName({ agent_name: rawAgentName });
+  const agentPossessiveName = getAgentPossessiveName(agentName);
   const [transcript, setTranscript] = useState(initialTranscript);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -250,8 +255,8 @@ export default function ChatInterface({
 
   const roleLabel: Record<string, string> = {
     user: 'Client',
-    assistant: 'Sophia',
-    draft: "Sophia's Draft",
+    assistant: agentName,
+    draft: `${agentPossessiveName} Draft`,
     system: 'System',
   };
 
@@ -273,7 +278,7 @@ export default function ChatInterface({
         >
           <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
           <span className="text-xs font-black uppercase tracking-widest text-amber-700">
-            Awaiting Approval — Sophia has NOT sent this yet
+            Awaiting Approval — {agentName} has NOT sent this yet
           </span>
         </div>
       )}
@@ -350,7 +355,7 @@ export default function ChatInterface({
           <div className="flex justify-start">
             <div className="max-w-[78%]">
               <div className="text-[10px] font-bold uppercase tracking-widest mb-1 text-left text-gray-400">
-                Sophia
+                {agentName}
               </div>
               <div
                 className="rounded-2xl px-4 py-3 text-sm leading-relaxed"
@@ -395,7 +400,7 @@ export default function ChatInterface({
         >
           <div className="flex items-center justify-between px-1">
             <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-              {isReview && latestDraft ? "Sophia's Draft" : 'Send Message'}
+              {isReview && latestDraft ? `${agentPossessiveName} Draft` : 'Send Message'}
             </span>
             <span className="text-[10px] text-gray-300 font-mono hidden sm:block">⌘+Enter to send</span>
           </div>
@@ -408,7 +413,7 @@ export default function ChatInterface({
               onKeyDown={handleKeyDown}
               placeholder={
                 latestDraft
-                  ? "Edit Sophia's draft, or send as-is…"
+                  ? `Edit ${agentPossessiveName} draft, or send as-is…`
                   : 'Type a message to the client…'
               }
               className="flex-1 rounded-xl px-4 py-3 text-sm resize-none transition-all outline-none text-gray-900 scrollbar-thin"

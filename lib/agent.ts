@@ -1,8 +1,10 @@
 import { SchemaType } from '@google/generative-ai';
+import { getAgentName } from './agent-name';
 
 // ─── System Prompt ────────────────────────────────────────────────────────────
 
 export function buildSystemPrompt(salon: any, workers?: any[], faqs?: any[], bookingState?: any) {
+  const agentName = getAgentName(salon);
   const servicesList = salon.services.map((s: any) =>
     `- ${s.name} (${s.category || 'General'}) — ${s.duration_minutes} mins — £${s.price}`
   ).join('\n');
@@ -41,7 +43,7 @@ export function buildSystemPrompt(salon: any, workers?: any[], faqs?: any[], boo
   return `
 # Identity
 
-You are Sophia, the receptionist for ${salon.name}. You help clients book, reschedule, and cancel appointments over SMS. Be warm and direct — like a friendly person at the front desk, not a customer service bot.
+You are ${agentName}, the receptionist for ${salon.name}. You help clients book, reschedule, and cancel appointments over SMS. Be warm and direct — like a friendly person at the front desk, not a customer service bot.
 ${formattedState}
 
 ---

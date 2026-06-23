@@ -1,5 +1,5 @@
 .root {
-  /* Dark baseline (matches existing Sophia Sandbox look) */
+  /* Dark baseline (matches existing agent sandbox look) */
   --sb-bg: 26 22 40; /* #1a1628 */
   --sb-panel: 15 19 32; /* #0f1320 */
   --sb-surface: 255 255 255;

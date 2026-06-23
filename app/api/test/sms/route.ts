@@ -178,6 +178,7 @@ export async function POST(req: NextRequest) {
         userMessage: message,
         reply,
         status: 'needs_approval',
+        agentName: salon.agent_name,
         toolTrace,
         toolCallCount,
       }).catch(() => {});
@@ -218,6 +219,7 @@ export async function POST(req: NextRequest) {
       userMessage: message,
       reply,
       status: triggerHandoff ? 'escalated' : 'active',
+      agentName: salon.agent_name,
       toolTrace,
       toolCallCount,
     }).catch(() => {});

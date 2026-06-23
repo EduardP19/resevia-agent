@@ -7,6 +7,7 @@ import { getCachedProfile, setCachedProfile, invalidateProfileCache } from '@/li
 
 const allowedProfileFields = new Set([
   'name',
+  'agent_name',
   'industry',
   'opening_hours',
   'tone_of_voice',
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
 
   const { data } = await supabase
     .from('business_profiles')
-    .select('id, name, approval_mode')
+    .select('id, name, agent_name, approval_mode')
     .eq('id', auth.session.tenantId)
     .single();
 
@@ -47,6 +48,10 @@ export async function PATCH(req: NextRequest) {
 
     if (typeof safeUpdates.twilio_auth_token === 'string' && safeUpdates.twilio_auth_token.length > 0) {
       safeUpdates.twilio_auth_token = encrypt(safeUpdates.twilio_auth_token);
+    }
+
+    if (typeof safeUpdates.agent_name === 'string') {
+      safeUpdates.agent_name = safeUpdates.agent_name.trim() || null;
     }
 
     const data = await updateSalonProfile(auth.session.tenantId, safeUpdates);

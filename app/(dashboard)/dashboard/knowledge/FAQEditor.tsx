@@ -15,7 +15,7 @@ interface FAQ {
 const inputClass = "w-full bg-[#faf8fd] border border-[#e8e0f0] rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-300 focus:outline-none focus:border-[#6D28D9] focus:ring-2 focus:ring-[#6D28D9]/10 transition-all";
 const OTHER_CATEGORY_OPTION = '__other__';
 
-export default function FAQEditor({ initialFaqs, salonId }: { initialFaqs: FAQ[]; salonId: string }) {
+export default function FAQEditor({ initialFaqs, salonId, agentName }: { initialFaqs: FAQ[]; salonId: string; agentName: string }) {
   const categoryOptions = useMemo(() => {
     const unique = new Set(
       initialFaqs
@@ -325,7 +325,7 @@ export default function FAQEditor({ initialFaqs, salonId }: { initialFaqs: FAQ[]
                 </svg>
               </div>
               <p className="text-sm font-semibold text-gray-400 mb-1">No entries yet</p>
-              <p className="text-xs text-gray-400">Add FAQs to help Sophia answer common questions accurately.</p>
+              <p className="text-xs text-gray-400">Add FAQs to help {agentName} answer common questions accurately.</p>
             </div>
           )}
         </div>

@@ -8,7 +8,7 @@ interface ApprovalToggleProps {
 }
 
 export default function ApprovalToggle({ withDescription }: ApprovalToggleProps) {
-  const { mode, saving, toggle } = useApproval();
+  const { mode, saving, toggle, agentName } = useApproval();
 
   const isLoading = mode === null;
 
@@ -23,7 +23,7 @@ export default function ApprovalToggle({ withDescription }: ApprovalToggleProps)
         ? { background: 'rgba(109,40,217,0.1)', color: '#6D28D9', border: '1px solid rgba(109,40,217,0.25)' }
         : { background: 'rgba(52,211,153,0.1)', color: '#059669', border: '1px solid rgba(52,211,153,0.3)' }
       }
-      title={mode ? 'Manual Approval — Sophia drafts, you approve before sending' : 'Automatic Reply — Sophia sends directly to clients'}
+      title={mode ? `Manual Approval — ${agentName} drafts, you approve before sending` : `Automatic Reply — ${agentName} sends directly to clients`}
     >
       <span
         className="relative inline-flex w-7 h-4 rounded-full flex-shrink-0 transition-all duration-200"
@@ -54,8 +54,8 @@ export default function ApprovalToggle({ withDescription }: ApprovalToggleProps)
         </p>
         <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
           {mode
-            ? 'Sophia drafts — you approve before sending'
-            : 'Sophia sends directly to clients'}
+            ? `${agentName} drafts — you approve before sending`
+            : `${agentName} sends directly to clients`}
         </p>
       </div>
       {pill}

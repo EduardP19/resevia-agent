@@ -4,15 +4,16 @@ import ProfileEditor from './ProfileEditor';
 import UsageCard from './UsageCard';
 import { safeLog } from '@/lib/logger';
 import { requireDashboardSession } from '@/lib/dashboard-auth';
-import { getSalonUsage } from '@/lib/token-usage';
+import { getTenantApiSpend } from '@/lib/token-usage';
+import { getAgentName } from '@/lib/agent-name';
 
 export const revalidate = 0;
 
 export default async function SettingsPage() {
   const auth = requireDashboardSession();
-  const [{ data: salon }, usage] = await Promise.all([
+  const [{ data: salon }, spend] = await Promise.all([
     supabase.from('business_profiles').select('*').eq('id', auth.tenantId).single(),
-    getSalonUsage(auth.tenantId),
+    getTenantApiSpend(auth.tenantId),
   ]);
   safeLog({
     level: 'info',
@@ -21,6 +22,7 @@ export default async function SettingsPage() {
     tenant_id: salon?.id,
     page: 'dashboard/settings',
   });
+  const agentName = getAgentName(salon);
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -39,13 +41,13 @@ export default async function SettingsPage() {
           <h2 className="text-2xl font-bold tracking-tight" style={{ color: '#271549' }}>Settings</h2>
         </div>
         <p className="text-sm text-gray-400 ml-[42px]">
-          Customise how Sophia represents your business and handles client conversations.
+          Customise how {agentName} represents your business and handles client conversations.
         </p>
       </div>
 
       {salon ? (
         <>
-          <UsageCard usage={usage} />
+          <UsageCard spend={spend} agentName={agentName} />
           <ProfileEditor salon={salon} />
         </>
       ) : (

@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ApprovalToggle from '@/app/(dashboard)/ApprovalToggle';
 import { trackClientEvent } from '@/lib/client-events';
+import { getAgentName } from '@/lib/agent-name';
 
 const inputBase =
   'w-full bg-white border border-[#e4daf5] rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-300 focus:outline-none focus:border-[#6D28D9] focus:ring-2 focus:ring-[#6D28D9]/10 transition-all duration-150';
@@ -33,6 +34,7 @@ function FieldLabel({ children, hint }: { children: React.ReactNode; hint?: stri
 export default function ProfileEditor({ salon }: { salon: any }) {
   const [formData, setFormData] = useState({
     name: salon.name || '',
+    agent_name: salon.agent_name || '',
     tone_of_voice: salon.tone_of_voice || '',
     opening_hours: salon.opening_hours || '',
     twilio_number: salon.twilio_number || '',
@@ -40,6 +42,7 @@ export default function ProfileEditor({ salon }: { salon: any }) {
   const [isSaving, setIsSaving] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saved' | 'error'>('idle');
   const router = useRouter();
+  const agentName = getAgentName({ agent_name: formData.agent_name });
 
   const handleSave = async () => {
     trackClientEvent({ event: 'button_clicked', category: 'dashboard', action: 'settings_save' });
@@ -50,9 +53,11 @@ export default function ProfileEditor({ salon }: { salon: any }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: salon.id, ...formData }),
     });
+    const data = await res.json().catch(() => null);
     setIsSaving(false);
     if (res.ok) {
       trackClientEvent({ event: 'settings_updated', category: 'dashboard', tenant_id: salon.id, fields_changed: Object.keys(formData) });
+      window.dispatchEvent(new CustomEvent('agent-name-updated', { detail: { agentName: data?.agent_name ?? formData.agent_name } }));
       setSaveState('saved');
       router.refresh();
       setTimeout(() => setSaveState('idle'), 3000);
@@ -92,7 +97,7 @@ export default function ProfileEditor({ salon }: { salon: any }) {
           </div>
 
           <div>
-            <FieldLabel hint="The number Sophia texts from">Twilio Number</FieldLabel>
+            <FieldLabel hint={`The number ${agentName} texts from`}>Twilio Number</FieldLabel>
             <div className="relative">
               <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#6D28D9]/50 pointer-events-none">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -110,7 +115,7 @@ export default function ProfileEditor({ salon }: { salon: any }) {
           </div>
 
           <div className="md:col-span-2">
-            <FieldLabel hint="Sophia references this when answering availability questions">Opening Hours</FieldLabel>
+            <FieldLabel hint={`${agentName} references this when answering availability questions`}>Opening Hours</FieldLabel>
             <textarea
               rows={5}
               value={formData.opening_hours}
@@ -122,7 +127,7 @@ export default function ProfileEditor({ salon }: { salon: any }) {
         </div>
       </Card>
 
-      {/* ── Section 2: Sophia AI ──────────────────────────────────────── */}
+      {/* ── Section 2: Agent AI ──────────────────────────────────────── */}
       <Card>
         <CardHeader
           icon={
@@ -132,13 +137,24 @@ export default function ProfileEditor({ salon }: { salon: any }) {
               </svg>
             </SectionIcon>
           }
-          title="Sophia AI"
+          title={`${agentName} AI`}
           subtitle="Personality and response behaviour"
         />
 
         <div className="space-y-5">
           <div>
-            <FieldLabel hint="Every message Sophia sends reflects this tone — be as descriptive as you like">Tone of Voice</FieldLabel>
+            <FieldLabel hint="Leave blank to use Sophia">Agent Name</FieldLabel>
+            <input
+              type="text"
+              value={formData.agent_name}
+              onChange={e => setFormData({ ...formData, agent_name: e.target.value })}
+              className={inputBase}
+              placeholder="Sophia"
+            />
+          </div>
+
+          <div>
+            <FieldLabel hint={`Every message ${agentName} sends reflects this tone — be as descriptive as you like`}>Tone of Voice</FieldLabel>
             <textarea
               rows={4}
               value={formData.tone_of_voice}

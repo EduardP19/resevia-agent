@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
       event: 'db_error',
       error: error?.message || String(error),
       stack: error?.stack,
-      query_description: 'Expire Sophia sandbox session',
+      query_description: 'Expire agent sandbox session',
     });
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

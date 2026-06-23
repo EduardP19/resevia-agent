@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import SophiaSandboxPageClient from "./SophiaSandboxPageClient";
 
 export const metadata: Metadata = {
-  title: "Sophia Sandbox | Resevia",
+  title: "Agent Sandbox | Resevia",
   robots: {
     index: false,
     follow: false,

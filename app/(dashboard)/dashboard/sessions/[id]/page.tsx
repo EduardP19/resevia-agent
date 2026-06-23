@@ -9,6 +9,7 @@ import CompleteSessionButton from './CompleteSessionButton';
 import SessionModeToggle from './SessionModeToggle';
 import ObserverFlagsPanel from '@/app/(dashboard)/ObserverFlagsPanel';
 import { getSessionObserverFlags } from '@/lib/observer';
+import { getAgentName } from '@/lib/agent-name';
 
 export const revalidate = 0;
 
@@ -37,7 +38,7 @@ export default async function SessionTranscriptPage({
   const auth = requireDashboardSession();
   const { data: session } = await supabase
     .from('sessions')
-    .select('*, business_profiles(name, approval_mode)')
+    .select('*, business_profiles(name, approval_mode, agent_name)')
     .eq('id', params.id)
     .eq('salon_id', auth.tenantId)
     .single();
@@ -63,6 +64,7 @@ export default async function SessionTranscriptPage({
   });
 
   const isArchived = session.status !== 'active' && session.status !== 'needs_approval';
+  const agentName = getAgentName(session.business_profiles);
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -126,6 +128,7 @@ export default async function SessionTranscriptPage({
         initialTranscript={transcript}
         clientPhone={session.client_identifier}
         sessionStatus={session.status}
+        agentName={agentName}
       />
     </div>
   );

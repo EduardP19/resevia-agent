@@ -53,7 +53,7 @@ export async function GET() {
       event: 'db_error',
       error: error?.message || String(error),
       stack: error?.stack,
-      query_description: 'Sophia sandbox health default salon check',
+      query_description: 'Agent sandbox health default salon check',
     });
     checks.push({
       name: 'default_salon',
@@ -83,7 +83,7 @@ export async function GET() {
       event: 'db_error',
       error: error?.message || String(error),
       stack: error?.stack,
-      query_description: 'Sophia sandbox health transcript write check',
+      query_description: 'Agent sandbox health transcript write check',
     });
     checks.push({
       name: 'test_ui_transcripts_write_path',

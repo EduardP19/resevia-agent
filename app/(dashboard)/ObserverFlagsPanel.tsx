@@ -13,7 +13,6 @@ const TYPE_LABEL: Record<string, string> = {
   tool_failure: 'Tool failure',
   tool_thrash: 'Tool thrash',
   confusion: 'Confusion',
-  limit: 'Usage limit',
   hallucination: 'Possible hallucination',
 };
 

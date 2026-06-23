@@ -2,8 +2,8 @@
  * Manual/Auto resolution.
  *
  * The salon has a global switch (business_profiles.approval_mode):
- *   true  -> Manual Approval (Sophia drafts, owner approves before sending)
- *   false -> Automatic Reply (Sophia sends directly)
+ *   true  -> Manual Approval (the agent drafts, owner approves before sending)
+ *   false -> Automatic Reply (the agent sends directly)
  *
  * Each chat can opt out of the global setting via sessions.response_mode_override:
  *   null     -> inherit the salon default

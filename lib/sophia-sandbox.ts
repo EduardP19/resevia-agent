@@ -17,6 +17,7 @@ import { safeLog } from '@/lib/logger';
 import { addTokens, emptyTokens, recordTokenUsage } from './token-usage';
 import { runObserver } from './observer';
 import { ERROR_FALLBACK_REPLY } from './reply-format';
+import { getAgentName } from './agent-name';
 
 const MAX_TOOL_CALLS = 5;
 const AI_MODEL = process.env.AI_MODEL_NAME || 'gemini-2.5-flash';
@@ -33,6 +34,7 @@ export async function createTestUiResponse(options: {
   if (!salon) {
     throw new Error('No salon found');
   }
+  const agentName = getAgentName(salon);
 
   const conversation = await createTestUiConversation(salon.id, sessionId);
   safeLog({
@@ -126,7 +128,7 @@ export async function createTestUiResponse(options: {
     interactionTokens = addTokens(interactionTokens, aiResponse.tokens);
   }
 
-  // Internal sandbox usage is logged (channel 'sandbox') but excluded from plan billing.
+  // Internal sandbox usage is logged for diagnostics but excluded from spend monitoring.
   await recordTokenUsage({
     salonId: salon.id,
     sessionId: conversation.id,
@@ -172,6 +174,7 @@ export async function createTestUiResponse(options: {
       userMessage: message,
       reply,
       status: 'needs_approval',
+      agentName: salon.agent_name,
       toolTrace,
       toolCallCount,
     }).catch(() => {});
@@ -182,6 +185,7 @@ export async function createTestUiResponse(options: {
       status: 'needs_approval',
       sessionId: conversation.id,
       approvalMode: true,
+      agentName,
     };
   }
 
@@ -202,6 +206,7 @@ export async function createTestUiResponse(options: {
     userMessage: message,
     reply,
     status: 'active',
+    agentName: salon.agent_name,
     toolTrace,
     toolCallCount,
   }).catch(() => {});
@@ -212,6 +217,7 @@ export async function createTestUiResponse(options: {
     status: 'active',
     sessionId: conversation.id,
     approvalMode: false,
+    agentName,
   };
 }
 

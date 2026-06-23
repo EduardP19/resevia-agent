@@ -3,6 +3,7 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import Logo from "../(dashboard)/Logo";
 import styles from "./theme.module.css";
+import { getAgentName, getAgentPossessiveName } from "@/lib/agent-name";
 
 type TestMessage = {
   role: "user" | "assistant" | "waiting";
@@ -32,6 +33,7 @@ type SendResponse = {
   sessionId?: string;
   error?: string;
   approvalMode?: boolean;
+  agentName?: string;
 };
 
 type PollMessage = {
@@ -48,6 +50,7 @@ type PollResponse = {
   draft?: DraftMessage | null;
   reviewMessages?: ReviewMessage[];
   error?: string;
+  agentName?: string;
 };
 
 const TEST_UI_SESSION_KEY = "resevia_sophia_sandbox_session";
@@ -56,13 +59,6 @@ const SESSION_WARNING_MS = 2 * 60 * 1000;
 const SESSION_EXPIRY_MS = 3 * 60 * 1000;
 const SESSION_WARNING_SECONDS = Math.ceil((SESSION_EXPIRY_MS - SESSION_WARNING_MS) / 1000);
 const SCREEN_SWITCH_DELAY_MS = 650;
-const HOW_TO_STEPS = [
-  "Open Customer Screen and send a realistic client message.",
-  "If you're in Manual Approval mode, open Salon Screen and review Sophia's draft.",
-  "Edit if needed, then press Approve & Send to publish the response.",
-  "Toggle to Agent Autonomous to test fully automatic replies end-to-end.",
-];
-
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
@@ -148,6 +144,14 @@ export default function TestUiPageClient() {
   const [tParam, setTParam] = useState<string | null>(null);
   const [howToStepIndex, setHowToStepIndex] = useState(0);
   const [showSandboxSection, setShowSandboxSection] = useState(false);
+  const [agentName, setAgentName] = useState(getAgentName());
+  const agentPossessiveName = getAgentPossessiveName(agentName);
+  const howToSteps = [
+    "Open Customer Screen and send a realistic client message.",
+    `If you're in Manual Approval mode, open Salon Screen and review ${agentPossessiveName} draft.`,
+    "Edit if needed, then press Approve & Send to publish the response.",
+    "Toggle to Agent Autonomous to test fully automatic replies end-to-end.",
+  ];
 
   const hasWaiting = messages.some((message) => message.role === "waiting");
   const customerComposerLocked = sessionExpired || (manualApproval && Boolean(reviewDraft));
@@ -196,7 +200,7 @@ export default function TestUiPageClient() {
         throw new Error(payload.error || "Unable to expire the demo session.");
       }
     } catch (nextError) {
-      console.error("[Sophia Sandbox Session Expire Error]", nextError);
+      console.error("[Agent Sandbox Session Expire Error]", nextError);
     }
   }, []);
 
@@ -392,6 +396,7 @@ export default function TestUiPageClient() {
         if (!response.ok) {
           throw new Error(data.error || "Unable to sync transcript.");
         }
+        setAgentName(getAgentName({ agent_name: data.agentName }));
 
         if (sessionIdRef.current !== nextSessionId) {
           return;
@@ -676,7 +681,7 @@ export default function TestUiPageClient() {
       setError(null);
       setReviewError(null);
       setDraftStatus(
-        manualApproval ? "Sophia is drafting a reply..." : "Sophia is sending the reply..."
+        manualApproval ? `${agentName} is drafting a reply...` : `${agentName} is sending the reply...`
       );
       noteSessionActivity();
 
@@ -696,6 +701,7 @@ export default function TestUiPageClient() {
         if (!response.ok) {
           throw new Error(data.error || "Unable to send the message.");
         }
+        setAgentName(getAgentName({ agent_name: data.agentName }));
 
         const resolvedSessionId = data.sessionId || sessionId || null;
 
@@ -803,7 +809,7 @@ export default function TestUiPageClient() {
         setLoading(false);
       }
     },
-    [customerComposerLocked, input, loading, manualApproval, noteSessionActivity, tParam, sessionExpired, sessionId, syncTranscript]
+    [agentName, customerComposerLocked, input, loading, manualApproval, noteSessionActivity, tParam, sessionExpired, sessionId, syncTranscript]
   );
 
   const handleApprove = useCallback(async () => {
@@ -915,24 +921,24 @@ export default function TestUiPageClient() {
         <div className="mx-auto max-w-3xl text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-[rgb(var(--sb-purple))]/35 bg-[rgb(var(--sb-purple))]/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-[rgb(var(--sb-fg))]">
             <span className="h-2.5 w-2.5 rounded-full bg-[rgb(var(--sb-purple))]" />
-            Sophia Sandbox
+            {agentName} Sandbox
           </div>
           <h1 className="mt-6 text-4xl font-semibold tracking-tight text-[rgb(var(--sb-fg))] sm:text-5xl">
             Type as Client. <br /> Respond as Manager.
           </h1>
           <div className="mx-auto mt-4 max-w-2xl rounded-xl border border-[rgb(var(--sb-line))]/60 bg-[rgb(var(--sb-surface))] p-4 text-left shadow-[0_10px_24px_rgba(28,42,68,0.08)]">
             <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[rgb(var(--sb-subtle))]">
-              Step {howToStepIndex + 1} of {HOW_TO_STEPS.length}
+              Step {howToStepIndex + 1} of {howToSteps.length}
             </p>
             <p className="mt-2 text-sm leading-6 text-[rgb(var(--sb-fg))]">
-              {HOW_TO_STEPS[howToStepIndex]}
+              {howToSteps[howToStepIndex]}
             </p>
 
-            {howToStepIndex < HOW_TO_STEPS.length - 1 ? (
+            {howToStepIndex < howToSteps.length - 1 ? (
               <button
                 type="button"
                 onClick={() =>
-                  setHowToStepIndex((current) => Math.min(current + 1, HOW_TO_STEPS.length - 1))
+                  setHowToStepIndex((current) => Math.min(current + 1, howToSteps.length - 1))
                 }
                 className="mt-3 inline-flex items-center justify-center rounded-full bg-[rgb(var(--sb-purple))] px-4 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[rgb(var(--sb-ink))] transition hover:bg-[rgb(var(--sb-purple-strong))]"
               >
@@ -1162,7 +1168,7 @@ export default function TestUiPageClient() {
                                 style={{ animationDelay: "240ms" }}
                               />
                             </div>
-                            Sophia is waiting for approval.
+                            {agentName} is waiting for approval.
                           </div>
                         ) : (
 		                          <div
@@ -1181,7 +1187,7 @@ export default function TestUiPageClient() {
                                   isAssistant ? "text-[rgb(var(--sb-ink))]" : "text-[rgb(var(--sb-subtle))]"
                                 )}
                               >
-	                              {isAssistant ? "Sophia" : "Customer"}
+	                              {isAssistant ? agentName : "Customer"}
 	                            </p>
 	                            <p className="whitespace-pre-wrap">{message.content}</p>
 	                          </div>
@@ -1262,7 +1268,7 @@ export default function TestUiPageClient() {
                   sessionExpired
                     ? "Start a fresh demo to continue."
                     : customerComposerLocked
-                    ? "Approve Sophia's draft before sending the next message."
+                    ? `Approve ${agentPossessiveName} draft before sending the next message.`
                     : "Write as the customer..."
                 }
                 disabled={loading || isApproving || customerComposerLocked}
@@ -1365,7 +1371,7 @@ export default function TestUiPageClient() {
                               )}
                             >
                               <span>
-                                {isUser ? "Customer" : isDraft ? "Sophia draft" : "Sophia"}
+                                {isUser ? "Customer" : isDraft ? `${agentName} draft` : agentName}
                               </span>
                               <span>{formatTime(message.created_at)}</span>
                             </div>

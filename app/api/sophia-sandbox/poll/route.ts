@@ -3,6 +3,7 @@ import { unstable_noStore as noStore } from 'next/cache';
 import { supabase, TEST_UI_TRANSCRIPTS_TABLE } from '@/lib/supabase';
 import { logAppError } from '@/lib/error-logger';
 import { safeLog } from '@/lib/logger';
+import { getAgentName } from '@/lib/agent-name';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -20,6 +21,7 @@ export async function GET(req: NextRequest) {
       hasDraft: false,
       draft: null,
       reviewMessages: [],
+      agentName: getAgentName(),
     });
   }
 
@@ -41,7 +43,7 @@ export async function GET(req: NextRequest) {
       session_id: sessionId,
       error: error?.message || String(error),
       stack: error?.stack,
-      query_description: 'Poll Sophia sandbox transcript messages',
+      query_description: 'Poll agent sandbox transcript messages',
       code: error?.code,
     });
     await logAppError({
@@ -57,10 +59,17 @@ export async function GET(req: NextRequest) {
 
   const { data: session } = await supabase
     .from('sessions')
-    .select('status')
+    .select('status, salon_id')
     .eq('id', sessionId)
     .contains('metadata', { source: 'sophia-sandbox' })
     .maybeSingle();
+  const { data: salon } = session?.salon_id
+    ? await supabase
+        .from('business_profiles')
+        .select('agent_name')
+        .eq('id', session.salon_id)
+        .maybeSingle()
+    : { data: null };
 
   const { data: draftMessages } = await supabase
     .from(TEST_UI_TRANSCRIPTS_TABLE)
@@ -92,5 +101,6 @@ export async function GET(req: NextRequest) {
     hasDraft,
     draft,
     reviewMessages: (reviewMessages || []).reverse(),
+    agentName: getAgentName(salon),
   });
 }

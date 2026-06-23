@@ -8,6 +8,7 @@ import Logo from './Logo';
 import ApprovalToggle from './ApprovalToggle';
 import { ApprovalProvider } from './ApprovalContext';
 import { trackClientEvent } from '@/lib/client-events';
+import { getAgentName } from '@/lib/agent-name';
 
 const navItems = [
   {
@@ -61,6 +62,7 @@ const navItems = [
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [tenantName, setTenantName] = useState('Tenant');
+  const [agentName, setAgentName] = useState(getAgentName());
   const pathname = usePathname();
 
 
@@ -71,8 +73,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         if (typeof data?.name === 'string' && data.name.trim()) {
           setTenantName(data.name);
         }
+        setAgentName(getAgentName(data));
       })
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const handleAgentNameUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ agentName?: string | null }>).detail;
+      setAgentName(getAgentName({ agent_name: detail?.agentName }));
+    };
+
+    window.addEventListener('agent-name-updated', handleAgentNameUpdated);
+    return () => window.removeEventListener('agent-name-updated', handleAgentNameUpdated);
   }, []);
 
   return (
@@ -160,7 +173,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse flex-shrink-0 shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
             <div className="min-w-0">
               <p className="text-xs font-semibold text-white/80 truncate">{tenantName}</p>
-              <p className="text-[10px] text-white/30 uppercase tracking-widest">Sophia Online</p>
+              <p className="text-[10px] text-white/30 uppercase tracking-widest">{agentName} Online</p>
             </div>
           </div>
           <form action="/api/auth/logout" method="post" className="mt-3">

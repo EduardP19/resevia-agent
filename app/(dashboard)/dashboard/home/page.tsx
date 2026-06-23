@@ -1,10 +1,11 @@
 import AutoRefresh from '../inbox/AutoRefresh';
-import { getGroupedSessions, getHistorySessions } from '@/lib/supabase';
+import { getGroupedSessions, getHistorySessions, getSalonById } from '@/lib/supabase';
 import { safeLog } from '@/lib/logger';
 import { requireDashboardSession } from '@/lib/dashboard-auth';
 import TrackableLink from '@/app/(dashboard)/TrackableLink';
 import ObserverFlagsPanel from '@/app/(dashboard)/ObserverFlagsPanel';
 import { getRecentObserverFlags } from '@/lib/observer';
+import { getAgentName } from '@/lib/agent-name';
 
 export const revalidate = 0;
 
@@ -24,11 +25,13 @@ function formatLastActive(value: string) {
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
   const auth = requireDashboardSession();
   const { filter: filterParam } = await searchParams;
-  const [allClients, historySessions, observerFlags] = await Promise.all([
+  const [allClients, historySessions, observerFlags, salon] = await Promise.all([
     getGroupedSessions(auth.tenantId),
     getHistorySessions(auth.tenantId),
     getRecentObserverFlags(auth.tenantId, { onlyUnresolved: true, limit: 8 }),
+    getSalonById(auth.tenantId),
   ]);
+  const agentName = getAgentName(salon);
   const filter = filterParam || 'active';
   const isNeedsApprovalFilter = filter === 'approval' || filter === 'needs_approval';
   safeLog({
@@ -96,7 +99,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           <p className="text-sm text-gray-400 mt-1">
             {isNeedsApprovalFilter
               ? 'Drafts and escalations waiting for your attention.'
-              : 'Sophia is currently assisting these clients.'}
+              : `${agentName} is currently assisting these clients.`}
           </p>
         </div>
 
@@ -199,7 +202,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             </svg>
           </div>
           <p className="font-bold text-gray-400 text-xs uppercase tracking-widest mb-1">All quiet</p>
-          <p className="text-gray-400 text-sm">Sophia is standing by.</p>
+          <p className="text-gray-400 text-sm">{agentName} is standing by.</p>
         </div>
       )}
     </div>
