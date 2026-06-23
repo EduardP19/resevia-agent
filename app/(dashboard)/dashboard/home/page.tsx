@@ -8,6 +8,19 @@ import { getRecentObserverFlags } from '@/lib/observer';
 
 export const revalidate = 0;
 
+function formatLastActive(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return { date: 'Date unavailable', time: '--:--' };
+  }
+
+  return {
+    date: date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+    time: date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+  };
+}
+
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
   const auth = requireDashboardSession();
   const { filter: filterParam } = await searchParams;
@@ -102,6 +115,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <div className="space-y-3">
         {filteredClients.map((c: any) => {
           const status = getStatusConfig(c);
+          const lastActive = formatLastActive(c.updated_at);
           return (
             <TrackableLink key={c.id} href={`/dashboard/sessions/${c.id}?from=home`} className="block group" trackEvent="session_card_clicked" trackProps={{ page: 'dashboard/home', session_id: c.id, client_identifier: c.client_identifier, status: c.has_review ? 'needs_approval' : c.has_escalation ? 'escalated' : 'active' }}>
               <div
@@ -149,8 +163,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                 <div className="flex items-center justify-between md:justify-end gap-6">
                   <div className="text-right">
                     <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Last active</div>
-                    <div className="text-sm font-semibold text-gray-700">
-                      {new Date(c.updated_at).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                    <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
+                      {lastActive.date}
+                    </div>
+                    <div className="text-sm font-semibold text-gray-700 leading-tight">
+                      {lastActive.time}
                     </div>
                   </div>
                   <div

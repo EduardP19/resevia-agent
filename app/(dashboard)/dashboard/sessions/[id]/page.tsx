@@ -105,14 +105,17 @@ export default async function SessionTranscriptPage({
           </div>
         </div>
         <div className="flex flex-col items-start gap-3 md:items-end">
-          {!isArchived && (
+          {!isArchived ? (
             <SessionModeToggle
               sessionId={params.id}
               initialOverride={session.response_mode_override ?? null}
               salonApprovalMode={!!session.business_profiles?.approval_mode}
-            />
+            >
+              <CompleteSessionButton sessionId={params.id} isArchived={isArchived} />
+            </SessionModeToggle>
+          ) : (
+            <CompleteSessionButton sessionId={params.id} isArchived={isArchived} />
           )}
-          <CompleteSessionButton sessionId={params.id} isArchived={isArchived} />
         </div>
       </div>
 

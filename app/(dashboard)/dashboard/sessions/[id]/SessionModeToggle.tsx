@@ -1,25 +1,28 @@
 'use client';
 
-import { useState } from 'react';
+import { ReactNode, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { trackClientEvent } from '@/lib/client-events';
 
 type Override = 'auto' | 'manual' | null;
+type ExplicitMode = Exclude<Override, null>;
 
 /**
  * Per-chat Manual/Auto control.
  *
- * Every chat follows the salon's global setting by default ("Salon default").
- * Setting Auto or Manual here overrides the global setting for THIS chat only.
+ * The visible selection reflects the effective mode, including salon defaults.
+ * Choosing Auto or Manual stores an explicit override for this chat only.
  */
 export default function SessionModeToggle({
   sessionId,
   initialOverride,
   salonApprovalMode,
+  children,
 }: {
   sessionId: string;
   initialOverride: Override;
   salonApprovalMode: boolean;
+  children?: ReactNode;
 }) {
   const [override, setOverride] = useState<Override>(initialOverride ?? null);
   const [saving, setSaving] = useState(false);
@@ -27,16 +30,15 @@ export default function SessionModeToggle({
 
   // What the chat actually does right now.
   const effectiveManual = override === 'manual' || (override === null && salonApprovalMode);
-  const defaultLabel = salonApprovalMode ? 'Manual' : 'Auto';
+  const effectiveMode: ExplicitMode = effectiveManual ? 'manual' : 'auto';
 
-  const options: { value: Override; label: string }[] = [
-    { value: null, label: `Salon default · ${defaultLabel}` },
+  const options: { value: ExplicitMode; label: string }[] = [
     { value: 'auto', label: 'Auto' },
     { value: 'manual', label: 'Manual' },
   ];
 
-  const apply = async (next: Override) => {
-    if (saving || next === override) return;
+  const apply = async (next: ExplicitMode) => {
+    if (saving || next === effectiveMode) return;
     const previous = override;
     setOverride(next);
     setSaving(true);
@@ -45,7 +47,7 @@ export default function SessionModeToggle({
       category: 'dashboard',
       action: 'session_mode_override',
       session_id: sessionId,
-      override: next ?? 'inherit',
+      override: next,
     });
     try {
       const res = await fetch('/api/dashboard/session/mode', {
@@ -74,28 +76,32 @@ export default function SessionModeToggle({
       <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">
         This chat — {effectiveManual ? 'Manual approval' : 'Automatic reply'}
       </span>
-      <div
-        className="inline-flex items-center rounded-xl p-0.5"
-        style={{ background: 'rgba(109,40,217,0.06)', border: '1px solid rgba(109,40,217,0.12)' }}
-      >
-        {options.map(opt => {
-          const active = opt.value === override;
-          return (
-            <button
-              key={String(opt.value)}
-              onClick={() => apply(opt.value)}
-              disabled={saving}
-              className="px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all disabled:opacity-50 whitespace-nowrap"
-              style={
-                active
-                  ? { background: 'linear-gradient(135deg, #6D28D9 0%, #7C3AED 100%)', color: 'white' }
-                  : { background: 'transparent', color: '#6D28D9' }
-              }
-            >
-              {opt.label}
-            </button>
-          );
-        })}
+      <div className="flex flex-wrap items-center gap-2">
+        <div
+          className="inline-flex items-center rounded-xl p-0.5"
+          style={{ background: 'rgba(109,40,217,0.06)', border: '1px solid rgba(109,40,217,0.12)' }}
+        >
+          {options.map(opt => {
+            const active = opt.value === effectiveMode;
+            return (
+              <button
+                key={opt.value}
+                onClick={() => apply(opt.value)}
+                disabled={saving}
+                aria-pressed={active}
+                className="px-4 py-2 rounded-lg text-xs font-bold transition-all disabled:opacity-50 whitespace-nowrap"
+                style={
+                  active
+                    ? { background: 'linear-gradient(135deg, #6D28D9 0%, #7C3AED 100%)', color: 'white' }
+                    : { background: 'transparent', color: '#6D28D9' }
+                }
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        {children}
       </div>
     </div>
   );

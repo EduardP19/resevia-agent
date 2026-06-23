@@ -11,6 +11,22 @@ interface Message {
   created_at: string;
 }
 
+function formatMessageTimestamp(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Time unavailable';
+  }
+
+  return date.toLocaleString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 export default function ChatInterface({
   sessionId,
   initialTranscript,
@@ -25,7 +41,6 @@ export default function ChatInterface({
   const [transcript, setTranscript] = useState(initialTranscript);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
-  const [sendMode, setSendMode] = useState<'approve' | 'manual'>('approve');
   const [currentStatus, setCurrentStatus] = useState(sessionStatus);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -144,12 +159,12 @@ export default function ChatInterface({
   useEffect(() => {
     // Keep the composer empty after approving/sending a draft.
     // Only auto-fill when a genuinely new draft appears.
-    if (!latestDraft || sendMode !== 'approve') return;
+    if (!latestDraft) return;
     if (latestDraft.id === lastApprovedDraftIdRef.current) return;
     if (input.trim().length > 0) return;
     setInput(latestDraft.content);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [latestDraft?.id, sendMode]);
+  }, [latestDraft?.id]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -162,31 +177,19 @@ export default function ChatInterface({
     };
   }, []);
 
-  const switchToManual = () => {
-    trackClientEvent({ event: 'button_clicked', category: 'dashboard', action: 'switch_to_manual', session_id: sessionId });
-    setSendMode('manual');
-    setInput('');
-    setTimeout(() => textareaRef.current?.focus(), 50);
-  };
-  const switchToApprove = () => {
-    trackClientEvent({ event: 'button_clicked', category: 'dashboard', action: 'switch_to_approve', session_id: sessionId });
-    setSendMode('approve');
-    setInput(latestDraft?.content || '');
-    setTimeout(() => textareaRef.current?.focus(), 50);
-  };
-
   const handleSend = async () => {
     if (!input.trim() || isSending) return;
+    const messageMode = latestDraft ? 'approve' : 'manual';
     trackClientEvent({
       event: 'button_clicked',
       category: 'dashboard',
       action: 'send_message',
       session_id: sessionId,
-      mode: sendMode,
+      mode: messageMode,
       text_length: input.length,
     });
     const sentContent = input;
-    if (sendMode === 'approve' && latestDraft?.id) {
+    if (latestDraft?.id) {
       lastApprovedDraftIdRef.current = latestDraft.id;
     }
     const optimisticMsg: Message = {
@@ -199,16 +202,15 @@ export default function ChatInterface({
     setTranscript(prev => [...prev.filter(m => m.role !== 'draft'), optimisticMsg]);
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
-    setSendMode('approve');
     setIsSending(true);
     try {
       const res = await fetch('/api/dashboard/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, content: sentContent, mode: sendMode }),
+        body: JSON.stringify({ sessionId, content: sentContent, mode: messageMode }),
       });
       if (res.ok) {
-        trackClientEvent({ event: 'message_sent_from_dashboard', category: 'dashboard', session_id: sessionId, mode: sendMode });
+        trackClientEvent({ event: 'message_sent_from_dashboard', category: 'dashboard', session_id: sessionId, mode: messageMode });
         router.refresh();
       } else {
         const data = await res.json().catch(() => null);
@@ -220,7 +222,7 @@ export default function ChatInterface({
           category: 'dashboard',
           level: 'warn',
           session_id: sessionId,
-          mode: sendMode,
+          mode: messageMode,
           error: details || 'Failed to send message',
         });
         alert(details || 'Failed to send message');
@@ -233,7 +235,7 @@ export default function ChatInterface({
         category: 'dashboard',
         level: 'error',
         session_id: sessionId,
-        mode: sendMode,
+        mode: messageMode,
         error: error?.message || 'Error sending message',
       });
       alert(error?.message || 'Error sending message');
@@ -266,37 +268,13 @@ export default function ChatInterface({
       {/* Approval banner */}
       {isReview && !isArchived && (
         <div
-          className="px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between flex-shrink-0"
+          className="px-4 py-3 flex items-center gap-2 flex-shrink-0"
           style={{ background: 'rgba(245,158,11,0.07)', borderBottom: '1px solid rgba(245,158,11,0.2)' }}
         >
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-            <span className="text-xs font-black uppercase tracking-widest text-amber-700">
-              Awaiting Approval — Sophia has NOT sent this yet
-            </span>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={switchToApprove}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
-              style={sendMode === 'approve'
-                ? { background: 'linear-gradient(135deg, #6D28D9 0%, #7C3AED 100%)', color: 'white' }
-                : { background: 'white', border: '1px solid #e5e7eb', color: '#4B5563' }
-              }
-            >
-              Use Sophia's Draft
-            </button>
-            <button
-              onClick={switchToManual}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
-              style={sendMode === 'manual'
-                ? { background: '#1F2937', color: 'white' }
-                : { background: 'white', border: '1px solid #e5e7eb', color: '#4B5563' }
-              }
-            >
-              Write My Own
-            </button>
-          </div>
+          <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+          <span className="text-xs font-black uppercase tracking-widest text-amber-700">
+            Awaiting Approval — Sophia has NOT sent this yet
+          </span>
         </div>
       )}
 
@@ -306,6 +284,7 @@ export default function ChatInterface({
           const isUser = msg.role === 'user';
           const isDraft = msg.role === 'draft';
           const isSystem = msg.role === 'system';
+          const timestamp = formatMessageTimestamp(msg.created_at);
 
           if (isSystem) {
             return (
@@ -324,7 +303,10 @@ export default function ChatInterface({
             <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[78%] ${isDraft ? 'w-full max-w-[92%]' : ''}`}>
                 <div className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${isUser ? 'text-right' : 'text-left'} text-gray-400`}>
-                  {roleLabel[msg.role] || msg.role}
+                  <span>{roleLabel[msg.role] || msg.role}</span>
+                  <span suppressHydrationWarning className="font-mono font-semibold normal-case tracking-normal text-gray-300">
+                    {' '}· {timestamp}
+                  </span>
                 </div>
                 <div
                   className="rounded-2xl px-4 py-3 text-sm leading-relaxed"
@@ -359,9 +341,6 @@ export default function ChatInterface({
                     </div>
                   )}
                   <div className="whitespace-pre-wrap">{msg.content}</div>
-                  <div className={`text-[10px] mt-2 opacity-40 ${isUser ? 'text-right' : 'text-left'}`}>
-                    {new Date(msg.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                  </div>
                 </div>
               </div>
             </div>
@@ -416,7 +395,7 @@ export default function ChatInterface({
         >
           <div className="flex items-center justify-between px-1">
             <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-              {sendMode === 'manual' ? 'Manual Override' : isReview ? "Sophia's Draft" : 'Send Message'}
+              {isReview && latestDraft ? "Sophia's Draft" : 'Send Message'}
             </span>
             <span className="text-[10px] text-gray-300 font-mono hidden sm:block">⌘+Enter to send</span>
           </div>
@@ -428,9 +407,7 @@ export default function ChatInterface({
               onChange={e => { setInput(e.target.value); autoGrow(e.target); }}
               onKeyDown={handleKeyDown}
               placeholder={
-                sendMode === 'manual'
-                  ? 'Type your own message…'
-                  : latestDraft
+                latestDraft
                   ? "Edit Sophia's draft, or send as-is…"
                   : 'Type a message to the client…'
               }
@@ -452,7 +429,7 @@ export default function ChatInterface({
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
-                  <span>{sendMode === 'approve' && latestDraft ? 'Approve & Send' : 'Send'}</span>
+                  <span>{latestDraft ? 'Approve & Send' : 'Send'}</span>
                   <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
                     <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
                   </svg>
