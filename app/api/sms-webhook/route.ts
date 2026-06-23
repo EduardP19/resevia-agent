@@ -21,6 +21,9 @@ import { logAppError, toErrorLogPayload } from '../../../lib/error-logger';
 import { log, safeLog } from '@/lib/logger';
 import { normalizeCustomerReply } from '@/lib/reply-format';
 import { scheduleDeferredNotification } from '@/lib/deferred-notifications';
+import { addTokens, emptyTokens, recordTokenUsage } from '@/lib/token-usage';
+import { resolveEffectiveApprovalMode } from '@/lib/agent-mode';
+import { runObserver } from '@/lib/observer';
 import {
   formDataToRecord,
   numberOrNull,
@@ -28,6 +31,8 @@ import {
   updateTranscriptSmsMetadata,
   upsertSmsMessage,
 } from '@/lib/sms-messages';
+
+const AI_MODEL = process.env.AI_MODEL_NAME || 'gemini-2.5-flash';
 
 export async function POST(req: NextRequest) {
   try {
@@ -176,13 +181,16 @@ export async function POST(req: NextRequest) {
       history.map((h: any) => ({ role: h.role, content: h.content })),
       { tenant_id: salon.id, session_id: conversation.id }
     );
+    let interactionTokens = addTokens(emptyTokens(), aiResponse.tokens);
 
     let toolCallCount = 0;
+    const toolTrace: Array<{ name: string; result: string }> = [];
     while (aiResponse.tool_call && toolCallCount < 5) {
       toolCallCount++;
       const { name, args } = aiResponse.tool_call;
 
       const result = await executeToolCall(name, args, toolCtx, updatedBookingState);
+      toolTrace.push({ name, result: result.toolResult });
 
       if (result.updatedBookingState) updatedBookingState = result.updatedBookingState;
       if (result.updatedSystemPrompt) systemPrompt = result.updatedSystemPrompt;
@@ -194,7 +202,19 @@ export async function POST(req: NextRequest) {
         updatedHistory.map((h: any) => ({ role: h.role, content: h.content })),
         { tenant_id: salon.id, session_id: conversation.id }
       );
+      interactionTokens = addTokens(interactionTokens, aiResponse.tokens);
     }
+
+    // Log token/credit consumption for this whole inbound interaction.
+    await recordTokenUsage({
+      salonId: salon.id,
+      sessionId: conversation.id,
+      model: AI_MODEL,
+      channel: 'sms',
+      interaction: 'inbound_message',
+      tokens: interactionTokens,
+      toolCalls: toolCallCount,
+    });
 
     let reply =
       aiResponse.reply ||
@@ -202,7 +222,10 @@ export async function POST(req: NextRequest) {
     reply = normalizeCustomerReply(reply);
     const triggerHandoff = isHandoff(reply);
 
-    if (salon.approval_mode) {
+    // Per-chat Manual/Auto: the chat's own override wins, else fall back to the salon default.
+    const effectiveManual = resolveEffectiveApprovalMode(conversation, salon);
+
+    if (effectiveManual) {
       await saveMessage(conversation.id, 'draft' as any, reply);
       safeLog({
         level: 'info',
@@ -225,7 +248,18 @@ export async function POST(req: NextRequest) {
         status: 'needs_approval',
         clientPhone: conversation.client_identifier || fromNumber,
       }).catch(() => {});
-      
+
+      await runObserver({
+        salonId: salon.id,
+        sessionId: conversation.id,
+        channel: 'sms',
+        userMessage: userInput,
+        reply,
+        status: 'needs_approval',
+        toolTrace,
+        toolCallCount,
+      }).catch(() => {});
+
       return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
     }
 
@@ -284,6 +318,17 @@ export async function POST(req: NextRequest) {
          clientPhone: conversation.client_identifier || fromNumber,
        }).catch(() => {});
     }
+
+    await runObserver({
+      salonId: salon.id,
+      sessionId: conversation.id,
+      channel: 'sms',
+      userMessage: userInput,
+      reply,
+      status: triggerHandoff ? 'escalated' : 'active',
+      toolTrace,
+      toolCallCount,
+    }).catch(() => {});
 
     return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
   } catch (error: any) {

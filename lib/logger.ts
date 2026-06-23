@@ -10,7 +10,9 @@ type LogCategory =
   | 'session'
   | 'dashboard'
   | 'auth'
-  | 'system';
+  | 'system'
+  | 'observer'
+  | 'billing';
 
 export interface LogEvent {
   level: LogLevel;

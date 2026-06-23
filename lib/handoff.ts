@@ -8,7 +8,12 @@ export function isHandoff(replyText: string): boolean {
     "let me get the team to help",
     "someone will be in touch",
     "i'll pass you to a human",
-    "transfer you to support"
+    "transfer you to support",
+    // Guardrail / out-of-remit escalation phrasing used in the system prompt.
+    "pass your details to the team",
+    "pass your details on",
+    "i'll make sure someone gets back to you",
+    "best handled by the team",
   ];
 
   const lowerText = replyText.toLowerCase();

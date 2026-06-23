@@ -31,7 +31,7 @@ This skill governs all development work on the Resevia AI Receptionist agent. It
 | `get_booking_requirements` | Working | Fetches Cal.com booking fields per worker |
 | Worker routing | Working | Auto-assigns first available worker |
 | Double-booking prevention | Working | Unique index on worker_id + start_time |
-| Handoff detection | Working | Exact phrase match, marks session `handed_over` |
+| Handoff detection | Working | Substring phrase match (`lib/handoff.ts`), marks session `escalated` |
 | Multi-service price/duration | Working | Sums correctly |
 | Relative date conversion | Working | Prompt rule enforces YYYY-MM-DD |
 | Supabase persistence | Working | Sessions, transcripts, bookings all stored |
@@ -501,8 +501,9 @@ After each test suite run:
 ### Gemini
 
 - Model: `gemini-2.5-flash` (configurable via `AI_MODEL_NAME`)
-- History: `messages.slice(0, -1)` → `startChat({ history })` → `sendMessage(lastMessage)`
-- Role mapping: `assistant` → `model`, `system` → filtered out
+- Calls `generateContent` with a manually built `contents` array (NOT `startChat` — see Architecture Rule #3)
+- Tool results are stored as a `system` role message `Tool (name): result`, then converted to Gemini `functionResponse` parts in `ai.ts` (the older "[Tool Result] plain text" note is outdated)
+- Role mapping: `assistant` → `model`
 - Empty response = malformed history (check for consecutive same-role turns)
 
 ### Supabase
@@ -510,7 +511,8 @@ After each test suite run:
 - Always filter by `salon_id`
 - Service role key for all server-side calls
 - `bookings.status`: `held` → `confirmed` → `cancelled`
-- `sessions.status`: `active` → `completed` → `handed_over`
+- `sessions.status`: one of `active`, `needs_approval`, `escalated`, `expired`, `completed` (the old `review`/`handed_over` values were migrated away)
+- The customer phone column on `sessions` is **`client_identifier`** (NOT `customer_phone`)
 
 ---
 
@@ -541,6 +543,31 @@ After each test suite run:
 ## ANNEX — Session Log
 
 > This section is appended to after every development session. Never delete entries. Newest at the top.
+
+---
+
+### [2026-06-23] — Token tracking, per-chat mode, guardrails, observer agent
+
+**What changed:** Shipped five features.
+1. **Token/credit storage** — new `token_usage` ledger (one row per inbound interaction: salon, session, model, channel, prompt/completion/total, tool_calls), `business_profiles.plan` + `monthly_token_limit`, `sessions.tokens_used`/`model_used` rollups, atomic `record_token_usage()` SQL function, and a `salon_token_usage_current_month` view (excludes internal `test`/`sandbox` channels from billing). Wired into all three loops via `lib/token-usage.ts` (accumulates tokens across the whole turn, recorded once).
+2. **Per-chat Manual/Auto** — `sessions.response_mode_override` (`null`=inherit global, `auto`, `manual`). `lib/agent-mode.ts:resolveEffectiveApprovalMode()` replaced the bare `salon.approval_mode` checks. New `POST /api/dashboard/session/mode` + `SessionModeToggle` UI in the conversation header.
+3. **Guardrails** — `lib/agent.ts` system prompt now de-escalates off-topic within 1–2 turns and added a "Never make things up" section. **Fixed:** the prompt's escalation line matched no `isHandoff()` trigger, so out-of-remit replies never set status `escalated` — aligned the phrasing and broadened `lib/handoff.ts` triggers.
+4. **Observer agent** — `lib/observer.ts` runs after the reply is dispatched (zero customer latency): heuristics (tool failures, tool-thrash, confusion-fallback, verbatim loops, plan-limit) every turn + a lightweight LLM checkpoint every 3rd user turn when heuristics are quiet. Logs to new `observer_flags` table. Surfaced on the session page (in-context) and Home (cross-session, internal channels filtered out).
+5. **Usage UI** — `UsageCard` on Settings shows tokens used vs plan limit.
+
+**Why:** Feature request — usage accounting, per-conversation control, tighter on-topic guardrails, supervision, and an end-to-end test/skills review.
+
+**Files touched:** `supabase/migrations/20260623120000_token_usage_and_plan_limits.sql`, `20260623121000_session_response_mode_override.sql`, `20260623122000_observer_flags.sql` (NEW, applied to remote via `supabase db push`); `lib/token-usage.ts`, `lib/agent-mode.ts`, `lib/observer.ts` (NEW); `lib/agent.ts`, `lib/handoff.ts`, `lib/logger.ts`, `lib/reply-format.ts`, `lib/sophia-sandbox.ts`; `app/api/sms-webhook/route.ts`, `app/api/test/sms/route.ts`, `app/api/dashboard/session/mode/route.ts` (NEW); `app/(dashboard)/ObserverFlagsPanel.tsx` (NEW), `app/(dashboard)/dashboard/sessions/[id]/{page.tsx,SessionModeToggle.tsx (NEW)}`, `app/(dashboard)/dashboard/settings/{page.tsx,UsageCard.tsx (NEW)}`, `app/(dashboard)/dashboard/home/page.tsx`.
+
+**Outcome:** Pass. `tsc --noEmit` and `next build` clean. Live sandbox test verified `token_usage` rows + `sessions.tokens_used` rollup (proving the SQL function ran) and an `observer_flags` `tool_failure` row from a cancel-with-no-booking. Test artifacts deleted afterward.
+
+**Lessons learned:**
+1. Plan-limit policy is **track + warn, never block** — over-limit/≥90% raises an observer `limit` flag; the agent keeps replying so paying customers are never cut off mid-booking.
+2. The assistant reply is persisted *before* the observer runs, so the loop heuristic must require the reply text to appear ≥2 times (else it matches itself every turn).
+3. Availability `"None found."` is a normal outcome, not a tool failure — don't flag it.
+4. `business_profiles.approval_mode` exists in the live DB but in no migration (historical drift) — write new migrations defensively (`IF NOT EXISTS`, idempotent constraint drops).
+
+**Branch:** `main` (working tree; not committed)
 
 ---
 

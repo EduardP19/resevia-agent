@@ -3,15 +3,18 @@ import { getGroupedSessions, getHistorySessions } from '@/lib/supabase';
 import { safeLog } from '@/lib/logger';
 import { requireDashboardSession } from '@/lib/dashboard-auth';
 import TrackableLink from '@/app/(dashboard)/TrackableLink';
+import ObserverFlagsPanel from '@/app/(dashboard)/ObserverFlagsPanel';
+import { getRecentObserverFlags } from '@/lib/observer';
 
 export const revalidate = 0;
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
   const auth = requireDashboardSession();
   const { filter: filterParam } = await searchParams;
-  const [allClients, historySessions] = await Promise.all([
+  const [allClients, historySessions, observerFlags] = await Promise.all([
     getGroupedSessions(auth.tenantId),
     getHistorySessions(auth.tenantId),
+    getRecentObserverFlags(auth.tenantId, { onlyUnresolved: true, limit: 8 }),
   ]);
   const filter = filterParam || 'active';
   const isNeedsApprovalFilter = filter === 'approval' || filter === 'needs_approval';
@@ -93,6 +96,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           <Tab id="history" label="History" count={stats.history} active={false} href="/dashboard/history" showCount={false} />
         </div>
       </div>
+
+      {observerFlags.length > 0 && <ObserverFlagsPanel flags={observerFlags} variant="home" />}
 
       <div className="space-y-3">
         {filteredClients.map((c: any) => {

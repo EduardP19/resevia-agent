@@ -14,8 +14,12 @@ import {
   supabase
 } from './supabase';
 import { safeLog } from '@/lib/logger';
+import { addTokens, emptyTokens, recordTokenUsage } from './token-usage';
+import { runObserver } from './observer';
+import { ERROR_FALLBACK_REPLY } from './reply-format';
 
 const MAX_TOOL_CALLS = 5;
+const AI_MODEL = process.env.AI_MODEL_NAME || 'gemini-2.5-flash';
 
 export async function createTestUiResponse(options: {
   message: string;
@@ -84,13 +88,16 @@ export async function createTestUiResponse(options: {
     })),
     { tenant_id: salon.id, session_id: conversation.id }
   );
+  let interactionTokens = addTokens(emptyTokens(), aiResponse.tokens);
 
   let toolCallCount = 0;
+  const toolTrace: Array<{ name: string; result: string }> = [];
   while (aiResponse.tool_call && toolCallCount < MAX_TOOL_CALLS) {
     toolCallCount += 1;
     const { name, args } = aiResponse.tool_call;
 
     const result = await executeToolCall(name, args, toolCtx, updatedBookingState);
+    toolTrace.push({ name, result: result.toolResult });
 
     if (result.updatedBookingState) updatedBookingState = result.updatedBookingState;
     if (result.updatedSystemPrompt) systemPrompt = result.updatedSystemPrompt;
@@ -116,11 +123,22 @@ export async function createTestUiResponse(options: {
       })),
       { tenant_id: salon.id, session_id: conversation.id }
     );
+    interactionTokens = addTokens(interactionTokens, aiResponse.tokens);
   }
 
-  const reply =
-    aiResponse.reply ||
-    "I'm sorry, I ran into an issue processing your previous message. Could you please rephrase your last question?";
+  // Internal sandbox usage is logged (channel 'sandbox') but excluded from plan billing.
+  await recordTokenUsage({
+    salonId: salon.id,
+    sessionId: conversation.id,
+    model: AI_MODEL,
+    channel: 'sandbox',
+    interaction: 'inbound_message',
+    tokens: interactionTokens,
+    toolCalls: toolCallCount,
+    metadata: { source: 'sophia-sandbox' },
+  });
+
+  const reply = aiResponse.reply || ERROR_FALLBACK_REPLY;
   const nextMetadata = {
     ...conversationMetadata,
     source: 'sophia-sandbox',
@@ -147,6 +165,17 @@ export async function createTestUiResponse(options: {
       })
       .eq('id', conversation.id);
 
+    await runObserver({
+      salonId: salon.id,
+      sessionId: conversation.id,
+      channel: 'sandbox',
+      userMessage: message,
+      reply,
+      status: 'needs_approval',
+      toolTrace,
+      toolCallCount,
+    }).catch(() => {});
+
     return {
       reply,
       draft: true,
@@ -165,6 +194,17 @@ export async function createTestUiResponse(options: {
       updated_at: new Date().toISOString(),
     })
     .eq('id', conversation.id);
+
+  await runObserver({
+    salonId: salon.id,
+    sessionId: conversation.id,
+    channel: 'sandbox',
+    userMessage: message,
+    reply,
+    status: 'active',
+    toolTrace,
+    toolCallCount,
+  }).catch(() => {});
 
   return {
     reply,

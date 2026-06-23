@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { trackClientEvent } from '@/lib/client-events';
 
@@ -13,51 +13,80 @@ interface FAQ {
 }
 
 const inputClass = "w-full bg-[#faf8fd] border border-[#e8e0f0] rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-300 focus:outline-none focus:border-[#6D28D9] focus:ring-2 focus:ring-[#6D28D9]/10 transition-all";
+const OTHER_CATEGORY_OPTION = '__other__';
 
 export default function FAQEditor({ initialFaqs, salonId }: { initialFaqs: FAQ[]; salonId: string }) {
+  const categoryOptions = useMemo(() => {
+    const unique = new Set(
+      initialFaqs
+        .map((faq) => faq.category.trim())
+        .filter((category) => category.length > 0)
+    );
+    unique.add('General');
+    const sorted = Array.from(unique).sort((a, b) => a.localeCompare(b));
+    return ['General', ...sorted.filter((category) => category !== 'General')];
+  }, [initialFaqs]);
+
   const [isAdding, setIsAdding] = useState(false);
-  const [newFaq, setNewFaq] = useState({ category: 'General', question: '', answer: '' });
+  const [newFaq, setNewFaq] = useState({ question: '', answer: '' });
+  const [newCategorySelection, setNewCategorySelection] = useState('General');
+  const [newCustomCategory, setNewCustomCategory] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editData, setEditData] = useState({ category: '', question: '', answer: '' });
+  const [editData, setEditData] = useState({ question: '', answer: '' });
+  const [editCategorySelection, setEditCategorySelection] = useState('');
+  const [editCustomCategory, setEditCustomCategory] = useState('');
   const [saving, setSaving] = useState(false);
   const router = useRouter();
 
+  const resolveCategory = (selection: string, customCategory: string) =>
+    selection === OTHER_CATEGORY_OPTION ? customCategory.trim() : selection.trim();
+
   const handleAdd = async () => {
-    if (!newFaq.question.trim() || !newFaq.answer.trim()) return;
+    const resolvedCategory = resolveCategory(newCategorySelection, newCustomCategory);
+    if (!newFaq.question.trim() || !newFaq.answer.trim() || !resolvedCategory) return;
     trackClientEvent({ event: 'button_clicked', category: 'dashboard', action: 'faq_add_submit', tenant_id: salonId });
     setSaving(true);
     const res = await fetch('/api/dashboard/faqs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...newFaq, salon_id: salonId }),
+      body: JSON.stringify({ ...newFaq, category: resolvedCategory, salon_id: salonId }),
     });
     setSaving(false);
     if (res.ok) {
       trackClientEvent({ event: 'settings_updated', category: 'dashboard', tenant_id: salonId, fields_changed: ['faq_created'] });
       setIsAdding(false);
-      setNewFaq({ category: 'General', question: '', answer: '' });
+      setNewFaq({ question: '', answer: '' });
+      setNewCategorySelection('General');
+      setNewCustomCategory('');
       router.refresh();
     }
   };
 
   const startEdit = (faq: FAQ) => {
     setEditingId(faq.id);
-    setEditData({ category: faq.category, question: faq.question, answer: faq.answer });
+    const trimmedCategory = faq.category.trim();
+    const isCurrentCategory = categoryOptions.includes(trimmedCategory);
+    setEditCategorySelection(isCurrentCategory ? trimmedCategory : OTHER_CATEGORY_OPTION);
+    setEditCustomCategory(isCurrentCategory ? '' : trimmedCategory);
+    setEditData({ question: faq.question, answer: faq.answer });
   };
 
   const handleUpdate = async () => {
-    if (!editData.question.trim() || !editData.answer.trim() || !editingId) return;
+    const resolvedCategory = resolveCategory(editCategorySelection, editCustomCategory);
+    if (!editData.question.trim() || !editData.answer.trim() || !editingId || !resolvedCategory) return;
     trackClientEvent({ event: 'button_clicked', category: 'dashboard', action: 'faq_update_submit', tenant_id: salonId });
     setSaving(true);
     const res = await fetch('/api/dashboard/faqs', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: editingId, ...editData }),
+      body: JSON.stringify({ id: editingId, ...editData, category: resolvedCategory }),
     });
     setSaving(false);
     if (res.ok) {
       trackClientEvent({ event: 'settings_updated', category: 'dashboard', tenant_id: salonId, fields_changed: ['faq_updated'] });
       setEditingId(null);
+      setEditCategorySelection('');
+      setEditCustomCategory('');
       router.refresh();
     }
   };
@@ -105,12 +134,29 @@ export default function FAQEditor({ initialFaqs, salonId }: { initialFaqs: FAQ[]
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Category</label>
-              <input
-                type="text"
-                value={newFaq.category}
-                onChange={e => setNewFaq({ ...newFaq, category: e.target.value })}
-                className={inputClass}
-              />
+              <div className="space-y-2">
+                <select
+                  value={newCategorySelection}
+                  onChange={(e) => setNewCategorySelection(e.target.value)}
+                  className={inputClass}
+                >
+                  {categoryOptions.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                  <option value={OTHER_CATEGORY_OPTION}>Other</option>
+                </select>
+                {newCategorySelection === OTHER_CATEGORY_OPTION && (
+                  <input
+                    type="text"
+                    placeholder="Enter new category"
+                    value={newCustomCategory}
+                    onChange={(e) => setNewCustomCategory(e.target.value)}
+                    className={inputClass}
+                  />
+                )}
+              </div>
             </div>
             <div>
               <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Question</label>
@@ -133,7 +179,11 @@ export default function FAQEditor({ initialFaqs, salonId }: { initialFaqs: FAQ[]
           </div>
           <div className="flex justify-end gap-3 pt-1">
             <button
-              onClick={() => setIsAdding(false)}
+              onClick={() => {
+                setIsAdding(false);
+                setNewCategorySelection('General');
+                setNewCustomCategory('');
+              }}
               className="px-4 py-2 text-sm font-semibold text-gray-500 hover:text-gray-700 transition-colors"
             >
               Cancel
@@ -163,12 +213,29 @@ export default function FAQEditor({ initialFaqs, salonId }: { initialFaqs: FAQ[]
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Category</label>
-                      <input
-                        type="text"
-                        value={editData.category}
-                        onChange={e => setEditData({ ...editData, category: e.target.value })}
-                        className={inputClass}
-                      />
+                      <div className="space-y-2">
+                        <select
+                          value={editCategorySelection}
+                          onChange={(e) => setEditCategorySelection(e.target.value)}
+                          className={inputClass}
+                        >
+                          {categoryOptions.map((category) => (
+                            <option key={category} value={category}>
+                              {category}
+                            </option>
+                          ))}
+                          <option value={OTHER_CATEGORY_OPTION}>Other</option>
+                        </select>
+                        {editCategorySelection === OTHER_CATEGORY_OPTION && (
+                          <input
+                            type="text"
+                            placeholder="Enter new category"
+                            value={editCustomCategory}
+                            onChange={(e) => setEditCustomCategory(e.target.value)}
+                            className={inputClass}
+                          />
+                        )}
+                      </div>
                     </div>
                     <div>
                       <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Question</label>
@@ -190,7 +257,14 @@ export default function FAQEditor({ initialFaqs, salonId }: { initialFaqs: FAQ[]
                     />
                   </div>
                   <div className="flex justify-end gap-3">
-                    <button onClick={() => setEditingId(null)} className="px-4 py-2 text-sm font-semibold text-gray-500 hover:text-gray-700 transition-colors">
+                    <button
+                      onClick={() => {
+                        setEditingId(null);
+                        setEditCategorySelection('');
+                        setEditCustomCategory('');
+                      }}
+                      className="px-4 py-2 text-sm font-semibold text-gray-500 hover:text-gray-700 transition-colors"
+                    >
                       Cancel
                     </button>
                     <button

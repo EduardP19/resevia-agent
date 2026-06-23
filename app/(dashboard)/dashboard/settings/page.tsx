@@ -1,14 +1,19 @@
 import React from 'react';
 import { supabase } from '@/lib/supabase';
 import ProfileEditor from './ProfileEditor';
+import UsageCard from './UsageCard';
 import { safeLog } from '@/lib/logger';
 import { requireDashboardSession } from '@/lib/dashboard-auth';
+import { getSalonUsage } from '@/lib/token-usage';
 
 export const revalidate = 0;
 
 export default async function SettingsPage() {
   const auth = requireDashboardSession();
-  const { data: salon } = await supabase.from('business_profiles').select('*').eq('id', auth.tenantId).single();
+  const [{ data: salon }, usage] = await Promise.all([
+    supabase.from('business_profiles').select('*').eq('id', auth.tenantId).single(),
+    getSalonUsage(auth.tenantId),
+  ]);
   safeLog({
     level: 'info',
     category: 'dashboard',
@@ -18,17 +23,36 @@ export default async function SettingsPage() {
   });
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-2xl mx-auto">
+      {/* Page header */}
       <div className="mb-8">
-        <h2 className="text-3xl font-bold tracking-tight" style={{ color: '#271549' }}>Settings</h2>
-        <p className="text-sm text-gray-400 mt-1">Configure your AI agent's personality and business rules.</p>
+        <div className="flex items-center gap-2.5 mb-1">
+          <span
+            className="inline-flex items-center justify-center w-8 h-8 rounded-xl"
+            style={{ background: 'linear-gradient(135deg, #6D28D9 0%, #C9A96E 100%)' }}
+          >
+            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </span>
+          <h2 className="text-2xl font-bold tracking-tight" style={{ color: '#271549' }}>Settings</h2>
+        </div>
+        <p className="text-sm text-gray-400 ml-[42px]">
+          Customise how Sophia represents your business and handles client conversations.
+        </p>
       </div>
 
       {salon ? (
-        <ProfileEditor salon={salon} />
+        <>
+          <UsageCard usage={usage} />
+          <ProfileEditor salon={salon} />
+        </>
       ) : (
-        <div className="p-12 text-center bg-white rounded-2xl text-gray-400"
-          style={{ border: '2px dashed rgba(109,40,217,0.15)' }}>
+        <div
+          className="p-12 text-center bg-white rounded-2xl text-gray-400"
+          style={{ border: '2px dashed rgba(109,40,217,0.15)' }}
+        >
           No salon profile found.
         </div>
       )}

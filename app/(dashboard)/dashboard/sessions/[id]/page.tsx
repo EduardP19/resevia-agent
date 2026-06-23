@@ -6,6 +6,9 @@ import { requireDashboardSession } from '@/lib/dashboard-auth';
 import PageViewTracker from '@/app/(dashboard)/PageViewTracker';
 import TrackableLink from '@/app/(dashboard)/TrackableLink';
 import CompleteSessionButton from './CompleteSessionButton';
+import SessionModeToggle from './SessionModeToggle';
+import ObserverFlagsPanel from '@/app/(dashboard)/ObserverFlagsPanel';
+import { getSessionObserverFlags } from '@/lib/observer';
 
 export const revalidate = 0;
 
@@ -34,7 +37,7 @@ export default async function SessionTranscriptPage({
   const auth = requireDashboardSession();
   const { data: session } = await supabase
     .from('sessions')
-    .select('*, business_profiles(name)')
+    .select('*, business_profiles(name, approval_mode)')
     .eq('id', params.id)
     .eq('salon_id', auth.tenantId)
     .single();
@@ -45,7 +48,10 @@ export default async function SessionTranscriptPage({
   const queryPhone = typeof searchParams?.phone === 'string' ? searchParams.phone : undefined;
   const backHref = resolveBackDestination(source, session.client_identifier, queryPhone);
 
-  const transcript = await getSessionTranscript(params.id);
+  const [transcript, observerFlags] = await Promise.all([
+    getSessionTranscript(params.id),
+    getSessionObserverFlags(params.id),
+  ]);
   const isReview = session.status === 'needs_approval' || transcript.some((m: any) => m.role === 'draft');
   safeLog({
     level: 'info',
@@ -98,8 +104,19 @@ export default async function SessionTranscriptPage({
             )}
           </div>
         </div>
-        <CompleteSessionButton sessionId={params.id} isArchived={isArchived} />
+        <div className="flex flex-col items-start gap-3 md:items-end">
+          {!isArchived && (
+            <SessionModeToggle
+              sessionId={params.id}
+              initialOverride={session.response_mode_override ?? null}
+              salonApprovalMode={!!session.business_profiles?.approval_mode}
+            />
+          )}
+          <CompleteSessionButton sessionId={params.id} isArchived={isArchived} />
+        </div>
       </div>
+
+      <ObserverFlagsPanel flags={observerFlags} variant="session" />
 
       <ChatInterface
         sessionId={params.id}

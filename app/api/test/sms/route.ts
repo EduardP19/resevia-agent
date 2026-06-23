@@ -17,8 +17,13 @@ import { isHandoff } from '../../../../lib/handoff';
 import { executeToolCall, ToolContext } from '../../../../lib/tool-handler';
 import { logAppError, toErrorLogPayload } from '../../../../lib/error-logger';
 import { log, safeLog } from '@/lib/logger';
-import { normalizeCustomerReply } from '@/lib/reply-format';
+import { ERROR_FALLBACK_REPLY, normalizeCustomerReply } from '@/lib/reply-format';
 import { scheduleDeferredNotification } from '@/lib/deferred-notifications';
+import { addTokens, emptyTokens, recordTokenUsage } from '@/lib/token-usage';
+import { resolveEffectiveApprovalMode } from '@/lib/agent-mode';
+import { runObserver } from '@/lib/observer';
+
+const AI_MODEL = process.env.AI_MODEL_NAME || 'gemini-2.5-flash';
 
 // Same logic as /api/sms-webhook but returns JSON instead of sending via Twilio
 export async function POST(req: NextRequest) {
@@ -102,13 +107,16 @@ export async function POST(req: NextRequest) {
       history.map((h: any) => ({ role: h.role, content: h.content })),
       { tenant_id: salon.id, session_id: conversation.id }
     );
- 
+    let interactionTokens = addTokens(emptyTokens(), aiResponse.tokens);
+
     let toolCallCount = 0;
+    const toolTrace: Array<{ name: string; result: string }> = [];
     while (aiResponse.tool_call && toolCallCount < 5) {
       toolCallCount++;
       const { name, args } = aiResponse.tool_call;
 
       const result = await executeToolCall(name, args, toolCtx, updatedBookingState);
+      toolTrace.push({ name, result: result.toolResult });
 
       if (result.updatedBookingState) updatedBookingState = result.updatedBookingState;
       if (result.updatedSystemPrompt) systemPrompt = result.updatedSystemPrompt;
@@ -120,15 +128,26 @@ export async function POST(req: NextRequest) {
         updatedHistory.map((h: any) => ({ role: h.role, content: h.content })),
         { tenant_id: salon.id, session_id: conversation.id }
       );
+      interactionTokens = addTokens(interactionTokens, aiResponse.tokens);
     }
 
-    let reply =
-      aiResponse.reply ||
-      "I'm sorry, I ran into an issue processing your previous message. Could you please rephrase your last question?";
+    await recordTokenUsage({
+      salonId: salon.id,
+      sessionId: conversation.id,
+      model: AI_MODEL,
+      channel: 'test',
+      interaction: 'inbound_message',
+      tokens: interactionTokens,
+      toolCalls: toolCallCount,
+    });
+
+    let reply = aiResponse.reply || ERROR_FALLBACK_REPLY;
     reply = normalizeCustomerReply(reply);
     const triggerHandoff = isHandoff(reply);
 
-    if (salon.approval_mode) {
+    const effectiveManual = resolveEffectiveApprovalMode(conversation, salon);
+
+    if (effectiveManual) {
       await saveMessage(conversation.id, 'draft' as any, reply);
       safeLog({
         level: 'info',
@@ -150,6 +169,17 @@ export async function POST(req: NextRequest) {
         salonId: salon.id,
         status: 'needs_approval',
         clientPhone: conversation.client_identifier || from,
+      }).catch(() => {});
+
+      await runObserver({
+        salonId: salon.id,
+        sessionId: conversation.id,
+        channel: 'test',
+        userMessage: message,
+        reply,
+        status: 'needs_approval',
+        toolTrace,
+        toolCallCount,
       }).catch(() => {});
 
       return NextResponse.json({ reply, draft: true, status: 'needs_approval', sessionId: conversation.id });
@@ -180,6 +210,17 @@ export async function POST(req: NextRequest) {
          clientPhone: conversation.client_identifier || from,
        }).catch(() => {});
     }
+
+    await runObserver({
+      salonId: salon.id,
+      sessionId: conversation.id,
+      channel: 'test',
+      userMessage: message,
+      reply,
+      status: triggerHandoff ? 'escalated' : 'active',
+      toolTrace,
+      toolCallCount,
+    }).catch(() => {});
 
     return NextResponse.json({ reply, handoff: triggerHandoff, sessionId: conversation.id });
   } catch (error: any) {
