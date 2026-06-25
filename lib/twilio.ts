@@ -7,8 +7,12 @@ import { decrypt } from '@/lib/crypto';
 const globalAccountSid = process.env.TWILIO_ACCOUNT_SID;
 const globalAuthToken = process.env.TWILIO_AUTH_TOKEN;
 const fallbackFromNumber = process.env.TWILIO_PHONE_NUMBER || process.env.TWILIO_PHONE;
+const fallbackWhatsAppNumber = process.env.TWILIO_WHATSAPP_NUMBER || null;
+const whatsAppTemplateSid = process.env.TWILIO_WHATSAPP_TEMPLATE_SID || null;
 
 const globalClient = (globalAccountSid && globalAuthToken) ? twilio(globalAccountSid, globalAuthToken) : null;
+
+export type MessageChannel = 'sms' | 'whatsapp';
 
 type SMSLogContext = {
   tenant_id?: string;
@@ -18,9 +22,24 @@ type SMSLogContext = {
 
 type BusinessTwilioCredentials = {
   twilio_number?: string | null;
+  whatsapp_number?: string | null;
   twilio_account_sid?: string | null;
   twilio_auth_token?: string | null;
 };
+
+const WHATSAPP_PREFIX = 'whatsapp:';
+
+/** Ensure a number carries the `whatsapp:` channel prefix Twilio requires. */
+export function toWhatsAppAddress(number: string): string {
+  const trimmed = (number || '').trim();
+  return trimmed.startsWith(WHATSAPP_PREFIX) ? trimmed : `${WHATSAPP_PREFIX}${trimmed}`;
+}
+
+/** Strip the `whatsapp:` prefix Twilio adds to inbound From/To values. */
+export function stripWhatsAppPrefix(number: string): string {
+  const trimmed = (number || '').trim();
+  return trimmed.startsWith(WHATSAPP_PREFIX) ? trimmed.slice(WHATSAPP_PREFIX.length) : trimmed;
+}
 
 function getClientForCredentials(creds: BusinessTwilioCredentials): ReturnType<typeof twilio> | null {
   if (creds.twilio_account_sid && creds.twilio_auth_token) {
@@ -37,8 +56,11 @@ function getClientForCredentials(creds: BusinessTwilioCredentials): ReturnType<t
 }
 
 async function resolveClientAndFromNumber(
-  context: SMSLogContext
+  context: SMSLogContext,
+  channel: MessageChannel = 'sms'
 ): Promise<{ client: ReturnType<typeof twilio> | null; fromNumber: string | null }> {
+  const fallbackSender = channel === 'whatsapp' ? fallbackWhatsAppNumber : fallbackFromNumber;
+
   if (context.fromNumber && !context.tenant_id) {
     return { client: globalClient, fromNumber: context.fromNumber };
   }
@@ -46,16 +68,17 @@ async function resolveClientAndFromNumber(
   if (context.tenant_id) {
     const { data } = await supabase
       .from('business_profiles')
-      .select('twilio_number, twilio_account_sid, twilio_auth_token')
+      .select('twilio_number, whatsapp_number, twilio_account_sid, twilio_auth_token')
       .eq('id', context.tenant_id)
       .maybeSingle();
 
     const perBusinessClient = data ? getClientForCredentials(data) : null;
-    const fromNumber = context.fromNumber || data?.twilio_number || fallbackFromNumber || null;
+    const tenantSender = channel === 'whatsapp' ? data?.whatsapp_number : data?.twilio_number;
+    const fromNumber = context.fromNumber || tenantSender || fallbackSender || null;
     return { client: perBusinessClient ?? globalClient, fromNumber };
   }
 
-  return { client: globalClient, fromNumber: context.fromNumber || fallbackFromNumber || null };
+  return { client: globalClient, fromNumber: context.fromNumber || fallbackSender || null };
 }
 
 export async function sendSMS(
@@ -128,6 +151,162 @@ export async function sendSMS(
     });
     throw error;
   }
+}
+
+/**
+ * Send a free-form WhatsApp message. Only valid inside the 24h customer-service
+ * window (i.e. after the customer has messaged us). For business-initiated
+ * outreach use {@link sendWhatsAppTemplate} instead.
+ */
+export async function sendWhatsAppMessage(
+  to: string,
+  body: string,
+  statusCallbackUrl?: string,
+  context: SMSLogContext = {}
+): Promise<any> {
+  const { client, fromNumber } = await resolveClientAndFromNumber(context, 'whatsapp');
+
+  if (!client) {
+    throw new Error('[Twilio] Not configured. Missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN.');
+  }
+  if (!fromNumber) {
+    throw new Error('[Twilio] Missing WhatsApp sender. Set business_profiles.whatsapp_number for tenant or TWILIO_WHATSAPP_NUMBER fallback.');
+  }
+
+  try {
+    const message = await client.messages.create({
+      body,
+      from: toWhatsAppAddress(fromNumber),
+      to: toWhatsAppAddress(to),
+      ...(statusCallbackUrl ? { statusCallback: statusCallbackUrl } : {}),
+    });
+    await log({
+      level: 'info',
+      category: 'sms',
+      event: 'whatsapp_sent',
+      to,
+      body,
+      tenant_id: context.tenant_id,
+      session_id: context.session_id,
+      twilio_message_sid: message.sid,
+      sms_status: message.status || null,
+    });
+    return message;
+  } catch (error: any) {
+    await log({
+      level: 'error',
+      category: 'sms',
+      event: 'whatsapp_failed',
+      to,
+      body,
+      tenant_id: context.tenant_id,
+      session_id: context.session_id,
+      error: error?.message || String(error),
+      stack: error?.stack,
+      code: error?.code || null,
+    });
+    const payload = toErrorLogPayload(error, 'Twilio WhatsApp send failed');
+    await logAppError({
+      source: 'lib.twilio.sendWhatsAppMessage',
+      message: payload.message,
+      level: 'error',
+      stack: payload.stack || undefined,
+      session_id: context.session_id,
+      salon_id: context.tenant_id,
+      context: { to, fromNumber, twilio_code: error?.code || null, twilio_status: error?.status || null },
+      runtime: 'server',
+    });
+    throw error;
+  }
+}
+
+/**
+ * Send a business-initiated WhatsApp message using a pre-approved Content
+ * template. Required for outreach outside the 24h window. `contentSid` falls
+ * back to the TWILIO_WHATSAPP_TEMPLATE_SID env var (single-template MVP).
+ */
+export async function sendWhatsAppTemplate(
+  to: string,
+  options: { contentSid?: string; contentVariables?: Record<string, string>; statusCallbackUrl?: string } = {},
+  context: SMSLogContext = {}
+): Promise<any> {
+  const contentSid = options.contentSid || whatsAppTemplateSid;
+  if (!contentSid) {
+    throw new Error('[Twilio] Missing WhatsApp template. Set TWILIO_WHATSAPP_TEMPLATE_SID or pass contentSid.');
+  }
+
+  const { client, fromNumber } = await resolveClientAndFromNumber(context, 'whatsapp');
+  if (!client) {
+    throw new Error('[Twilio] Not configured. Missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN.');
+  }
+  if (!fromNumber) {
+    throw new Error('[Twilio] Missing WhatsApp sender. Set business_profiles.whatsapp_number for tenant or TWILIO_WHATSAPP_NUMBER fallback.');
+  }
+
+  try {
+    const message = await client.messages.create({
+      from: toWhatsAppAddress(fromNumber),
+      to: toWhatsAppAddress(to),
+      contentSid,
+      ...(options.contentVariables ? { contentVariables: JSON.stringify(options.contentVariables) } : {}),
+      ...(options.statusCallbackUrl ? { statusCallback: options.statusCallbackUrl } : {}),
+    });
+    await log({
+      level: 'info',
+      category: 'sms',
+      event: 'whatsapp_template_sent',
+      to,
+      tenant_id: context.tenant_id,
+      session_id: context.session_id,
+      twilio_message_sid: message.sid,
+      sms_status: message.status || null,
+      template_sid: contentSid,
+    });
+    return message;
+  } catch (error: any) {
+    await log({
+      level: 'error',
+      category: 'sms',
+      event: 'whatsapp_template_failed',
+      to,
+      tenant_id: context.tenant_id,
+      session_id: context.session_id,
+      error: error?.message || String(error),
+      stack: error?.stack,
+      code: error?.code || null,
+      template_sid: contentSid,
+    });
+    const payload = toErrorLogPayload(error, 'Twilio WhatsApp template send failed');
+    await logAppError({
+      source: 'lib.twilio.sendWhatsAppTemplate',
+      message: payload.message,
+      level: 'error',
+      stack: payload.stack || undefined,
+      session_id: context.session_id,
+      salon_id: context.tenant_id,
+      context: { to, fromNumber, contentSid, twilio_code: error?.code || null, twilio_status: error?.status || null },
+      runtime: 'server',
+    });
+    throw error;
+  }
+}
+
+/**
+ * Channel dispatcher for free-form conversational replies (auto reply,
+ * approved draft, manual takeover). Templates are NOT routed here — those go
+ * through {@link sendWhatsAppTemplate} at initiation time only.
+ */
+export async function sendOnChannel(
+  channel: MessageChannel,
+  to: string,
+  body: string,
+  statusCallbackUrl?: string,
+  context: SMSLogContext = {}
+): Promise<any> {
+  if (channel === 'whatsapp') {
+    return sendWhatsAppMessage(to, body, statusCallbackUrl, context);
+  }
+  return sendSMS(to, body, statusCallbackUrl, context);
 }
 
 export async function getSMSMessage(messageSid: string): Promise<any> {

@@ -28,7 +28,7 @@ export type ObserverSeverity = 'info' | 'warning' | 'critical';
 export interface ObserverContext {
   salonId: string;
   sessionId: string;
-  channel: 'sms' | 'voice' | 'web' | 'test' | 'sandbox';
+  channel: 'sms' | 'whatsapp' | 'voice' | 'web' | 'test' | 'sandbox';
   userMessage: string;
   reply: string;
   status: string;

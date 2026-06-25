@@ -3,6 +3,7 @@ import { getGroupedSessions, getHistorySessions, getSalonById } from '@/lib/supa
 import { safeLog } from '@/lib/logger';
 import { requireDashboardSession } from '@/lib/dashboard-auth';
 import TrackableLink from '@/app/(dashboard)/TrackableLink';
+import InitiateConversation from '@/app/(dashboard)/InitiateConversation';
 import ObserverFlagsPanel from '@/app/(dashboard)/ObserverFlagsPanel';
 import { getRecentObserverFlags } from '@/lib/observer';
 import { getAgentName } from '@/lib/agent-name';
@@ -103,13 +104,16 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           </p>
         </div>
 
-        <div
-          className="bg-white p-1.5 rounded-2xl flex flex-wrap gap-1"
-          style={{ boxShadow: '0 2px 16px rgba(109,40,217,0.08)', border: '1px solid rgba(109,40,217,0.1)' }}
-        >
-          <Tab id="active" label="Active" count={stats.active} active={!isNeedsApprovalFilter} href="/dashboard/home?filter=active" />
-          <Tab id="needs_approval" label="Needs Approval" count={stats.needs_approval} active={isNeedsApprovalFilter} href="/dashboard/home?filter=needs_approval" />
-          <Tab id="history" label="History" count={stats.history} active={false} href="/dashboard/history" showCount={false} />
+        <div className="flex flex-wrap items-center gap-3">
+          <InitiateConversation whatsappEnabled={!!salon?.whatsapp_number} />
+          <div
+            className="bg-white p-1.5 rounded-2xl flex flex-wrap gap-1"
+            style={{ boxShadow: '0 2px 16px rgba(109,40,217,0.08)', border: '1px solid rgba(109,40,217,0.1)' }}
+          >
+            <Tab id="active" label="Active" count={stats.active} active={!isNeedsApprovalFilter} href="/dashboard/home?filter=active" />
+            <Tab id="needs_approval" label="Needs Approval" count={stats.needs_approval} active={isNeedsApprovalFilter} href="/dashboard/home?filter=needs_approval" />
+            <Tab id="history" label="History" count={stats.history} active={false} href="/dashboard/history" showCount={false} />
+          </div>
         </div>
       </div>
 

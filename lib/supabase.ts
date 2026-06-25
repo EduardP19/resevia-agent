@@ -71,7 +71,7 @@ export async function getSalonBySmsNumber(smsNumber: string) {
     .select('*')
     .eq('twilio_number', smsNumber) // Used to be 'sms_number'
     .single();
-  
+
   if (error) {
     // Fallback for MVP: return the first salon if twilio_number isn't set
     const { data: firstSalon } = await supabase.from('business_profiles').select('*').limit(1).single();
@@ -80,8 +80,30 @@ export async function getSalonBySmsNumber(smsNumber: string) {
   return data;
 }
 
+export async function getSalonByWhatsAppNumber(whatsappNumber: string) {
+  // Twilio inbound carries the `whatsapp:` prefix; strip it before matching.
+  const normalized = (whatsappNumber || '').replace(/^whatsapp:/, '').trim();
+  const { data, error } = await supabase
+    .from('business_profiles')
+    .select('*')
+    .eq('whatsapp_number', normalized)
+    .single();
+
+  if (error) {
+    // Fallback for MVP: first salon if whatsapp_number isn't configured.
+    const { data: firstSalon } = await supabase.from('business_profiles').select('*').limit(1).single();
+    return firstSalon;
+  }
+  return data;
+}
+
 // Load or create conversation for a customer
-export async function getOrCreateConversation(salonId: string, customerPhone: string, sessionId?: string) {
+export async function getOrCreateConversation(
+  salonId: string,
+  customerPhone: string,
+  sessionId?: string,
+  channel: 'sms' | 'whatsapp' = 'sms'
+) {
   let query = supabase.from('sessions').select('*');
 
   if (sessionId) {
@@ -106,7 +128,8 @@ export async function getOrCreateConversation(salonId: string, customerPhone: st
     const { data: newData, error: nsError } = await supabase
       .from('sessions')
       .insert({
-        platform: 'sms',
+        platform: channel,
+        channel,
         salon_id: salonId,
         client_identifier: customerPhone,
         status: 'active',
@@ -149,7 +172,7 @@ export async function getOrCreateConversation(salonId: string, customerPhone: st
       tenant_id: salonId,
       session_id: newData.id,
       customer_phone: customerPhone,
-      channel: 'sms',
+      channel,
     });
   }
   return data;

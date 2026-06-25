@@ -21,6 +21,7 @@ export type SmsMessageUpsert = SmsMetadata & {
   sessionId?: string | null;
   transcriptId?: string | null;
   salonId?: string | null;
+  channel?: 'sms' | 'whatsapp' | null;
   rawPayload?: Record<string, any> | null;
   pricedAt?: string | null;
   lastPriceLookupAt?: string | null;
@@ -156,6 +157,7 @@ export async function upsertSmsMessage(input: SmsMessageUpsert) {
       session_id: input.sessionId,
       transcript_id: input.transcriptId,
       salon_id: input.salonId,
+      channel: input.channel,
       direction: input.direction,
       from_number: input.fromNumber,
       to_number: input.toNumber,

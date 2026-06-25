@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { refreshSessionSummary, saveMessage, supabase } from '@/lib/supabase';
-import { sendSMS } from '@/lib/twilio';
+import { sendOnChannel, type MessageChannel } from '@/lib/twilio';
 import { log, safeLog } from '@/lib/logger';
 import { requireDashboardSessionFromRequest } from '@/lib/dashboard-auth';
 import {
@@ -18,17 +18,19 @@ export async function POST(req: NextRequest) {
 
     const { data: session, error: sError } = await supabase
       .from('sessions')
-      .select('*, business_profiles(twilio_number)')
+      .select('*, business_profiles(twilio_number, whatsapp_number)')
       .eq('id', sessionId)
       .eq('salon_id', auth.session.tenantId)
       .single();
 
     if (!session || sError) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
 
-    // 1. Send SMS via Twilio
+    // 1. Send on the session's own channel (WhatsApp replies here are free-form,
+    //    which is valid because the customer just messaged — we're inside the 24h window).
+    const channel: MessageChannel = session.channel === 'whatsapp' ? 'whatsapp' : 'sms';
     const statusCallbackUrl =
       process.env.TWILIO_STATUS_CALLBACK_URL || new URL('/api/twilio/status', req.url).toString();
-    const outboundMessage = await sendSMS(session.client_identifier, content, statusCallbackUrl, {
+    const outboundMessage = await sendOnChannel(channel, session.client_identifier, content, statusCallbackUrl, {
       tenant_id: session.salon_id,
       session_id: sessionId,
     });
@@ -46,6 +48,7 @@ export async function POST(req: NextRequest) {
     }
     await upsertSmsMessage({
       ...outboundMetadata,
+      channel,
       sessionId,
       transcriptId: assistantMessage?.id ?? null,
       salonId: session.salon_id,

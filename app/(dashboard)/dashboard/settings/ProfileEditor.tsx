@@ -38,6 +38,7 @@ export default function ProfileEditor({ salon }: { salon: any }) {
     tone_of_voice: salon.tone_of_voice || '',
     opening_hours: salon.opening_hours || '',
     twilio_number: salon.twilio_number || '',
+    whatsapp_number: salon.whatsapp_number || '',
   });
   const [isSaving, setIsSaving] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saved' | 'error'>('idle');
@@ -108,6 +109,24 @@ export default function ProfileEditor({ salon }: { salon: any }) {
                 type="text"
                 value={formData.twilio_number}
                 onChange={e => setFormData({ ...formData, twilio_number: e.target.value })}
+                className={`${inputBase} pl-10 font-mono`}
+                placeholder="+44 7700 900000"
+              />
+            </div>
+          </div>
+
+          <div>
+            <FieldLabel hint={`The WhatsApp sender ${agentName} initiates from (leave blank to disable WhatsApp)`}>WhatsApp Number</FieldLabel>
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#6D28D9]/50 pointer-events-none">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+              </span>
+              <input
+                type="text"
+                value={formData.whatsapp_number}
+                onChange={e => setFormData({ ...formData, whatsapp_number: e.target.value })}
                 className={`${inputBase} pl-10 font-mono`}
                 placeholder="+44 7700 900000"
               />

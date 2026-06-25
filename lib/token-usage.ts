@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import { safeLog } from '@/lib/logger';
 
-export type UsageChannel = 'sms' | 'voice' | 'web' | 'test' | 'sandbox';
+export type UsageChannel = 'sms' | 'whatsapp' | 'voice' | 'web' | 'test' | 'sandbox';
 
 export interface TokenTotals {
   prompt: number;
@@ -120,7 +120,7 @@ type AiModelRate = {
   outputUsdPerMillion: number;
 };
 
-const CUSTOMER_CHANNELS: UsageChannel[] = ['sms', 'voice', 'web'];
+const CUSTOMER_CHANNELS: UsageChannel[] = ['sms', 'whatsapp', 'voice', 'web'];
 
 function monthStartIso() {
   const now = new Date();

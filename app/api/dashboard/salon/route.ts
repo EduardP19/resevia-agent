@@ -13,6 +13,7 @@ const allowedProfileFields = new Set([
   'tone_of_voice',
   'services',
   'twilio_number',
+  'whatsapp_number',
   'twilio_account_sid',
   'twilio_auth_token',
   'notify_sms_to',

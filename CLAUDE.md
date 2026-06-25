@@ -2,7 +2,7 @@
 
 ## Project Purpose
 
-Resevia Agent is the AI core for a multi-tenant SaaS platform that handles SMS/voice-based appointment booking for salons and service businesses. A Gemini-powered agent converses with customers over Twilio SMS/voice, manages bookings via Cal.com, and provides a web dashboard for business owners to monitor conversations and manage their profile.
+Resevia Agent is the AI core for a multi-tenant SaaS platform that handles SMS/WhatsApp/voice-based appointment booking for salons and service businesses. A Gemini-powered agent converses with customers over Twilio SMS, WhatsApp, and voice, manages bookings via Cal.com, and provides a web dashboard for business owners to monitor conversations and manage their profile.
 
 ---
 
@@ -36,8 +36,9 @@ app/
     layout.tsx          Dashboard shell: sidebars, header, mobile nav, ApprovalProvider
   api/                  API route handlers
     auth/               Login / logout
-    dashboard/          Dashboard data endpoints (salon, faqs, inbox, session, approve)
+    dashboard/          Dashboard data endpoints (salon, faqs, inbox, session, approve, initiate)
     sms-webhook/        Twilio inbound SMS
+    whatsapp-webhook/   Twilio inbound WhatsApp (shares lib/inbound-handler.ts)
     twilio/             Twilio status/voice callbacks
     cron/               Scheduled jobs (cleanup, sms-pricing)
     sophia-sandbox/     Sandbox test environment endpoints
@@ -74,20 +75,33 @@ Migrations live in `supabase/migrations/` (managed by Supabase CLI). Never add l
 
 | Table | Purpose |
 |-------|---------|
-| `business_profiles` | Tenant/salon config — name, phone, email, password, agent settings, hours, Twilio creds |
-| `sessions` | SMS/voice conversations — status, customer_phone, summary, token tracking |
+| `business_profiles` | Tenant/salon config — name, phone, email, password, agent settings, hours, Twilio creds, `twilio_number` (SMS) + `whatsapp_number` (WhatsApp senders) |
+| `sessions` | SMS/WhatsApp/voice conversations — `channel` (sms/whatsapp/webchat, authoritative), status, customer_phone, summary, token tracking |
 | `transcripts` | Per-session messages — role (system/assistant/user/draft), content |
 | `transcripts-sophia-sandbox` | Sandbox/test UI messages — same as transcripts + `t`, `param` columns |
 | `faqs` | FAQ entries — question, answer, category, is_active |
 | `workers` | Staff — salon_id, name, role, cal_event_type_id, services[], is_active |
 | `bookings` | Cal.com bookings linked to sessions |
-| `sms_messages` | SMS cost ledger |
+| `sms_messages` | SMS + WhatsApp message/cost ledger (`channel` column) |
 | `pending_notifications` | Deferred owner alert queue — session_id, send_after |
 | `system_logs` | Structured server-side logs — level, source, message, metadata |
 | `event_logs` | Client event tracking — category, event, tenant_id, session_id, metadata |
 | `error_logs` | Server error logs — source, message, stack, context |
 
 Import the shared client: `import { supabase } from '@/lib/supabase'` — never instantiate directly.
+
+---
+
+## Channels (SMS / WhatsApp)
+
+Each session has a `channel` column (`'sms' | 'whatsapp' | 'webchat'`, default `'sms'`) — the **authoritative routing field**. `platform` is a legacy free-text stamp, not used for routing.
+
+- **Inbound:** Twilio SMS hits `/api/sms-webhook`; WhatsApp hits `/api/whatsapp-webhook`. Both delegate to `handleInboundMessage(req, channel)` in `lib/inbound-handler.ts` (single shared pipeline). WhatsApp inbound carries a `whatsapp:` prefix on `From`/`To` — the handler strips it. The customer's reply always continues on the channel it arrived on.
+- **Outbound replies** (auto reply, approved draft, manual takeover) go through `sendOnChannel(session.channel, …)` — never call `sendSMS` directly in channel-aware paths.
+- **Initiation (business-initiated outreach):** owner-triggered from the dashboard via `/api/dashboard/initiate`. WhatsApp initiation **must** use a pre-approved Twilio Content template (`sendWhatsAppTemplate`, `contentSid` from `TWILIO_WHATSAPP_TEMPLATE_SID`) because it's outside the 24h window. SMS initiation is free-form. **If WhatsApp send fails or the tenant has no `whatsapp_number`, it falls back to a free-form SMS** and tags the session `channel='sms'`.
+- **Per-tenant senders:** `business_profiles.twilio_number` (SMS) and `business_profiles.whatsapp_number` (WhatsApp). Both reuse the same per-tenant `twilio_account_sid` / `twilio_auth_token`. Editable in Settings.
+- **Env:** `TWILIO_WHATSAPP_NUMBER` (fallback sender), `TWILIO_WHATSAPP_TEMPLATE_SID` (initiation template), `NEXT_PUBLIC_WHATSAPP_TEMPLATE_PREVIEW` (owner-facing preview text of that template).
+- WhatsApp usage counts toward the monthly plan allowance (same as SMS/voice/web).
 
 ---
 
@@ -101,7 +115,8 @@ Import the shared client: `import { supabase } from '@/lib/supabase'` — never 
 | `lib/dashboard-auth.ts` | Cookie auth — `requireDashboardSession()`, `getDashboardSession()`, `findDashboardCredential()` |
 | `lib/deferred-notifications.ts` | 60-second delayed owner alerts via `pending_notifications` table |
 | `lib/profile-cache.ts` | 5-min in-memory TTL cache for tenant business profiles |
-| `lib/twilio.ts` | Twilio SMS/voice integration |
+| `lib/twilio.ts` | Twilio SMS + WhatsApp send (`sendSMS`, `sendWhatsAppMessage`, `sendWhatsAppTemplate`, `sendOnChannel`) |
+| `lib/inbound-handler.ts` | Shared inbound pipeline for SMS + WhatsApp webhooks (`handleInboundMessage(req, channel)`) |
 | `lib/booking_service.ts` | Cal.com booking logic |
 | `lib/owner-email-notifications.ts` | Resend email alerts for business owners |
 | `lib/error-logger.ts` | Google Cloud Logging error handler |
