@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getOrCreateConversation,
+  getSalonById,
   refreshSessionSummary,
   saveMessage,
   supabase,
@@ -8,6 +9,7 @@ import {
 import { sendSMS, sendWhatsAppTemplate } from '@/lib/twilio';
 import { log, safeLog } from '@/lib/logger';
 import { requireDashboardSessionFromRequest } from '@/lib/dashboard-auth';
+import { getAgentName } from '@/lib/agent-name';
 import {
   smsMetadataFromTwilioMessage,
   updateTranscriptSmsMetadata,
@@ -61,9 +63,14 @@ export async function POST(req: NextRequest) {
     // --- Attempt WhatsApp template first when requested -----------------------
     if (requestedChannel === 'whatsapp') {
       try {
+        // Always populate {{agent}} from the salon's own configured agent
+        // name — never trust a client-supplied value for this slot.
+        const salon = await getSalonById(tenantId);
+        const agentVariables = { ...contentVariables, agent: getAgentName(salon) };
+
         outboundMessage = await sendWhatsAppTemplate(
           clientPhone,
-          { contentVariables, statusCallbackUrl },
+          { contentVariables: agentVariables, statusCallbackUrl },
           { tenant_id: tenantId }
         );
         deliveredChannel = 'whatsapp';

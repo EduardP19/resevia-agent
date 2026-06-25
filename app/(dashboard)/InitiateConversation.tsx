@@ -6,12 +6,22 @@ import { trackClientEvent } from '@/lib/client-events';
 
 type Channel = 'whatsapp' | 'sms';
 
-const TEMPLATE_PREVIEW =
+const TEMPLATE_PREVIEW_RAW =
   process.env.NEXT_PUBLIC_WHATSAPP_TEMPLATE_PREVIEW ||
-  'Hi! This is a message from your salon. Reply here and we can help you book an appointment. 💬';
+  'Hi! This is {{agent}} from your salon. Reply here and we can help you book an appointment. 💬';
 
-export default function InitiateConversation({ whatsappEnabled }: { whatsappEnabled: boolean }) {
+export default function InitiateConversation({
+  whatsappEnabled,
+  agentName,
+}: {
+  whatsappEnabled: boolean;
+  agentName: string;
+}) {
   const router = useRouter();
+  // The template's only variable is the named {{agent}} placeholder, always
+  // populated server-side from business_profiles.agent_name — this preview
+  // mirrors that so the owner sees what the customer will actually receive.
+  const templatePreview = TEMPLATE_PREVIEW_RAW.replaceAll('{{agent}}', agentName);
   const [open, setOpen] = useState(false);
   const [clientPhone, setClientPhone] = useState('');
   const [channel, setChannel] = useState<Channel>(whatsappEnabled ? 'whatsapp' : 'sms');
@@ -62,7 +72,7 @@ export default function InitiateConversation({ whatsappEnabled }: { whatsappEnab
           clientPhone: phone,
           channel,
           message: smsMessage.trim(),
-          templatePreview: channel === 'whatsapp' ? TEMPLATE_PREVIEW : undefined,
+          templatePreview: channel === 'whatsapp' ? templatePreview : undefined,
         }),
       });
       const data = await res.json().catch(() => null);
@@ -180,7 +190,7 @@ export default function InitiateConversation({ whatsappEnabled }: { whatsappEnab
                     className="rounded-xl px-4 py-3 text-sm leading-relaxed text-gray-600"
                     style={{ background: 'rgba(37,211,102,0.06)', border: '1px solid rgba(37,211,102,0.25)' }}
                   >
-                    {TEMPLATE_PREVIEW}
+                    {templatePreview}
                   </div>
                   <div className="mt-3">
                     <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1.5">
