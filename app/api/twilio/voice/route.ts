@@ -1,11 +1,65 @@
 import { NextRequest, NextResponse } from 'next/server';
 import twilio from 'twilio';
-import { sendSMS } from '@/lib/twilio';
-import { getDefaultSalon, getOrCreateConversation, getSalonBySmsNumber, saveMessage } from '@/lib/supabase';
-import { log } from '@/lib/logger';
+import { sendSMS, sendWhatsAppTemplate } from '@/lib/twilio';
+import { getDefaultSalon, getOrCreateConversation, getSalonBySmsNumber, saveMessage, supabase } from '@/lib/supabase';
+import { log, safeLog } from '@/lib/logger';
 import { logAppError, toErrorLogPayload } from '@/lib/error-logger';
+import { getAgentName } from '@/lib/agent-name';
 
-const DEFAULT_INBOUND_CALL_SMS = "Hi, sorry we can't pickup. Looking for a new appointment?";
+// Supports {{agent}} / {{salon}} tokens, substituted per-tenant below.
+// Override via TWILIO_INBOUND_CALL_SMS_BODY using the same token syntax.
+const DEFAULT_INBOUND_CALL_SMS =
+  "Hi 👋, I'm {{agent}}, {{salon}}'s virtual assistant.\n\nSorry we've missed you call. What service are you looking to book? ✨";
+
+function renderMissedCallSms(salon: any): string {
+  const template = (process.env.TWILIO_INBOUND_CALL_SMS_BODY || DEFAULT_INBOUND_CALL_SMS).trim();
+  const salonName = (typeof salon?.name === 'string' && salon.name.trim()) || 'us';
+  return template.replaceAll('{{agent}}', getAgentName(salon)).replaceAll('{{salon}}', salonName);
+}
+
+/**
+ * Missed-call follow-up: try WhatsApp first (business-initiated template,
+ * required outside the 24h window), falling back to free-form SMS if WhatsApp
+ * is unavailable, unconfigured, or errors. Mirrors the same WA-then-SMS
+ * fallback used by the dashboard's manual initiation endpoint.
+ */
+async function sendMissedCallFollowup(params: {
+  salon: any;
+  fromNumber: string;
+  sessionId: string;
+  smsBody: string;
+  smsFromNumber?: string;
+}): Promise<{ channel: 'whatsapp' | 'sms'; message: any }> {
+  const { salon, fromNumber, sessionId, smsBody, smsFromNumber } = params;
+
+  if (salon?.whatsapp_number) {
+    try {
+      const message = await sendWhatsAppTemplate(
+        fromNumber,
+        { contentVariables: { agent: getAgentName(salon) } },
+        { tenant_id: salon.id, session_id: sessionId }
+      );
+      return { channel: 'whatsapp', message };
+    } catch (waError: any) {
+      safeLog({
+        level: 'warning',
+        category: 'sms',
+        event: 'whatsapp_missed_call_fallback',
+        tenant_id: salon.id,
+        session_id: sessionId,
+        error: waError?.message || String(waError),
+        code: waError?.code || null,
+      });
+    }
+  }
+
+  const message = await sendSMS(fromNumber, smsBody, undefined, {
+    tenant_id: salon.id,
+    session_id: sessionId,
+    fromNumber: smsFromNumber,
+  });
+  return { channel: 'sms', message };
+}
 
 function buildVoiceTwiML(): string {
   const voiceResponse = new twilio.twiml.VoiceResponse();
@@ -39,7 +93,6 @@ export async function POST(req: NextRequest) {
 
     const fromNumber = normalizeE164Candidate(callerRaw);
     const toNumber = normalizeE164Candidate(calledRaw);
-    const smsBody = (process.env.TWILIO_INBOUND_CALL_SMS_BODY || DEFAULT_INBOUND_CALL_SMS).trim();
 
     console.log(`[voice] normalized — from: ${fromNumber}, to: ${toNumber}`);
 
@@ -74,7 +127,11 @@ export async function POST(req: NextRequest) {
 
     console.log(`[voice] salon found — id: ${salon.id}, name: ${(salon as any).name}`);
 
+    const smsBody = renderMissedCallSms(salon);
+
     console.log(`[voice] getting or creating conversation — salonId: ${salon.id}, from: ${fromNumber}`);
+    // Created as 'sms' by default; retagged below once we know which channel
+    // actually delivered (WhatsApp template attempt happens first).
     const conversation = await getOrCreateConversation(salon.id, fromNumber);
     console.log(`[voice] conversation ready — id: ${conversation.id}, status: ${conversation.status}`);
 
@@ -97,26 +154,37 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    console.log(`[voice] sending SMS — to: ${fromNumber}, from: ${senderNumber}, body: "${smsBody}"`);
-    await sendSMS(fromNumber, smsBody, undefined, {
-      tenant_id: salon.id,
-      session_id: conversation.id,
-      fromNumber: senderNumber,
+    console.log(`[voice] sending missed-call follow-up (WhatsApp-first) — to: ${fromNumber}`);
+    const { channel: deliveredChannel } = await sendMissedCallFollowup({
+      salon,
+      fromNumber,
+      sessionId: conversation.id,
+      smsBody,
+      smsFromNumber: senderNumber,
     });
-    console.log(`[voice] ✓ SMS sent`);
+    console.log(`[voice] ✓ follow-up sent via ${deliveredChannel}`);
 
-    await saveMessage(conversation.id, 'system', `[Voice webhook] Missed call from ${fromNumber}. Auto-SMS sent.`);
+    if (deliveredChannel !== conversation.channel) {
+      await supabase.from('sessions').update({ channel: deliveredChannel }).eq('id', conversation.id);
+    }
+
+    await saveMessage(
+      conversation.id,
+      'system',
+      `[Voice webhook] Missed call from ${fromNumber}. Auto follow-up sent via ${deliveredChannel}.`
+    );
     console.log(`[voice] ✓ system message saved`);
 
     await log({
       level: 'info',
       category: 'sms',
-      event: 'voice_call_auto_sms_sent',
+      event: 'voice_call_auto_followup_sent',
       tenant_id: salon.id,
       session_id: conversation.id,
       from: fromNumber,
       to: toNumber,
       call_sid: callSid,
+      channel: deliveredChannel,
       body: smsBody,
     });
 
