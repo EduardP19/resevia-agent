@@ -141,6 +141,21 @@ export default async function ClientHistoryPage({ params }: { params: { phone: s
                     {cfg.label}
                   </span>
                 )}
+                {session.channel === 'whatsapp' ? (
+                  <span
+                    className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest"
+                    style={{ background: 'rgba(37,211,102,0.1)', color: '#128C7E', border: '1px solid rgba(37,211,102,0.3)' }}
+                  >
+                    WhatsApp
+                  </span>
+                ) : (
+                  <span
+                    className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest"
+                    style={{ background: 'rgba(109,40,217,0.08)', color: '#6D28D9', border: '1px solid rgba(109,40,217,0.2)' }}
+                  >
+                    SMS
+                  </span>
+                )}
               </div>
             </div>
 

@@ -644,7 +644,7 @@ export async function getSessionTranscript(sessionId: string) {
 export async function getClientSessions(salonId: string, clientIdentifier: string) {
   const { data } = await supabase
     .from('sessions')
-    .select('id, status, platform, created_at, updated_at, metadata, summary')
+    .select('id, status, channel, platform, created_at, updated_at, metadata, summary')
     .eq('salon_id', salonId)
     .eq('client_identifier', clientIdentifier)
     .order('created_at', { ascending: false });
@@ -716,6 +716,7 @@ export async function getGroupedSessions(salonId?: string) {
       id,
       client_identifier,
       status,
+      channel,
       updated_at,
       metadata,
       salon_id,
@@ -778,7 +779,7 @@ export async function getHistorySessions(salonId?: string, limit = 100) {
 
   let query = supabase
     .from('sessions')
-    .select('id, client_identifier, status, platform, created_at, updated_at, metadata, salon_id, summary, business_profiles(name, agent_name)')
+    .select('id, client_identifier, status, channel, platform, created_at, updated_at, metadata, salon_id, summary, business_profiles(name, agent_name)')
     .gte('updated_at', cutoff)
     .order('updated_at', { ascending: false })
     .limit(limit);

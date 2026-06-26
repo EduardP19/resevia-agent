@@ -121,10 +121,27 @@ export default function HistoryClient({ phoneCards }: { phoneCards: Card[] }) {
                   <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Number</p>
                   <h3 className="text-sm font-bold text-gray-900 font-mono tracking-tight truncate">{card.phone}</h3>
                 </div>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${card.latestStatus.badge}`}>
-                  <span className={`w-1 h-1 rounded-full ${card.latestStatus.dot}`} />
-                  {card.latestStatus.label}
-                </span>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${card.latestStatus.badge}`}>
+                    <span className={`w-1 h-1 rounded-full ${card.latestStatus.dot}`} />
+                    {card.latestStatus.label}
+                  </span>
+                  {card.latest?.channel === 'whatsapp' ? (
+                    <span
+                      className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest"
+                      style={{ background: 'rgba(37,211,102,0.1)', color: '#128C7E', border: '1px solid rgba(37,211,102,0.3)' }}
+                    >
+                      WhatsApp
+                    </span>
+                  ) : (
+                    <span
+                      className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest"
+                      style={{ background: 'rgba(109,40,217,0.08)', color: '#6D28D9', border: '1px solid rgba(109,40,217,0.2)' }}
+                    >
+                      SMS
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3 mb-4">
