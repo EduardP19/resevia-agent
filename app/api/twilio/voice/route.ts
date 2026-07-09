@@ -36,7 +36,10 @@ async function sendMissedCallFollowup(params: {
     try {
       const message = await sendWhatsAppTemplate(
         fromNumber,
-        { contentVariables: { agent: getAgentName(salon) } },
+        {
+          contentSid: salon?.whatsapp_template_sid || undefined,
+          contentVariables: { agent: getAgentName(salon) },
+        },
         { tenant_id: salon.id, session_id: sessionId }
       );
       return { channel: 'whatsapp', message };
@@ -63,7 +66,7 @@ async function sendMissedCallFollowup(params: {
 
 function buildVoiceTwiML(): string {
   const voiceResponse = new twilio.twiml.VoiceResponse();
-  voiceResponse.hangup();
+  voiceResponse.reject({ reason: 'busy' });
   return voiceResponse.toString();
 }
 

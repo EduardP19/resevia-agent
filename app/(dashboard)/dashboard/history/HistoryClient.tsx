@@ -129,7 +129,7 @@ export default function HistoryClient({ phoneCards }: { phoneCards: Card[] }) {
                   {card.latest?.channel === 'whatsapp' ? (
                     <span
                       className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest"
-                      style={{ background: 'rgba(37,211,102,0.1)', color: '#128C7E', border: '1px solid rgba(37,211,102,0.3)' }}
+                      style={{ background: 'rgba(109,40,217,0.08)', color: '#6D28D9', border: '1px solid rgba(109,40,217,0.2)' }}
                     >
                       WhatsApp
                     </span>

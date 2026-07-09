@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
 
         outboundMessage = await sendWhatsAppTemplate(
           clientPhone,
-          { contentVariables: agentVariables, statusCallbackUrl },
+          { contentSid: salon?.whatsapp_template_sid || undefined, contentVariables: agentVariables, statusCallbackUrl },
           { tenant_id: tenantId }
         );
         deliveredChannel = 'whatsapp';
