@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import twilio from 'twilio';
-import { sendSMS, sendWhatsAppTemplate } from '@/lib/twilio';
+import { sendSMS, sendWhatsAppTemplate, waitForWhatsAppConfirmation } from '@/lib/twilio';
 import { getDefaultSalon, getOrCreateConversation, getSalonBySmsNumber, saveMessage, supabase } from '@/lib/supabase';
 import { log, safeLog } from '@/lib/logger';
 import { logAppError, toErrorLogPayload } from '@/lib/error-logger';
@@ -19,9 +19,13 @@ function renderMissedCallSms(salon: any): string {
 
 /**
  * Missed-call follow-up: try WhatsApp first (business-initiated template,
- * required outside the 24h window), falling back to free-form SMS if WhatsApp
- * is unavailable, unconfigured, or errors. Mirrors the same WA-then-SMS
- * fallback used by the dashboard's manual initiation endpoint.
+ * required outside the 24h window). After sending, poll Twilio for up to 30s
+ * waiting for the message to reach a confirmed (sent/delivered/read) status —
+ * a 200 from the initial API call only means Twilio accepted the request, not
+ * that it was delivered. If it fails, is undelivered, or doesn't confirm
+ * within 30s, fall back to free-form SMS with the same message. Mirrors the
+ * same WA-then-SMS fallback used by the dashboard's manual initiation
+ * endpoint (which does not wait for delivery confirmation).
  */
 async function sendMissedCallFollowup(params: {
   salon: any;
@@ -38,11 +42,25 @@ async function sendMissedCallFollowup(params: {
         fromNumber,
         {
           contentSid: salon?.whatsapp_template_sid || undefined,
-          contentVariables: { agent: getAgentName(salon) },
+          contentVariables: { '1': getAgentName(salon) },
         },
         { tenant_id: salon.id, session_id: sessionId }
       );
-      return { channel: 'whatsapp', message };
+
+      const { confirmed, status } = await waitForWhatsAppConfirmation(message.sid, 30000);
+      if (confirmed) {
+        return { channel: 'whatsapp', message };
+      }
+
+      safeLog({
+        level: 'warning',
+        category: 'sms',
+        event: 'whatsapp_missed_call_unconfirmed',
+        tenant_id: salon.id,
+        session_id: sessionId,
+        twilio_message_sid: message.sid,
+        sms_status: status,
+      });
     } catch (waError: any) {
       safeLog({
         level: 'warning',

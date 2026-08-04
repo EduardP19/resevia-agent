@@ -321,6 +321,49 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const WHATSAPP_FAILURE_STATUSES = new Set(['failed', 'undelivered']);
+// Twilio doesn't call these "confirmed" — but for our purposes, reaching any
+// of these means the message actually left Twilio and reached (or was
+// accepted by) the WhatsApp network rather than sitting queued or dying.
+const WHATSAPP_CONFIRMED_STATUSES = new Set(['sent', 'delivered', 'read']);
+
+/**
+ * Poll a just-sent WhatsApp message's status for up to `timeoutMs`, resolving
+ * true once it reaches a "confirmed" (sent/delivered/read) status, false if it
+ * fails/is undelivered, or false if it's still queued/unresolved at timeout.
+ * Used to decide whether to fall back to SMS for time-sensitive outreach.
+ */
+export async function waitForWhatsAppConfirmation(
+  messageSid: string,
+  timeoutMs = 30000,
+  pollIntervalMs = 2000
+): Promise<{ confirmed: boolean; status: string | null }> {
+  if (!globalClient) {
+    return { confirmed: false, status: null };
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  let lastStatus: string | null = null;
+
+  while (Date.now() < deadline) {
+    try {
+      const message = await globalClient.messages(messageSid).fetch();
+      lastStatus = message.status || null;
+      if (lastStatus && WHATSAPP_CONFIRMED_STATUSES.has(lastStatus)) {
+        return { confirmed: true, status: lastStatus };
+      }
+      if (lastStatus && WHATSAPP_FAILURE_STATUSES.has(lastStatus)) {
+        return { confirmed: false, status: lastStatus };
+      }
+    } catch {
+      // Transient fetch error — keep polling until the deadline.
+    }
+    await wait(pollIntervalMs);
+  }
+
+  return { confirmed: false, status: lastStatus };
+}
+
 export async function getSMSMessageWithPricing(messageSid: string): Promise<any> {
   const delays = [0, 1000, 2000];
   let message: any = null;

@@ -63,10 +63,10 @@ export async function POST(req: NextRequest) {
     // --- Attempt WhatsApp template first when requested -----------------------
     if (requestedChannel === 'whatsapp') {
       try {
-        // Always populate {{agent}} from the salon's own configured agent
-        // name — never trust a client-supplied value for this slot.
+        // Always populate {{1}} (agent name) from the salon's own configured
+        // agent name — never trust a client-supplied value for this slot.
         const salon = await getSalonById(tenantId);
-        const agentVariables = { ...contentVariables, agent: getAgentName(salon) };
+        const agentVariables = { ...contentVariables, '1': getAgentName(salon) };
 
         outboundMessage = await sendWhatsAppTemplate(
           clientPhone,
