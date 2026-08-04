@@ -84,7 +84,7 @@ async function sendMissedCallFollowup(params: {
 
 function buildVoiceTwiML(): string {
   const voiceResponse = new twilio.twiml.VoiceResponse();
-  voiceResponse.reject({ reason: 'busy' });
+  voiceResponse.reject({ reason: 'rejected' });
   return voiceResponse.toString();
 }
 
