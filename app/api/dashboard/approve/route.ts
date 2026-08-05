@@ -5,7 +5,6 @@ import { log, safeLog } from '@/lib/logger';
 import { requireDashboardSessionFromRequest } from '@/lib/dashboard-auth';
 import {
   smsMetadataFromTwilioMessage,
-  updateTranscriptSmsMetadata,
   upsertSmsMessage,
 } from '@/lib/sms-messages';
 
@@ -43,9 +42,6 @@ export async function POST(req: NextRequest) {
       direction: 'outbound' as const,
       ...smsMetadataFromTwilioMessage(outboundMessage),
     };
-    if (assistantMessage?.id) {
-      await updateTranscriptSmsMetadata(assistantMessage.id, outboundMetadata);
-    }
     await upsertSmsMessage({
       ...outboundMetadata,
       channel,

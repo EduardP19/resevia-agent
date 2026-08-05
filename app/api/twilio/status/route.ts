@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
 import { log, safeLog } from '@/lib/logger';
 import { normalizeSmsPrice } from '@/lib/sms-pricing';
 import {
+  findSmsMessageBySid,
   formDataToRecord,
   numberOrNull,
-  transcriptSmsPayload,
   upsertSmsMessage,
 } from '@/lib/sms-messages';
 
@@ -40,43 +39,28 @@ export async function POST(req: NextRequest) {
     fromNumber: callbackFrom,
     toNumber: callbackTo,
   };
-  const updatePayload = transcriptSmsPayload(statusMetadata);
-
-  const { data: updatedTranscript, error } = await supabase
-    .from('transcripts')
-    .update(updatePayload)
-    .eq('twilio_message_sid', messageSid)
-    .select('id, session_id, sms_direction')
-    .maybeSingle();
+  // sms_messages is the source of truth for this SID — it already carries the
+  // session/transcript linkage and direction, so no transcript lookup is needed.
+  const existingLedgerRow = await findSmsMessageBySid(messageSid);
 
   const ledgerRow = await upsertSmsMessage({
     ...statusMetadata,
-    // Only set direction when we can confirm it from the transcript; omitting it
-    // lets upsertSmsMessage preserve whatever direction is already in the ledger row.
-    ...(updatedTranscript?.sms_direction ? { direction: updatedTranscript.sms_direction as any } : {}),
-    sessionId: updatedTranscript?.session_id,
-    transcriptId: updatedTranscript?.id,
+    // Omitting direction lets upsertSmsMessage preserve whatever is already on
+    // the ledger row rather than overwriting it with a guess.
+    ...(existingLedgerRow?.direction ? { direction: existingLedgerRow.direction as any } : {}),
+    sessionId: existingLedgerRow?.session_id,
+    transcriptId: existingLedgerRow?.transcript_id,
     rawPayload: rawSmsPayload,
   });
 
-  if (error) {
-    safeLog({
-      level: 'error',
-      category: 'system',
-      event: 'db_error',
-      error: error?.message || String(error),
-      stack: error?.stack,
-      query_description: 'Update Twilio SMS status callback',
-      code: error?.code,
-    });
-  } else if (updatedTranscript) {
+  if (existingLedgerRow) {
     await log({
       level: 'info',
       category: 'sms',
       event: 'sms_status_updated',
-      session_id: updatedTranscript.session_id,
+      session_id: existingLedgerRow.session_id,
       twilio_message_sid: messageSid,
-      sms_direction: updatedTranscript.sms_direction,
+      sms_direction: existingLedgerRow.direction,
       sms_status: statusMetadata.status,
       sms_price: statusMetadata.price,
       sms_price_unit: statusMetadata.priceUnit,
@@ -101,7 +85,7 @@ export async function POST(req: NextRequest) {
       level: 'error',
       category: 'sms',
       event: 'sms_failed',
-      session_id: updatedTranscript?.session_id,
+      session_id: existingLedgerRow?.session_id,
       twilio_message_sid: messageSid,
       sms_status: status,
       error: errorMessage || errorCode || 'Twilio reported SMS delivery failure',

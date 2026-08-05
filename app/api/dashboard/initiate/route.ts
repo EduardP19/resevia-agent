@@ -12,7 +12,6 @@ import { requireDashboardSessionFromRequest } from '@/lib/dashboard-auth';
 import { getAgentName } from '@/lib/agent-name';
 import {
   smsMetadataFromTwilioMessage,
-  updateTranscriptSmsMetadata,
   upsertSmsMessage,
 } from '@/lib/sms-messages';
 
@@ -124,12 +123,10 @@ export async function POST(req: NextRequest) {
       direction: 'outbound' as const,
       ...smsMetadataFromTwilioMessage(outboundMessage),
     };
-    if (assistantMessage?.id) {
-      await updateTranscriptSmsMetadata(assistantMessage.id, outboundMetadata);
-    }
     await upsertSmsMessage({
       ...outboundMetadata,
       channel: deliveredChannel,
+      messageType: deliveredChannel === 'whatsapp' ? 'whatsapp_template' : 'initiation',
       sessionId: conversation.id,
       transcriptId: assistantMessage?.id ?? null,
       salonId: tenantId,

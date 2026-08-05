@@ -145,7 +145,6 @@ export async function createTestUiResponse(options: {
     ...conversationMetadata,
     source: 'sophia-sandbox',
     allocated_phone: conversationMetadata.allocated_phone || conversation.client_identifier,
-    tokens: aiResponse.tokens,
     booking_state: updatedBookingState,
   };
 

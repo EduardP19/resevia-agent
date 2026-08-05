@@ -157,7 +157,7 @@ export async function POST(req: NextRequest) {
         session_id: conversation.id,
       });
       await supabase.from('sessions').update({
-        metadata: { ...conversation.metadata, tokens: aiResponse.tokens, booking_state: updatedBookingState },
+        metadata: { ...conversation.metadata, booking_state: updatedBookingState },
         status: 'needs_approval',
         updated_at: new Date().toISOString()
       }).eq('id', conversation.id);
@@ -187,7 +187,7 @@ export async function POST(req: NextRequest) {
     }
 
     await supabase.from('sessions').update({
-      metadata: { ...conversation.metadata, tokens: aiResponse.tokens, booking_state: updatedBookingState },
+      metadata: { ...conversation.metadata, booking_state: updatedBookingState },
       status: triggerHandoff ? 'escalated' : 'active',
       updated_at: new Date().toISOString()
     }).eq('id', conversation.id);

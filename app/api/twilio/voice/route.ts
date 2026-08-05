@@ -6,6 +6,7 @@ import { getDefaultSalon, getOrCreateConversation, getSalonBySmsNumber, saveMess
 import { log, safeLog } from '@/lib/logger';
 import { logAppError, toErrorLogPayload } from '@/lib/error-logger';
 import { getAgentName } from '@/lib/agent-name';
+import { smsMetadataFromTwilioMessage, upsertSmsMessage } from '@/lib/sms-messages';
 
 // Covers the up-to-30s WhatsApp delivery-confirmation poll in the background
 // follow-up (kicked off via waitUntil after the TwiML response is sent),
@@ -39,8 +40,9 @@ async function sendMissedCallFollowup(params: {
   sessionId: string;
   smsBody: string;
   smsFromNumber?: string;
-}): Promise<{ channel: 'whatsapp' | 'sms'; message: any }> {
-  const { salon, fromNumber, sessionId, smsBody, smsFromNumber } = params;
+  statusCallbackUrl?: string;
+}): Promise<{ channel: 'whatsapp' | 'sms'; message: any; messageType: 'whatsapp_template' | 'missed_call_followup' }> {
+  const { salon, fromNumber, sessionId, smsBody, smsFromNumber, statusCallbackUrl } = params;
 
   if (salon?.whatsapp_number) {
     try {
@@ -49,13 +51,14 @@ async function sendMissedCallFollowup(params: {
         {
           contentSid: salon?.whatsapp_template_sid || undefined,
           contentVariables: { '1': getAgentName(salon) },
+          statusCallbackUrl,
         },
         { tenant_id: salon.id, session_id: sessionId }
       );
 
       const { confirmed, status } = await waitForWhatsAppConfirmation(message.sid, 30000);
       if (confirmed) {
-        return { channel: 'whatsapp', message };
+        return { channel: 'whatsapp', message, messageType: 'whatsapp_template' };
       }
 
       safeLog({
@@ -80,12 +83,12 @@ async function sendMissedCallFollowup(params: {
     }
   }
 
-  const message = await sendSMS(fromNumber, smsBody, undefined, {
+  const message = await sendSMS(fromNumber, smsBody, statusCallbackUrl, {
     tenant_id: salon.id,
     session_id: sessionId,
     fromNumber: smsFromNumber,
   });
-  return { channel: 'sms', message };
+  return { channel: 'sms', message, messageType: 'missed_call_followup' };
 }
 
 function buildVoiceTwiML(): string {
@@ -116,8 +119,9 @@ async function processMissedCall(params: {
   callSid: string | null;
   fromNumber: string;
   toNumber: string | null;
+  statusCallbackUrl: string;
 }) {
-  const { callerRaw, calledRaw, callSid, fromNumber, toNumber } = params;
+  const { callerRaw, calledRaw, callSid, fromNumber, toNumber, statusCallbackUrl } = params;
 
   console.log(`[voice] looking up salon for toNumber: ${toNumber}`);
   const salon = toNumber ? await getSalonBySmsNumber(toNumber) : await getDefaultSalon();
@@ -165,12 +169,13 @@ async function processMissedCall(params: {
   }
 
   console.log(`[voice] sending missed-call follow-up (WhatsApp-first) — to: ${fromNumber}`);
-  const { channel: deliveredChannel } = await sendMissedCallFollowup({
+  const { channel: deliveredChannel, message: outboundMessage, messageType } = await sendMissedCallFollowup({
     salon,
     fromNumber,
     sessionId: conversation.id,
     smsBody,
     smsFromNumber: senderNumber,
+    statusCallbackUrl,
   });
   console.log(`[voice] ✓ follow-up sent via ${deliveredChannel}`);
 
@@ -184,6 +189,30 @@ async function processMissedCall(params: {
     `[Voice webhook] Missed call from ${fromNumber}. Auto follow-up sent via ${deliveredChannel}.`
   );
   console.log(`[voice] ✓ system message saved`);
+
+  // Human-readable transcript row + sms_messages ledger entry, so this send
+  // shows up in spend/pricing tracking like every other outbound message
+  // (auto-reply, initiation) — this path previously recorded neither.
+  const assistantMessage = await saveMessage(
+    conversation.id,
+    'assistant',
+    deliveredChannel === 'whatsapp' ? '[WhatsApp template sent]' : smsBody
+  );
+  const outboundMetadata = {
+    twilioMessageSid: outboundMessage.sid,
+    direction: 'outbound' as const,
+    ...smsMetadataFromTwilioMessage(outboundMessage),
+  };
+  await upsertSmsMessage({
+    ...outboundMetadata,
+    channel: deliveredChannel,
+    messageType,
+    sessionId: conversation.id,
+    transcriptId: assistantMessage?.id ?? null,
+    salonId: salon.id,
+    rawPayload: outboundMessage,
+  });
+  console.log(`[voice] ✓ sms_messages ledger row recorded (type: ${messageType})`);
 
   await log({
     level: 'info',
@@ -232,13 +261,16 @@ export async function POST(req: NextRequest) {
       return new NextResponse(buildVoiceTwiML(), { status: 200, headers: xmlHeaders });
     }
 
+    const statusCallbackUrl =
+      process.env.TWILIO_STATUS_CALLBACK_URL || new URL('/api/twilio/status', req.url).toString();
+
     // Reject immediately — everything else (salon lookup, conversation,
     // WhatsApp/SMS follow-up) runs in the background via waitUntil(), so the
     // caller isn't kept ringing while we do DB/API work (including the
     // up-to-30s WhatsApp delivery confirmation poll), but the serverless
     // invocation is kept alive until the background work actually finishes.
     waitUntil(
-      processMissedCall({ callerRaw, calledRaw, callSid, fromNumber, toNumber }).catch(async (error: any) => {
+      processMissedCall({ callerRaw, calledRaw, callSid, fromNumber, toNumber, statusCallbackUrl }).catch(async (error: any) => {
         console.error(`[voice] ✗ background processing error — ${error?.message}`, error?.stack);
         const payload = toErrorLogPayload(error, 'Twilio voice webhook background processing error');
         await log({

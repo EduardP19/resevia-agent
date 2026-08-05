@@ -4,7 +4,6 @@ import { supabase } from '@/lib/supabase';
 import { getSMSMessage } from '@/lib/twilio';
 import {
   smsMetadataFromTwilioMessage,
-  updateTranscriptSmsMetadata,
   upsertSmsMessage,
 } from '@/lib/sms-messages';
 
@@ -64,14 +63,6 @@ async function reconcileSmsPricing() {
           priceLookupAttempts: (row.price_lookup_attempts || 0) + 1,
           rawPayload: toRawPayload(twilioMessage),
         });
-
-        if (row.transcript_id) {
-          await updateTranscriptSmsMetadata(row.transcript_id, {
-            twilioMessageSid: row.twilio_message_sid,
-            direction: row.direction,
-            ...metadata,
-          });
-        }
 
         if (hasPrice) priced++;
         else pending++;

@@ -25,10 +25,10 @@ import { addTokens, emptyTokens, recordTokenUsage } from '@/lib/token-usage';
 import { resolveEffectiveApprovalMode } from '@/lib/agent-mode';
 import { runObserver } from '@/lib/observer';
 import {
+  findSmsMessageBySid,
   formDataToRecord,
   numberOrNull,
   smsMetadataFromTwilioMessage,
-  updateTranscriptSmsMetadata,
   upsertSmsMessage,
 } from '@/lib/sms-messages';
 
@@ -77,11 +77,9 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
   });
 
   if (inboundMessageSid) {
-    const { data: existingInbound } = await supabase
-      .from('transcripts')
-      .select('id')
-      .eq('twilio_message_sid', inboundMessageSid)
-      .maybeSingle();
+    // sms_messages holds the unique Twilio SID for every message we've seen,
+    // so it is the dedupe index for Twilio webhook retries.
+    const existingInbound = await findSmsMessageBySid(inboundMessageSid);
 
     if (existingInbound) {
       safeLog({
@@ -108,27 +106,7 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
     return twiml();
   }
 
-  let userMessage;
-  try {
-    userMessage = inboundMessageSid
-      ? await saveMessageToTable(conversation.id, 'user', userInput, 'transcripts', undefined, {
-          twilio_message_sid: inboundMessageSid,
-        })
-      : await saveMessage(conversation.id, 'user', userInput);
-  } catch (error: any) {
-    if (inboundMessageSid && error?.code === '23505') {
-      safeLog({
-        level: 'info',
-        category: 'sms',
-        event: 'duplicate_inbound_sms_ignored',
-        tenant_id: salon.id,
-        session_id: conversation.id,
-        twilio_message_sid: inboundMessageSid,
-      });
-      return twiml();
-    }
-    throw error;
-  }
+  const userMessage = await saveMessage(conversation.id, 'user', userInput);
 
   if (inboundMessageSid && userMessage?.id) {
     const inboundSmsStatus = (formData.get('SmsStatus') as string | null) || 'received';
@@ -143,7 +121,6 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
       toNumber,
     };
 
-    await updateTranscriptSmsMetadata(userMessage.id, inboundMetadata);
     await upsertSmsMessage({
       ...inboundMetadata,
       channel,
@@ -256,7 +233,7 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
     await supabase
       .from('sessions')
       .update({
-        metadata: { ...conversation.metadata, tokens: aiResponse.tokens, booking_state: updatedBookingState },
+        metadata: { ...conversation.metadata, booking_state: updatedBookingState },
         status: 'needs_approval',
         updated_at: new Date().toISOString(),
       })
@@ -289,7 +266,7 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
   await supabase
     .from('sessions')
     .update({
-      metadata: { ...conversation.metadata, tokens: aiResponse.tokens, booking_state: updatedBookingState },
+      metadata: { ...conversation.metadata, booking_state: updatedBookingState },
       status: triggerHandoff ? 'escalated' : 'active',
       updated_at: new Date().toISOString(),
     })
@@ -308,12 +285,10 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
     direction: 'outbound' as const,
     ...smsMetadataFromTwilioMessage(outboundMessage),
   };
-  if (assistantMessage?.id) {
-    await updateTranscriptSmsMetadata(assistantMessage.id, outboundMetadata);
-  }
   await upsertSmsMessage({
     ...outboundMetadata,
     channel,
+    messageType: 'auto_reply',
     sessionId: conversation.id,
     transcriptId: assistantMessage?.id ?? null,
     salonId: salon.id,

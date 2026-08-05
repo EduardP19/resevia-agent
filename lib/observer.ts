@@ -3,6 +3,7 @@ import { supabase, TEST_UI_TRANSCRIPTS_TABLE } from './supabase';
 import { safeLog } from '@/lib/logger';
 import { ERROR_FALLBACK_REPLY } from './reply-format';
 import { getAgentName, getAgentPossessiveName } from './agent-name';
+import { recordTokenUsage, type UsageChannel } from './token-usage';
 
 /**
  * Lightweight observer / supervisor agent.
@@ -278,6 +279,21 @@ async function runLlmCheck(
 
   try {
     const result = await model.generateContent(prompt);
+
+    const usage = result.response.usageMetadata;
+    await recordTokenUsage({
+      salonId: ctx.salonId,
+      sessionId: ctx.sessionId,
+      model: process.env.AI_MODEL_NAME || 'gemini-2.5-flash',
+      channel: ctx.channel as UsageChannel,
+      interaction: 'observer_check',
+      tokens: {
+        prompt: usage?.promptTokenCount || 0,
+        completion: usage?.candidatesTokenCount || 0,
+        total: usage?.totalTokenCount || 0,
+      },
+    });
+
     const text = result.response.text().trim();
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) return null;

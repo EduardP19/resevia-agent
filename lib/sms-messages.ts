@@ -4,6 +4,14 @@ import { supabase } from '@/lib/supabase';
 
 export type SmsDirection = 'inbound' | 'outbound';
 
+// Classifies *how* an outbound message was sent — surfaced in sms_messages so
+// spend can be broken down by send type, not just channel/direction.
+export type SmsMessageType =
+  | 'whatsapp_template' // business-initiated Content template (outside 24h window)
+  | 'auto_reply' // agent free-form reply to an inbound customer message
+  | 'initiation' // owner-triggered outreach from the dashboard
+  | 'missed_call_followup'; // voice webhook fallback after a missed call
+
 export type SmsMetadata = {
   direction?: SmsDirection | null;
   status?: string | null;
@@ -22,6 +30,7 @@ export type SmsMessageUpsert = SmsMetadata & {
   transcriptId?: string | null;
   salonId?: string | null;
   channel?: 'sms' | 'whatsapp' | null;
+  messageType?: SmsMessageType | null;
   rawPayload?: Record<string, any> | null;
   pricedAt?: string | null;
   lastPriceLookupAt?: string | null;
@@ -94,48 +103,17 @@ export function smsMetadataFromTwilioMessage(message: any): SmsMetadata {
   };
 }
 
-export function transcriptSmsPayload(metadata: SmsMetadata & { twilioMessageSid?: string | null }) {
-  return compactRecord({
-    twilio_message_sid: metadata.twilioMessageSid,
-    sms_direction: metadata.direction,
-    sms_status: metadata.status,
-    sms_price: metadata.price,
-    sms_price_unit: metadata.priceUnit,
-    sms_num_segments: metadata.numSegments,
-    sms_error_code: metadata.errorCode,
-    sms_error_message: metadata.errorMessage,
-    sms_from_number: metadata.fromNumber,
-    sms_to_number: metadata.toNumber,
-    sms_updated_at: new Date().toISOString(),
-  });
-}
-
-export async function updateTranscriptSmsMetadata(
-  transcriptId: string,
-  metadata: SmsMetadata & { twilioMessageSid?: string | null }
-) {
-  const payload = transcriptSmsPayload(metadata);
-  if (Object.keys(payload).length <= 1) return null;
-
-  const { data, error } = await supabase
-    .from('transcripts')
-    .update(payload)
-    .eq('id', transcriptId)
-    .select('id, session_id, sms_direction')
+/**
+ * Look up a ledger row by Twilio SID. `sms_messages` is the single source of
+ * truth for per-message delivery/pricing metadata — transcripts only hold the
+ * conversational content, linked back via sms_messages.transcript_id.
+ */
+export async function findSmsMessageBySid(twilioMessageSid: string) {
+  const { data } = await supabase
+    .from('sms_messages')
+    .select('id, session_id, transcript_id, direction')
+    .eq('twilio_message_sid', twilioMessageSid)
     .maybeSingle();
-
-  if (error) {
-    safeLog({
-      level: 'error',
-      category: 'system',
-      event: 'db_error',
-      error: error?.message || String(error),
-      stack: error?.stack,
-      query_description: 'Update transcript SMS metadata',
-      code: error?.code,
-      transcript_id: transcriptId,
-    });
-  }
 
   return data;
 }
@@ -158,6 +136,7 @@ export async function upsertSmsMessage(input: SmsMessageUpsert) {
       transcript_id: input.transcriptId,
       salon_id: input.salonId,
       channel: input.channel,
+      message_type: input.messageType,
       direction: input.direction,
       from_number: input.fromNumber,
       to_number: input.toNumber,

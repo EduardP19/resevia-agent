@@ -77,12 +77,12 @@ Migrations live in `supabase/migrations/` (managed by Supabase CLI). Never add l
 |-------|---------|
 | `business_profiles` | Tenant/salon config — name, phone, email, password, agent settings, hours, Twilio creds, `twilio_number` (SMS) + `whatsapp_number` (WhatsApp senders) |
 | `sessions` | SMS/WhatsApp/voice conversations — `channel` (sms/whatsapp/webchat, authoritative), status, customer_phone, summary, token tracking |
-| `transcripts` | Per-session messages — role (system/assistant/user/draft), content |
+| `transcripts` | Per-session messages — role (system/assistant/user/draft), content. Content only; all SMS/Twilio metadata lives in `sms_messages` |
 | `transcripts-sophia-sandbox` | Sandbox/test UI messages — same as transcripts + `t`, `param` columns |
 | `faqs` | FAQ entries — question, answer, category, is_active |
 | `workers` | Staff — salon_id, name, role, cal_event_type_id, services[], is_active |
 | `bookings` | Cal.com bookings linked to sessions |
-| `sms_messages` | SMS + WhatsApp message/cost ledger (`channel` column) |
+| `sms_messages` | SMS + WhatsApp message/cost ledger — **single source of truth** for per-message delivery status, pricing, and Twilio SIDs (`channel`, `message_type`, `direction`, `price`). Links to content via `transcript_id` |
 | `pending_notifications` | Deferred owner alert queue — session_id, send_after |
 | `system_logs` | Structured server-side logs — level, source, message, metadata |
 | `event_logs` | Client event tracking — category, event, tenant_id, session_id, metadata |
@@ -94,7 +94,7 @@ Import the shared client: `import { supabase } from '@/lib/supabase'` — never 
 
 ## Channels (SMS / WhatsApp)
 
-Each session has a `channel` column (`'sms' | 'whatsapp' | 'webchat'`, default `'sms'`) — the **authoritative routing field**. `platform` is a legacy free-text stamp, not used for routing.
+Each session has a `channel` column (`'sms' | 'whatsapp' | 'webchat'`, default `'sms'`) — the **authoritative routing field**. (The legacy `platform` free-text column was dropped in `20260805140000`.)
 
 - **Inbound:** Twilio SMS hits `/api/sms-webhook`; WhatsApp hits `/api/whatsapp-webhook`. Both delegate to `handleInboundMessage(req, channel)` in `lib/inbound-handler.ts` (single shared pipeline). WhatsApp inbound carries a `whatsapp:` prefix on `From`/`To` — the handler strips it. The customer's reply always continues on the channel it arrived on.
 - **Outbound replies** (auto reply, approved draft, manual takeover) go through `sendOnChannel(session.channel, …)` — never call `sendSMS` directly in channel-aware paths.
