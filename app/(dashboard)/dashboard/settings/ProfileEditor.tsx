@@ -32,13 +32,11 @@ function FieldLabel({ children, hint }: { children: React.ReactNode; hint?: stri
 }
 
 export default function ProfileEditor({ salon }: { salon: any }) {
+  // Business identity (name, sender number, opening hours) is provisioned by Resevia and
+  // isn't shown or editable here — `/api/dashboard/salon` rejects those fields too.
   const [formData, setFormData] = useState({
-    name: salon.name || '',
     agent_name: salon.agent_name || '',
     tone_of_voice: salon.tone_of_voice || '',
-    opening_hours: salon.opening_hours || '',
-    twilio_number: salon.twilio_number || '',
-    whatsapp_number: salon.whatsapp_number || '',
   });
   const [isSaving, setIsSaving] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saved' | 'error'>('idle');
@@ -71,82 +69,7 @@ export default function ProfileEditor({ salon }: { salon: any }) {
   return (
     <div className="space-y-6">
 
-      {/* ── Section 1: Business Identity ─────────────────────────────── */}
-      <Card>
-        <CardHeader
-          icon={
-            <SectionIcon>
-              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-              </svg>
-            </SectionIcon>
-          }
-          title="Business Identity"
-          subtitle="Your salon's public-facing profile"
-        />
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <div>
-            <FieldLabel>Salon Name</FieldLabel>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={e => setFormData({ ...formData, name: e.target.value })}
-              className={inputBase}
-              placeholder="e.g. Luxe Studio"
-            />
-          </div>
-
-          <div>
-            <FieldLabel hint={`The number ${agentName} texts from`}>Twilio Number</FieldLabel>
-            <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#6D28D9]/50 pointer-events-none">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                </svg>
-              </span>
-              <input
-                type="text"
-                value={formData.twilio_number}
-                onChange={e => setFormData({ ...formData, twilio_number: e.target.value })}
-                className={`${inputBase} pl-10 font-mono`}
-                placeholder="+44 7700 900000"
-              />
-            </div>
-          </div>
-
-          <div>
-            <FieldLabel hint={`The WhatsApp sender ${agentName} initiates from (leave blank to disable WhatsApp)`}>WhatsApp Number</FieldLabel>
-            <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#6D28D9]/50 pointer-events-none">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-              </span>
-              <input
-                type="text"
-                value={formData.whatsapp_number}
-                onChange={e => setFormData({ ...formData, whatsapp_number: e.target.value })}
-                className={`${inputBase} pl-10 font-mono`}
-                placeholder="+44 7700 900000"
-              />
-            </div>
-          </div>
-
-          <div className="md:col-span-2">
-            <FieldLabel hint={`${agentName} references this when answering availability questions`}>Opening Hours</FieldLabel>
-            <textarea
-              rows={5}
-              value={formData.opening_hours}
-              onChange={e => setFormData({ ...formData, opening_hours: e.target.value })}
-              className={`${inputBase} resize-none leading-relaxed`}
-              placeholder={'Mon: 9am – 6pm\nTue: 9am – 6pm\nWed: 9am – 7pm\nThu: 9am – 7pm\nFri: 9am – 6pm\nSat: 10am – 5pm\nSun: Closed'}
-            />
-          </div>
-        </div>
-      </Card>
-
-      {/* ── Section 2: Agent AI ──────────────────────────────────────── */}
+      {/* ── Agent AI ─────────────────────────────────────────────────── */}
       <Card>
         <CardHeader
           icon={
@@ -269,7 +192,7 @@ function CardHeader({
   return (
     <div className="flex items-start gap-3 mb-6 pb-5 border-b border-[#f0eafa]">
       {icon}
-      <div>
+      <div className="min-w-0">
         <h3 className="text-sm font-bold text-gray-900 tracking-tight leading-none">{title}</h3>
         <p className="text-[12px] text-gray-400 mt-1">{subtitle}</p>
       </div>

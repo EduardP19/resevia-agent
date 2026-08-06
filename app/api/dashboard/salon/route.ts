@@ -5,15 +5,18 @@ import { requireDashboardSessionFromRequest } from '@/lib/dashboard-auth';
 import { encrypt } from '@/lib/crypto';
 import { getCachedProfile, setCachedProfile, invalidateProfileCache } from '@/lib/profile-cache';
 
+/**
+ * Fields a tenant may change from their dashboard.
+ *
+ * Business identity — `name`, `twilio_number`, `whatsapp_number`, `opening_hours` —
+ * is deliberately NOT here: it's provisioned by Resevia and read-only in Settings,
+ * so it must be rejected server-side too, not just hidden in the UI.
+ */
 const allowedProfileFields = new Set([
-  'name',
   'agent_name',
   'industry',
-  'opening_hours',
   'tone_of_voice',
   'services',
-  'twilio_number',
-  'whatsapp_number',
   'twilio_account_sid',
   'twilio_auth_token',
   'notify_sms_to',
