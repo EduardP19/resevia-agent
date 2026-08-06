@@ -113,6 +113,26 @@ export interface TenantApiSpend {
     totalCostByCurrency: CurrencyTotals;
     unpricedMessages: number;
   };
+  /**
+   * Rate-card estimate from `sms_messages.meta_fee_usd` / `twilio_fee_usd`.
+   * Kept apart from `twilio.*` (which is Twilio's reported price) so the two aren't
+   * added together — see lib/message-rate-card.ts.
+   */
+  rateCard: {
+    sms: {
+      messages: number;
+      segments: number;
+      feeUsd: number;
+    };
+    whatsapp: {
+      messages: number;
+      metaBillableMessages: number;
+      metaFeeUsd: number;
+      twilioFeeUsd: number;
+      totalFeeUsd: number;
+    };
+    totalUsd: number;
+  };
 }
 
 type AiModelRate = {
@@ -121,6 +141,11 @@ type AiModelRate = {
 };
 
 const CUSTOMER_CHANNELS: UsageChannel[] = ['sms', 'whatsapp', 'voice', 'web'];
+
+function numberOrZero(value: unknown) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
 function monthStartIso() {
   const now = new Date();
@@ -184,7 +209,7 @@ export async function getTenantApiSpend(salonId: string): Promise<TenantApiSpend
         .range(0, 9999),
       supabase
         .from('sms_messages')
-        .select('direction, price, price_unit')
+        .select('direction, price, price_unit, channel, num_segments, meta_fee_usd, twilio_fee_usd')
         .eq('salon_id', salonId)
         .gte('created_at', monthStart)
         .range(0, 9999),
@@ -214,6 +239,11 @@ export async function getTenantApiSpend(salonId: string): Promise<TenantApiSpend
         outboundCostByCurrency: emptyCurrencyTotals(),
         totalCostByCurrency: emptyCurrencyTotals(),
         unpricedMessages: 0,
+      },
+      rateCard: {
+        sms: { messages: 0, segments: 0, feeUsd: 0 },
+        whatsapp: { messages: 0, metaBillableMessages: 0, metaFeeUsd: 0, twilioFeeUsd: 0, totalFeeUsd: 0 },
+        totalUsd: 0,
       },
     };
 
@@ -258,6 +288,27 @@ export async function getTenantApiSpend(salonId: string): Promise<TenantApiSpend
       if (direction === 'outbound') addCurrencyTotal(spend.twilio.outboundCostByCurrency, currency, price);
       addCurrencyTotal(spend.twilio.totalCostByCurrency, currency, price);
     }
+
+    for (const row of smsRows || []) {
+      const metaFee = numberOrZero(row.meta_fee_usd);
+      const twilioFee = numberOrZero(row.twilio_fee_usd);
+
+      if (row.channel === 'whatsapp') {
+        spend.rateCard.whatsapp.messages += 1;
+        if (metaFee > 0) spend.rateCard.whatsapp.metaBillableMessages += 1;
+        spend.rateCard.whatsapp.metaFeeUsd += metaFee;
+        spend.rateCard.whatsapp.twilioFeeUsd += twilioFee;
+      } else {
+        const segments = numberOrZero(row.num_segments);
+        spend.rateCard.sms.messages += 1;
+        spend.rateCard.sms.segments += segments > 0 ? segments : 1;
+        spend.rateCard.sms.feeUsd += twilioFee;
+      }
+    }
+    spend.rateCard.whatsapp.totalFeeUsd =
+      spend.rateCard.whatsapp.metaFeeUsd + spend.rateCard.whatsapp.twilioFeeUsd;
+    spend.rateCard.totalUsd = spend.rateCard.sms.feeUsd + spend.rateCard.whatsapp.totalFeeUsd;
+
     return spend;
   } catch {
     return null;

@@ -1,6 +1,7 @@
 import { safeLog } from '@/lib/logger';
 import { normalizeSmsPrice } from '@/lib/sms-pricing';
 import { supabase } from '@/lib/supabase';
+import { resolveSmsFees, resolveWhatsAppFees, type MessageFees, type ServiceWindow } from '@/lib/message-rate-card';
 
 export type SmsDirection = 'inbound' | 'outbound';
 
@@ -35,6 +36,10 @@ export type SmsMessageUpsert = SmsMetadata & {
   pricedAt?: string | null;
   lastPriceLookupAt?: string | null;
   priceLookupAttempts?: number | null;
+  // Rate-card cost estimate. Computed here when omitted — see lib/message-rate-card.ts.
+  metaFeeUsd?: number | null;
+  twilioFeeUsd?: number | null;
+  serviceWindow?: ServiceWindow | null;
 };
 
 const STATUS_RANK: Record<string, number> = {
@@ -118,17 +123,58 @@ export async function findSmsMessageBySid(twilioMessageSid: string) {
   return data;
 }
 
+/**
+ * Rate-card estimate for a row being written.
+ *
+ * SMS is recomputed on every write: the segment count and the final status often
+ * arrive on a later status callback, and both change the price. WhatsApp is priced
+ * once, on the row's first write — the service window is only meaningful at send
+ * time, and re-deriving it on each callback would re-query for no benefit.
+ */
+async function resolveFees(
+  input: SmsMessageUpsert,
+  existing?: { channel?: string | null; direction?: string | null; num_segments?: number | null; service_window?: string | null; status?: string | null } | null,
+  effectiveStatus?: string | null
+): Promise<MessageFees | null> {
+  if (input.metaFeeUsd !== undefined || input.twilioFeeUsd !== undefined) return null;
+
+  const channel = input.channel ?? existing?.channel ?? null;
+  const direction = (input.direction ?? existing?.direction ?? null) as SmsDirection | null;
+  if (!direction) return null;
+
+  if (channel === 'whatsapp') {
+    if (existing?.service_window) return null; // already priced
+    return resolveWhatsAppFees({
+      direction,
+      customerNumber: direction === 'inbound' ? input.fromNumber : input.toNumber,
+      messageType: input.messageType,
+    });
+  }
+
+  if (channel === 'sms') {
+    return resolveSmsFees({
+      direction,
+      numSegments: input.numSegments ?? existing?.num_segments,
+      status: effectiveStatus,
+    });
+  }
+
+  return null;
+}
+
 export async function upsertSmsMessage(input: SmsMessageUpsert) {
   try {
     const { data: existing } = await supabase
       .from('sms_messages')
-      .select('id, status')
+      .select('id, status, channel, direction, num_segments, service_window')
       .eq('twilio_message_sid', input.twilioMessageSid)
       .maybeSingle();
 
     const status = shouldKeepExistingStatus(existing?.status, input.status)
       ? undefined
       : input.status;
+
+    const fees = await resolveFees(input, existing, status ?? existing?.status);
 
     const payload = compactRecord({
       twilio_message_sid: input.twilioMessageSid,
@@ -146,6 +192,9 @@ export async function upsertSmsMessage(input: SmsMessageUpsert) {
       error_code: input.errorCode,
       error_message: input.errorMessage,
       num_segments: input.numSegments,
+      meta_fee_usd: input.metaFeeUsd ?? fees?.metaFeeUsd,
+      twilio_fee_usd: input.twilioFeeUsd ?? fees?.twilioFeeUsd,
+      service_window: input.serviceWindow ?? fees?.serviceWindow,
       raw_payload: jsonRecordOrEmpty(input.rawPayload),
       priced_at: input.pricedAt,
       last_price_lookup_at: input.lastPriceLookupAt,

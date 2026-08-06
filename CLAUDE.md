@@ -82,7 +82,7 @@ Migrations live in `supabase/migrations/` (managed by Supabase CLI). Never add l
 | `faqs` | FAQ entries — question, answer, category, is_active |
 | `workers` | Staff — salon_id, name, role, cal_event_type_id, services[], is_active |
 | `bookings` | Cal.com bookings linked to sessions |
-| `sms_messages` | SMS + WhatsApp message/cost ledger — **single source of truth** for per-message delivery status, pricing, and Twilio SIDs (`channel`, `message_type`, `direction`, `price`). Links to content via `transcript_id` |
+| `sms_messages` | SMS + WhatsApp message/cost ledger — **single source of truth** for per-message delivery status, pricing, and Twilio SIDs (`channel`, `message_type`, `direction`, `price`, `num_segments`). WhatsApp rows also carry a rate-card fee split (`meta_fee_usd`, `twilio_fee_usd`, `service_window`) — see Costs below. Links to content via `transcript_id` |
 | `pending_notifications` | Deferred owner alert queue — session_id, send_after |
 | `system_logs` | Structured server-side logs — level, source, message, metadata |
 | `event_logs` | Client event tracking — category, event, tenant_id, session_id, metadata |
@@ -139,6 +139,22 @@ Each session has a `channel` column (`'sms' | 'whatsapp' | 'webchat'`, default `
 - Client components never call Supabase directly — always go through `/api/dashboard/*` endpoints.
 
 ---
+
+## Message Costs
+
+Two independent cost views live on `sms_messages` — **never add them together**, they price the same message twice.
+
+1. **Twilio-reported** — `price` / `price_unit`, straight from Twilio, so segment surcharges are already included. Twilio returns no price at send time, so it's filled in by the status callback (`/api/twilio/status`) and backfilled by the `/api/cron/sms-pricing` reconciliation job (rows unpriced after 5 min, ≤72 attempts).
+2. **Rate-card estimate** — `twilio_fee_usd` (+ `meta_fee_usd` and `service_window` on WhatsApp), computed by `lib/message-rate-card.ts` from inside `upsertSmsMessage`, so all send/receive paths are covered without touching them.
+
+Rate-card rules:
+
+- **SMS** — billed **per segment** (160 GSM-7 chars, 153/segment once concatenated; 70/67 for Unicode). Estimate = `num_segments` × the per-segment rate for the direction, plus a processing fee if the message ends up failed/undelivered. Recomputed on **every** write, because the segment count and final status usually arrive on a later status callback. Rates: `SMS_OUTBOUND_SEGMENT_FEE_USD` / `SMS_INBOUND_SEGMENT_FEE_USD` / `SMS_FAILED_MESSAGE_FEE_USD` (defaults $0.056 / $0.0075 / $0.001).
+- **WhatsApp** — billed per message. Meta charges on template sends and on anything sent outside the 24h customer service window; free-form replies inside the window are free. Twilio's platform fee applies to every WhatsApp message, both directions. Priced **once**, on first write — the window is only meaningful at send time. Rates: `WHATSAPP_META_FEE_USD` / `WHATSAPP_TWILIO_FEE_USD` (defaults $0.022 / $0.005).
+
+The window state is derived by looking for an inbound WhatsApp row from that customer number in the last 24h (index `sms_messages_inbound_window_idx`). `getTenantApiSpend()` returns the two views separately as `spend.twilio` (Twilio-reported) and `spend.rateCard` (estimate, split SMS/WhatsApp); the Settings usage card shows both, the latter labelled "est.".
+
+**Not modelled:** carrier surcharges and MMS.
 
 ## Logging & Analytics
 

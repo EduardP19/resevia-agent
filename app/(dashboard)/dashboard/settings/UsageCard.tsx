@@ -52,11 +52,14 @@ function SpendMetric({ label, value, detail }: { label: string; value: string; d
  *
  * AI spend is estimated from recorded input/output tokens. Twilio spend uses
  * Twilio's own message prices once callbacks or reconciliation populate them.
+ * The rate-card block (SMS per segment, WhatsApp Meta + platform fees) is a separate
+ * estimate — shown on its own so it isn't double-counted against Twilio's price.
  */
 export default function UsageCard({ spend, agentName: rawAgentName }: { spend: TenantApiSpend | null; agentName?: string | null }) {
   const agentName = getAgentName({ agent_name: rawAgentName });
   const ai = spend?.ai;
   const twilio = spend?.twilio;
+  const rateCard = spend?.rateCard;
   const totalSpend = formatCurrencyTotals(withAiUsd(twilio?.totalCostByCurrency || {}, ai?.totalCostUsd || 0));
   const monthLabel = spend?.monthStart
     ? new Date(spend.monthStart).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
@@ -120,6 +123,29 @@ export default function UsageCard({ spend, agentName: rawAgentName }: { spend: T
             <span className="font-semibold text-gray-800">
               {formatTokenCount(ai?.outputTokens || 0)} - {formatCurrency(ai?.outputCostUsd || 0, 'USD')}
             </span>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-gray-100 p-3">
+          <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-2">
+            Rate card <span className="text-gray-300">(est.)</span>
+          </p>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-gray-500">SMS</span>
+            <span className="font-semibold text-gray-800">
+              {formatTokenCount(rateCard?.sms.segments || 0)} segments - {formatCurrency(rateCard?.sms.feeUsd || 0, 'USD')}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-3 mt-1.5">
+            <span className="text-gray-500">WhatsApp</span>
+            <span className="font-semibold text-gray-800">
+              {formatTokenCount(rateCard?.whatsapp.metaBillableMessages || 0)} Meta-billable -{' '}
+              {formatCurrency(rateCard?.whatsapp.totalFeeUsd || 0, 'USD')}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-3 mt-1.5 pt-1.5 border-t border-gray-100">
+            <span className="text-gray-500">Total</span>
+            <span className="font-semibold text-gray-800">{formatCurrency(rateCard?.totalUsd || 0, 'USD')}</span>
           </div>
         </div>
 
