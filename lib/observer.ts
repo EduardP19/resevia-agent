@@ -143,6 +143,7 @@ export async function logObserverFlag(input: {
       metadata: input.metadata || null,
     });
     safeLog({
+      type: 'audit',
       level: input.severity === 'critical' ? 'error' : input.severity === 'warning' ? 'warning' : 'info',
       category: 'observer',
       event: 'observer_flag',
@@ -155,6 +156,7 @@ export async function logObserverFlag(input: {
     });
   } catch (error: any) {
     safeLog({
+      type: 'error',
       level: 'warning',
       category: 'observer',
       event: 'observer_flag_failed',
@@ -315,6 +317,7 @@ async function runLlmCheck(
     };
   } catch (error: any) {
     safeLog({
+      type: 'error',
       level: 'warning',
       category: 'observer',
       event: 'observer_llm_failed',
@@ -357,6 +360,7 @@ export async function runObserver(ctx: ObserverContext): Promise<void> {
     }
   } catch (error: any) {
     safeLog({
+      type: 'error',
       level: 'warning',
       category: 'observer',
       event: 'observer_failed',

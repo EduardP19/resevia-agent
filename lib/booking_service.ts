@@ -1,6 +1,6 @@
 import { supabase, completeSession } from './supabase';
 import axios from 'axios';
-import { safeLog } from '@/lib/logger';
+import { safeLog, describeError } from '@/lib/logger';
 
 const CAL_COM_API_KEY = process.env.CAL_COM_API_KEY;
 
@@ -11,6 +11,57 @@ const calApiV2 = axios.create({
     'Content-Type': 'application/json'
   }
 });
+
+/** Threshold above which a Cal.com call is logged as a timeout rather than an integration. */
+const CAL_SLOW_MS = Number(process.env.LOG_SLOW_CALL_MS || 5000);
+
+// Instrumenting the axios instance covers every Cal.com endpoint at once —
+// availability, hold, confirm, cancel, reschedule — instead of wrapping each
+// of the eight exported functions. Cal.com is the slowest dependency in the
+// booking path, so its duration is what usually explains a slow reply.
+calApiV2.interceptors.request.use((config) => {
+  (config as any).__startedAt = Date.now();
+  return config;
+});
+
+calApiV2.interceptors.response.use(
+  (response) => {
+    const duration_ms = Date.now() - ((response.config as any).__startedAt || Date.now());
+    safeLog({
+      type: duration_ms >= CAL_SLOW_MS ? 'timeout' : 'integration',
+      level: duration_ms >= CAL_SLOW_MS ? 'warning' : 'info',
+      category: 'tool',
+      event: 'cal_request',
+      source: 'lib.booking_service',
+      duration_ms,
+      threshold_ms: CAL_SLOW_MS,
+      cal_method: response.config.method?.toUpperCase(),
+      cal_path: response.config.url,
+      cal_status: response.status,
+      outcome: duration_ms >= CAL_SLOW_MS ? 'slow_success' : 'success',
+    });
+    return response;
+  },
+  (error) => {
+    const duration_ms = Date.now() - ((error.config as any)?.__startedAt || Date.now());
+    safeLog({
+      type: duration_ms >= CAL_SLOW_MS ? 'timeout' : 'error',
+      level: 'error',
+      category: 'tool',
+      event: 'cal_request',
+      source: 'lib.booking_service',
+      message: describeError(error).message,
+      duration_ms,
+      threshold_ms: CAL_SLOW_MS,
+      cal_method: error.config?.method?.toUpperCase(),
+      cal_path: error.config?.url,
+      cal_status: error.response?.status || null,
+      cal_response: error.response?.data ? JSON.stringify(error.response.data).slice(0, 2000) : null,
+      outcome: 'failed',
+    });
+    return Promise.reject(error);
+  }
+);
 
 const VERSION_STABLE = '2024-06-11';
 const VERSION_LATEST = '2024-08-13';
@@ -29,6 +80,7 @@ const lowerSafe = (value: unknown) => String(value || '').toLowerCase();
 
 function logCalError(error: any, context: Record<string, any> = {}) {
   safeLog({
+    type: 'error',
     level: 'error',
     category: 'system',
     event: 'cal_error',

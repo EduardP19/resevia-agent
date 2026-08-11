@@ -61,6 +61,7 @@ export async function PATCH(req: NextRequest) {
     const data = await updateSalonProfile(auth.session.tenantId, safeUpdates);
     invalidateProfileCache(auth.session.tenantId);
     safeLog({
+      type: 'audit',
       level: 'info',
       category: 'dashboard',
       event: 'settings_updated',
@@ -71,6 +72,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json(data);
   } catch (err: any) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',

@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { agentTools } from './agent';
-import { safeLog } from '@/lib/logger';
+import { withTiming } from '@/lib/logger';
 
 const genAI = new GoogleGenerativeAI(process.env.AI_MODEL_API_KEY!);
 
@@ -80,33 +80,33 @@ export async function callAI(
     }
   }
 
-  safeLog({
-    level: 'info',
-    category: 'ai',
-    event: 'ai_call_start',
-    tenant_id: context.tenant_id,
-    session_id: context.session_id,
-    message_count: messages.length,
-    model: process.env.AI_MODEL_NAME || 'gemini-2.5-flash',
-  });
-
-  let result;
-  try {
-    result = await model.generateContent({ contents });
-  } catch (error: any) {
-    safeLog({
-      level: 'error',
+  // One timed log covers start/success/failure/slow. Gemini is the call most
+  // likely to push an inbound webhook past Twilio's deadline, so duration_ms
+  // here is the main early warning for timeouts.
+  const result = await withTiming(
+    {
       category: 'ai',
-      event: 'ai_call_failed',
+      event: 'ai_call',
+      source: 'lib.ai.callAI',
       tenant_id: context.tenant_id,
       session_id: context.session_id,
       message_count: messages.length,
-      error: error?.message || String(error),
-      stack: error?.stack,
       model: process.env.AI_MODEL_NAME || 'gemini-2.5-flash',
-    });
-    throw error;
-  }
+      enrich: (r: any) => {
+        const usage = r?.response?.usageMetadata;
+        const toolCall = r?.response?.candidates?.[0]?.content?.parts?.find(
+          (p: any) => p.functionCall
+        );
+        return {
+          prompt_tokens: usage?.promptTokenCount || 0,
+          completion_tokens: usage?.candidatesTokenCount || 0,
+          total_tokens: usage?.totalTokenCount || 0,
+          tool_call: toolCall?.functionCall?.name || null,
+        };
+      },
+    },
+    () => model.generateContent({ contents })
+  );
 
   const response = result.response;
   const usage = response.usageMetadata;
@@ -115,16 +115,6 @@ export async function callAI(
   const toolCallPart = candidates?.content?.parts?.find((p: any) => p.functionCall);
 
   if (toolCallPart?.functionCall) {
-    safeLog({
-      level: 'info',
-      category: 'ai',
-      event: 'ai_call_success',
-      tenant_id: context.tenant_id,
-      session_id: context.session_id,
-      message_count: messages.length,
-      tool_call: toolCallPart.functionCall.name,
-      model: process.env.AI_MODEL_NAME || 'gemini-2.5-flash',
-    });
     return {
       tool_call: toolCallPart.functionCall,
       raw: response,
@@ -136,15 +126,6 @@ export async function callAI(
     };
   }
 
-  safeLog({
-    level: 'info',
-    category: 'ai',
-    event: 'ai_call_success',
-    tenant_id: context.tenant_id,
-    session_id: context.session_id,
-    message_count: messages.length,
-    model: process.env.AI_MODEL_NAME || 'gemini-2.5-flash',
-  });
   return {
     reply: response.text(),
     raw: response,

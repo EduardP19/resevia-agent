@@ -36,6 +36,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const filter = filterParam || 'active';
   const isNeedsApprovalFilter = filter === 'approval' || filter === 'needs_approval';
   safeLog({
+    type: 'interaction',
     level: 'info',
     category: 'dashboard',
     event: 'page_loaded',

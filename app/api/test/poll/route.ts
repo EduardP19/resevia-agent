@@ -40,6 +40,7 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',

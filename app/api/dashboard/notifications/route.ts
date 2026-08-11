@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',
@@ -57,6 +58,7 @@ export async function GET(req: NextRequest) {
 
     if (transcriptError) {
       safeLog({
+        type: 'error',
         level: 'warning',
         category: 'system',
         event: 'db_error',

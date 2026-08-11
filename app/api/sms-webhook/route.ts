@@ -1,28 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { handleInboundMessage } from '@/lib/inbound-handler';
-import { logAppError, toErrorLogPayload } from '@/lib/error-logger';
-import { safeLog } from '@/lib/logger';
+import { logError, withRequestContext } from '@/lib/logger';
 
 export async function POST(req: NextRequest) {
-  try {
-    return await handleInboundMessage(req, 'sms');
-  } catch (error: any) {
-    const payload = toErrorLogPayload(error, 'SMS webhook error');
-    safeLog({
-      level: 'error',
-      category: 'system',
-      event: 'webhook_error',
-      error: payload.message,
-      stack: payload.stack || undefined,
-    });
-    await logAppError({
-      source: 'api.sms-webhook',
-      message: payload.message,
-      stack: payload.stack || undefined,
-      path: '/api/sms-webhook',
-      method: 'POST',
-      runtime: 'server',
-    });
-    return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
-  }
+  // Every log emitted while handling this message shares one request_id, so the
+  // whole turn (received → ai → tool → sent) can be pulled back in order.
+  return withRequestContext({ path: '/api/sms-webhook' }, async () => {
+    try {
+      return await handleInboundMessage(req, 'sms');
+    } catch (error: any) {
+      logError('sms', 'webhook_error', error, {
+        source: 'api.sms-webhook',
+        path: '/api/sms-webhook',
+        method: 'POST',
+      });
+      return new NextResponse('<Response></Response>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/xml' },
+      });
+    }
+  });
 }

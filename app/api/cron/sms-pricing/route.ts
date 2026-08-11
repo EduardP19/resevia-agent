@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { safeLog } from '@/lib/logger';
+import { logError, logJob, safeLog } from '@/lib/logger';
 import { supabase } from '@/lib/supabase';
 import { getSMSMessage } from '@/lib/twilio';
 import {
@@ -25,6 +25,13 @@ async function reconcileSmsPricing() {
   const nowIso = now.toISOString();
   const cutoffIso = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
   const batchSize = Number(process.env.SMS_PRICING_RECONCILE_BATCH_SIZE || DEFAULT_BATCH_SIZE);
+  const startedAt = Date.now();
+
+  // The schedule for this job lives outside the repo (no vercel.json), so
+  // "did it actually run?" was previously unanswerable — a run that found
+  // nothing to price looked identical to a run that never happened. This
+  // heartbeat fires before any work, so absence of it means absence of a run.
+  logJob('sms_pricing_started', { category: 'sms', source: 'api.cron.sms-pricing', batch_size: batchSize });
 
   try {
     const { data: rows, error } = await supabase
@@ -78,6 +85,7 @@ async function reconcileSmsPricing() {
           .eq('id', row.id);
 
         safeLog({
+          type: 'error',
           level: 'warning',
           category: 'sms',
           event: 'sms_price_lookup_failed',
@@ -88,10 +96,10 @@ async function reconcileSmsPricing() {
       }
     }
 
-    safeLog({
-      level: 'info',
+    logJob('sms_pricing_finished', {
       category: 'sms',
-      event: 'sms_pricing_reconciled',
+      source: 'api.cron.sms-pricing',
+      duration_ms: Date.now() - startedAt,
       checked,
       priced,
       pending,
@@ -100,12 +108,9 @@ async function reconcileSmsPricing() {
 
     return NextResponse.json({ checked, priced, pending, failed });
   } catch (error: any) {
-    safeLog({
-      level: 'error',
-      category: 'system',
-      event: 'db_error',
-      error: error?.message || String(error),
-      stack: error?.stack,
+    logError('sms', 'sms_pricing_failed', error, {
+      source: 'api.cron.sms-pricing',
+      duration_ms: Date.now() - startedAt,
       query_description: 'Cron SMS pricing reconciliation failed',
     });
     return NextResponse.json({ error: error.message }, { status: 500 });

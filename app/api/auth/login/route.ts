@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
   const salon = await getSalonById(credential.tenantId);
   if (!salon) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'auth',
       event: 'login_failed',
@@ -49,6 +50,7 @@ export async function POST(req: NextRequest) {
   response.cookies.set(DASHBOARD_REMEMBER_COOKIE, remember ? '1' : '', dashboardRememberCookieOptions(remember));
 
   safeLog({
+    type: 'audit',
     level: 'info',
     category: 'auth',
     event: 'login_succeeded',

@@ -77,6 +77,7 @@ export async function POST(req: NextRequest) {
       } catch (waError: any) {
         // WhatsApp unavailable/errored — fall back to SMS if we have a body.
         safeLog({
+          type: 'integration',
           level: 'warning',
           category: 'sms',
           event: 'whatsapp_initiation_fallback',
@@ -136,6 +137,7 @@ export async function POST(req: NextRequest) {
     await refreshSessionSummary(conversation.id, 'active').catch(() => {});
 
     await log({
+      type: 'audit',
       level: 'info',
       category: 'dashboard',
       event: 'conversation_initiated',
@@ -155,6 +157,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',

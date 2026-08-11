@@ -18,7 +18,7 @@ import { callAI } from '@/lib/ai';
 import { sendOnChannel, stripWhatsAppPrefix, type MessageChannel } from '@/lib/twilio';
 import { isHandoff } from '@/lib/handoff';
 import { executeToolCall, ToolContext } from '@/lib/tool-handler';
-import { log, safeLog } from '@/lib/logger';
+import { log, safeLog, setRequestContext } from '@/lib/logger';
 import { normalizeCustomerReply } from '@/lib/reply-format';
 import { scheduleDeferredNotification } from '@/lib/deferred-notifications';
 import { addTokens, emptyTokens, recordTokenUsage } from '@/lib/token-usage';
@@ -65,7 +65,13 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
   if (!salon) return twiml();
 
   const conversation = await getOrCreateConversation(salon.id, fromNumber, undefined, channel);
+
+  // From here on every log in this request inherits the tenant and session,
+  // including ones emitted deep inside lib/ai.ts and lib/twilio.ts.
+  setRequestContext({ tenant_id: salon.id, session_id: conversation.id });
+
   await log({
+    type: 'integration',
     level: 'info',
     category: 'sms',
     event: channel === 'whatsapp' ? 'whatsapp_received' : 'sms_received',
@@ -83,6 +89,7 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
 
     if (existingInbound) {
       safeLog({
+        type: 'audit',
         level: 'info',
         category: 'sms',
         event: 'duplicate_inbound_sms_ignored',
@@ -97,6 +104,7 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
   const duplicateUserMessage = await findRecentDuplicateUserMessage(conversation.id, userInput);
   if (duplicateUserMessage) {
     safeLog({
+      type: 'audit',
       level: 'info',
       category: 'sms',
       event: 'duplicate_inbound_content_ignored',
@@ -131,6 +139,7 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
     });
 
     safeLog({
+      type: 'integration',
       level: 'info',
       category: 'sms',
       event: 'sms_metadata_updated',
@@ -224,6 +233,7 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
   if (effectiveManual) {
     await saveMessage(conversation.id, 'draft' as any, reply);
     safeLog({
+      type: 'audit',
       level: 'info',
       category: 'session',
       event: 'draft_created',
@@ -302,6 +312,7 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
 
   if (triggerHandoff) {
     safeLog({
+      type: 'audit',
       level: 'warning',
       category: 'session',
       event: 'session_escalated',

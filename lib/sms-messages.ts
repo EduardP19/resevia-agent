@@ -210,6 +210,7 @@ export async function upsertSmsMessage(input: SmsMessageUpsert) {
 
     if (error) {
       safeLog({
+        type: 'error',
         level: 'error',
         category: 'system',
         event: 'db_error',
@@ -225,6 +226,7 @@ export async function upsertSmsMessage(input: SmsMessageUpsert) {
     return data;
   } catch (error: any) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',

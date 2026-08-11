@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
 
   if (session) {
     safeLog({
+      type: 'audit',
       level: 'info',
       category: 'auth',
       event: 'logout',

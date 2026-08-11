@@ -1,4 +1,4 @@
-import { logAppError, toErrorLogPayload } from './lib/error-logger';
+import { logError } from './lib/logger';
 
 let registered = false;
 
@@ -7,23 +7,15 @@ export async function register() {
   registered = true;
 
   process.on('unhandledRejection', (reason) => {
-    const payload = toErrorLogPayload(reason, 'Unhandled rejection');
-    void logAppError({
+    logError('system', 'unhandled_rejection', reason, {
       source: 'process.unhandledRejection',
-      message: payload.message,
-      stack: payload.stack || undefined,
-      context: { reasonType: typeof reason },
-      runtime: 'server',
+      reason_type: typeof reason,
     });
   });
 
   process.on('uncaughtException', (error) => {
-    const payload = toErrorLogPayload(error, 'Uncaught exception');
-    void logAppError({
+    logError('system', 'uncaught_exception', error, {
       source: 'process.uncaughtException',
-      message: payload.message,
-      stack: payload.stack || undefined,
-      runtime: 'server',
     });
   });
 }

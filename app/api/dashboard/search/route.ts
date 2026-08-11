@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(results);
   } catch (err: any) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',

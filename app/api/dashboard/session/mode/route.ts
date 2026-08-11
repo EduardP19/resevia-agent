@@ -50,6 +50,7 @@ export async function POST(req: NextRequest) {
     if (error) throw error;
 
     safeLog({
+      type: 'audit',
       level: 'info',
       category: 'dashboard',
       event: 'session_mode_override_set',
@@ -62,6 +63,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, response_mode_override: data.response_mode_override });
   } catch (error: any) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',

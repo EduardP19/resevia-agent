@@ -142,6 +142,7 @@ export async function notifyOwnerConversationAttention(input: NotifyOwnerInput) 
   const owner = await resolveOwnerEmail(input.salonId);
   if (!owner.email) {
     safeLog({
+      type: 'audit',
       level: 'warning',
       category: 'auth',
       event: 'owner_notification_skipped',
@@ -164,6 +165,7 @@ export async function notifyOwnerConversationAttention(input: NotifyOwnerInput) 
     await sendViaResend(owner.email, email.subject, email.html, email.text);
 
     safeLog({
+      type: 'audit',
       level: 'info',
       category: 'auth',
       event: 'owner_notification_sent',
@@ -174,6 +176,7 @@ export async function notifyOwnerConversationAttention(input: NotifyOwnerInput) 
     });
   } catch (error: any) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'auth',
       event: 'owner_notification_failed',

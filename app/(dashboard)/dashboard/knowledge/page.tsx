@@ -12,6 +12,7 @@ export default async function KnowledgeBasePage() {
   const { data: salon } = await supabase.from('business_profiles').select('*').eq('id', auth.tenantId).single();
   const faqs = salon ? await getFAQs(salon.id) : [];
   safeLog({
+    type: 'interaction',
     level: 'info',
     category: 'dashboard',
     event: 'page_loaded',

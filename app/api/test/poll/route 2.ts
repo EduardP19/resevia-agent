@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
   const { data: messages, error } = await query;
   if (error) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',

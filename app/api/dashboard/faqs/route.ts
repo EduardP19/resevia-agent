@@ -11,6 +11,7 @@ export async function POST(req: NextRequest) {
     const faq = await req.json();
     const data = await createFAQ({ ...faq, salon_id: auth.session.tenantId });
     safeLog({
+      type: 'audit',
       level: 'info',
       category: 'dashboard',
       event: 'settings_updated',
@@ -21,6 +22,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(data);
   } catch (err: any) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',
@@ -52,6 +54,7 @@ export async function PATCH(req: NextRequest) {
 
     const data = await updateFAQ(id, faq);
     safeLog({
+      type: 'audit',
       level: 'info',
       category: 'dashboard',
       event: 'settings_updated',
@@ -62,6 +65,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json(data);
   } catch (err: any) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',
@@ -93,6 +97,7 @@ export async function DELETE(req: NextRequest) {
 
     await deleteFAQ(id);
     safeLog({
+      type: 'audit',
       level: 'info',
       category: 'dashboard',
       event: 'settings_updated',
@@ -103,6 +108,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (err: any) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',

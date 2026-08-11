@@ -78,6 +78,7 @@ export async function recordTokenUsage(input: RecordTokenUsageInput): Promise<vo
     });
   } catch (error: any) {
     safeLog({
+      type: 'error',
       level: 'warning',
       category: 'billing',
       event: 'token_usage_record_failed',

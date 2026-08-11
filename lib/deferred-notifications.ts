@@ -37,6 +37,7 @@ export async function scheduleDeferredNotification(input: {
   pendingTimers.set(input.conversationId, timer);
 
   safeLog({
+    type: 'audit',
     level: 'info',
     category: 'auth',
     event: 'owner_notification_scheduled',
@@ -62,6 +63,7 @@ export async function cancelDeferredNotification(sessionId: string) {
 
   if (data && data.length > 0) {
     safeLog({
+      type: 'audit',
       level: 'info',
       category: 'auth',
       event: 'owner_notification_cancelled',

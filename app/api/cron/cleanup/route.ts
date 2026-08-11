@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { safeLog } from '@/lib/logger';
+import { logError, logJob } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,20 +17,29 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const startedAt = Date.now();
+  // Previously this job logged only on failure, so a successful run and a run
+  // that never fired were indistinguishable.
+  logJob('cleanup_started', { source: 'api.cron.cleanup' });
+
   try {
     const { data, error } = await supabase.rpc('expire_inactive_sessions_and_holds');
     if (error) {
       throw error;
     }
 
+    logJob('cleanup_finished', {
+      source: 'api.cron.cleanup',
+      duration_ms: Date.now() - startedAt,
+      expired: (data as any)?.expired ?? 0,
+      holds_expired: (data as any)?.holdsExpired ?? 0,
+    });
+
     return NextResponse.json(data || { expired: 0, holdsExpired: 0 });
   } catch (err: any) {
-    safeLog({
-      level: 'error',
-      category: 'system',
-      event: 'db_error',
-      error: err?.message || String(err),
-      stack: err?.stack,
+    logError('system', 'cleanup_failed', err, {
+      source: 'api.cron.cleanup',
+      duration_ms: Date.now() - startedAt,
       query_description: 'Cron cleanup failed',
     });
     return NextResponse.json({ error: err.message }, { status: 500 });

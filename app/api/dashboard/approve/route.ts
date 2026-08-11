@@ -63,6 +63,7 @@ export async function POST(req: NextRequest) {
 
     const userId = auth.session.email;
     await log({
+      type: 'audit',
       level: 'info',
       category: 'dashboard',
       event: 'message_approved',
@@ -71,6 +72,7 @@ export async function POST(req: NextRequest) {
       user_id: userId,
     });
     await log({
+      type: 'audit',
       level: 'info',
       category: 'session',
       event: 'draft_approved',
@@ -80,6 +82,7 @@ export async function POST(req: NextRequest) {
     });
     if (mode === 'manual') {
       await log({
+        type: 'audit',
         level: 'info',
         category: 'dashboard',
         event: 'takeover_started',
@@ -93,6 +96,7 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('[Approve Error]', error);
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',

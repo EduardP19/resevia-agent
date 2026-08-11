@@ -152,6 +152,7 @@ export async function getOrCreateConversation(
         if (raceData) return raceData;
       }
       safeLog({
+        type: 'error',
         level: 'error',
         category: 'system',
         event: 'db_error',
@@ -165,6 +166,7 @@ export async function getOrCreateConversation(
     }
     data = newData;
     safeLog({
+      type: 'audit',
       level: 'info',
       category: 'session',
       event: 'session_created',
@@ -194,6 +196,7 @@ export async function getTranscriptHistoryFromTable(
 
   if (error) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',
@@ -235,6 +238,7 @@ export async function saveMessageToTable(
     const { data, error } = await supabase.from(table).insert(basePayload).select().single();
     if (error) {
       safeLog({
+        type: 'error',
         level: 'error',
         category: 'system',
         event: 'db_error',
@@ -263,6 +267,7 @@ export async function saveMessageToTable(
 
     if (fallbackError) {
       safeLog({
+        type: 'error',
         level: 'error',
         category: 'system',
         event: 'db_error',
@@ -278,6 +283,7 @@ export async function saveMessageToTable(
   }
 
   safeLog({
+    type: 'error',
     level: 'error',
     category: 'system',
     event: 'db_error',
@@ -486,6 +492,7 @@ export async function createTestUiConversation(salonId: string, sessionId?: stri
 
   if (error) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',
@@ -551,6 +558,7 @@ export async function expireSessionById(sessionId: string, metadataPatch?: Recor
 
   if (updateError) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',
@@ -565,6 +573,7 @@ export async function expireSessionById(sessionId: string, metadataPatch?: Recor
 
   if (updatedSession) {
     safeLog({
+      type: 'audit',
       level: 'info',
       category: 'session',
       event: 'session_closed',
@@ -599,6 +608,7 @@ export async function completeSession(salonId: string, clientIdentifier: string)
 
   if (error) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',
@@ -612,6 +622,7 @@ export async function completeSession(salonId: string, clientIdentifier: string)
   }
 
   safeLog({
+    type: 'audit',
     level: 'info',
     category: 'session',
     event: 'session_closed',

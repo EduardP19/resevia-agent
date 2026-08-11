@@ -55,6 +55,7 @@ export default async function SessionTranscriptPage({
   ]);
   const isReview = session.status === 'needs_approval' || transcript.some((m: any) => m.role === 'draft');
   safeLog({
+    type: 'interaction',
     level: 'info',
     category: 'dashboard',
     event: 'page_loaded',

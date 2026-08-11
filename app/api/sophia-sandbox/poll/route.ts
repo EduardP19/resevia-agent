@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_noStore as noStore } from 'next/cache';
 import { supabase, TEST_UI_TRANSCRIPTS_TABLE } from '@/lib/supabase';
-import { logAppError } from '@/lib/error-logger';
-import { safeLog } from '@/lib/logger';
+import { logError, safeLog } from '@/lib/logger';
 import { getAgentName } from '@/lib/agent-name';
 
 export const dynamic = 'force-dynamic';
@@ -37,6 +36,7 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',
@@ -46,13 +46,13 @@ export async function GET(req: NextRequest) {
       query_description: 'Poll agent sandbox transcript messages',
       code: error?.code,
     });
-    await logAppError({
+    logError('system', 'sandbox_poll_failed', error, {
       source: 'api.sophia-sandbox.poll',
-      message: error.message || 'Poll query failed',
-      context: { code: error.code, details: error.details, hint: error.hint },
       path: '/api/sophia-sandbox/poll',
       method: 'GET',
-      runtime: 'server',
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
     });
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

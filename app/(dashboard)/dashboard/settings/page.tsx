@@ -16,6 +16,7 @@ export default async function SettingsPage() {
     getTenantApiSpend(auth.tenantId),
   ]);
   safeLog({
+    type: 'interaction',
     level: 'info',
     category: 'dashboard',
     event: 'page_loaded',

@@ -1,7 +1,6 @@
 import twilio from 'twilio';
-import { log } from '@/lib/logger';
+import { withTiming } from '@/lib/logger';
 import { supabase } from '@/lib/supabase';
-import { logAppError, toErrorLogPayload } from '@/lib/error-logger';
 import { decrypt } from '@/lib/crypto';
 
 const globalAccountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -97,60 +96,30 @@ export async function sendSMS(
     throw new Error('[Twilio] Missing sender number. Set business_profiles.twilio_number for tenant or TWILIO_PHONE_NUMBER fallback.');
   }
 
-  try {
-    const message = await client.messages.create({
-      body: body,
-      from: fromNumber,
-      to: to,
-      ...(statusCallbackUrl ? { statusCallback: statusCallbackUrl } : {})
-    });
-    console.log(`[Twilio] SMS sent to ${to}: ${message.sid}`);
-    await log({
-      level: 'info',
+  return withTiming(
+    {
       category: 'sms',
       event: 'sms_sent',
-      to,
-      body,
-      tenant_id: context.tenant_id,
-      session_id: context.session_id,
-      twilio_message_sid: message.sid,
-      sms_status: message.status || null,
-    });
-    return message;
-  } catch (error: any) {
-    console.error(`[Twilio Error] Failed to send SMS to ${to}:`, error.message);
-    await log({
-      level: 'error',
-      category: 'sms',
-      event: 'sms_failed',
-      to,
-      body,
-      tenant_id: context.tenant_id,
-      session_id: context.session_id,
-      error: error?.message || String(error),
-      stack: error?.stack,
-      code: error?.code || null,
-      status: error?.status || null,
-    });
-    const payload = toErrorLogPayload(error, 'Twilio SMS send failed');
-    await logAppError({
       source: 'lib.twilio.sendSMS',
-      message: payload.message,
-      level: 'error',
-      stack: payload.stack || undefined,
+      tenant_id: context.tenant_id,
       session_id: context.session_id,
-      salon_id: context.tenant_id,
-      context: {
-        to,
-        fromNumber,
-        statusCallbackUrl: statusCallbackUrl || null,
-        twilio_code: error?.code || null,
-        twilio_status: error?.status || null,
-      },
-      runtime: 'server',
-    });
-    throw error;
-  }
+      to,
+      body,
+      from_number: fromNumber,
+      status_callback_url: statusCallbackUrl || null,
+      enrich: (message: any) => ({
+        twilio_message_sid: message.sid,
+        sms_status: message.status || null,
+      }),
+    },
+    () =>
+      client.messages.create({
+        body: body,
+        from: fromNumber,
+        to: to,
+        ...(statusCallbackUrl ? { statusCallback: statusCallbackUrl } : {}),
+      })
+  );
 }
 
 /**
@@ -173,51 +142,30 @@ export async function sendWhatsAppMessage(
     throw new Error('[Twilio] Missing WhatsApp sender. Set business_profiles.whatsapp_number for tenant or TWILIO_WHATSAPP_NUMBER fallback.');
   }
 
-  try {
-    const message = await client.messages.create({
-      body,
-      from: toWhatsAppAddress(fromNumber),
-      to: toWhatsAppAddress(to),
-      ...(statusCallbackUrl ? { statusCallback: statusCallbackUrl } : {}),
-    });
-    await log({
-      level: 'info',
+  return withTiming(
+    {
       category: 'sms',
       event: 'whatsapp_sent',
-      to,
-      body,
-      tenant_id: context.tenant_id,
-      session_id: context.session_id,
-      twilio_message_sid: message.sid,
-      sms_status: message.status || null,
-    });
-    return message;
-  } catch (error: any) {
-    await log({
-      level: 'error',
-      category: 'sms',
-      event: 'whatsapp_failed',
-      to,
-      body,
-      tenant_id: context.tenant_id,
-      session_id: context.session_id,
-      error: error?.message || String(error),
-      stack: error?.stack,
-      code: error?.code || null,
-    });
-    const payload = toErrorLogPayload(error, 'Twilio WhatsApp send failed');
-    await logAppError({
       source: 'lib.twilio.sendWhatsAppMessage',
-      message: payload.message,
-      level: 'error',
-      stack: payload.stack || undefined,
+      tenant_id: context.tenant_id,
       session_id: context.session_id,
-      salon_id: context.tenant_id,
-      context: { to, fromNumber, twilio_code: error?.code || null, twilio_status: error?.status || null },
-      runtime: 'server',
-    });
-    throw error;
-  }
+      to,
+      body,
+      from_number: fromNumber,
+      channel: 'whatsapp',
+      enrich: (message: any) => ({
+        twilio_message_sid: message.sid,
+        sms_status: message.status || null,
+      }),
+    },
+    () =>
+      client.messages.create({
+        body,
+        from: toWhatsAppAddress(fromNumber),
+        to: toWhatsAppAddress(to),
+        ...(statusCallbackUrl ? { statusCallback: statusCallbackUrl } : {}),
+      })
+  );
 }
 
 /**
@@ -243,52 +191,33 @@ export async function sendWhatsAppTemplate(
     throw new Error('[Twilio] Missing WhatsApp sender. Set business_profiles.whatsapp_number for tenant or TWILIO_WHATSAPP_NUMBER fallback.');
   }
 
-  try {
-    const message = await client.messages.create({
-      from: toWhatsAppAddress(fromNumber),
-      to: toWhatsAppAddress(to),
-      contentSid,
-      ...(options.contentVariables ? { contentVariables: JSON.stringify(options.contentVariables) } : {}),
-      ...(options.statusCallbackUrl ? { statusCallback: options.statusCallbackUrl } : {}),
-    });
-    await log({
-      level: 'info',
+  return withTiming(
+    {
       category: 'sms',
       event: 'whatsapp_template_sent',
-      to,
-      tenant_id: context.tenant_id,
-      session_id: context.session_id,
-      twilio_message_sid: message.sid,
-      sms_status: message.status || null,
-      template_sid: contentSid,
-    });
-    return message;
-  } catch (error: any) {
-    await log({
-      level: 'error',
-      category: 'sms',
-      event: 'whatsapp_template_failed',
-      to,
-      tenant_id: context.tenant_id,
-      session_id: context.session_id,
-      error: error?.message || String(error),
-      stack: error?.stack,
-      code: error?.code || null,
-      template_sid: contentSid,
-    });
-    const payload = toErrorLogPayload(error, 'Twilio WhatsApp template send failed');
-    await logAppError({
       source: 'lib.twilio.sendWhatsAppTemplate',
-      message: payload.message,
-      level: 'error',
-      stack: payload.stack || undefined,
+      tenant_id: context.tenant_id,
       session_id: context.session_id,
-      salon_id: context.tenant_id,
-      context: { to, fromNumber, contentSid, twilio_code: error?.code || null, twilio_status: error?.status || null },
-      runtime: 'server',
-    });
-    throw error;
-  }
+      to,
+      from_number: fromNumber,
+      template_sid: contentSid,
+      channel: 'whatsapp',
+      enrich: (message: any) => ({
+        twilio_message_sid: message.sid,
+        sms_status: message.status || null,
+      }),
+    },
+    () =>
+      client.messages.create({
+        from: toWhatsAppAddress(fromNumber),
+        to: toWhatsAppAddress(to),
+        contentSid,
+        ...(options.contentVariables
+          ? { contentVariables: JSON.stringify(options.contentVariables) }
+          : {}),
+        ...(options.statusCallbackUrl ? { statusCallback: options.statusCallbackUrl } : {}),
+      })
+  );
 }
 
 /**

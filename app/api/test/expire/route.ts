@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
 
     await expireSessionById(sessionId, { expired_by: 'ui-timeout' });
     safeLog({
+      type: 'audit',
       level: 'info',
       category: 'session',
       event: 'session_closed',
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('[Test Expire Error]', error);
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',

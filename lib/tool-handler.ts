@@ -57,6 +57,7 @@ export async function executeToolCall(
   let updatedSystemPrompt: string | undefined;
 
   safeLog({
+    type: 'integration',
     level: 'info',
     category: 'tool',
     event: 'tool_called',
@@ -161,6 +162,7 @@ export async function executeToolCall(
     }
 
     safeLog({
+      type: 'integration',
       level: 'info',
       category: 'tool',
       event: 'tool_success',
@@ -171,6 +173,7 @@ export async function executeToolCall(
     return { toolResult, updatedBookingState, updatedSystemPrompt };
   } catch (error: any) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'tool',
       event: 'tool_failed',

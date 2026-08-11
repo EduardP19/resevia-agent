@@ -76,7 +76,7 @@ Migrations live in `supabase/migrations/` (managed by Supabase CLI). Never add l
 | Table | Purpose |
 |-------|---------|
 | `business_profiles` | Tenant/salon config — name, phone, email, password, agent settings, hours, Twilio creds, `twilio_number` (SMS) + `whatsapp_number` (WhatsApp senders) |
-| `sessions` | SMS/WhatsApp/voice conversations — `channel` (sms/whatsapp/webchat, authoritative), status, customer_phone, summary, token tracking |
+| `sessions` | SMS/WhatsApp/voice conversations — `channel` (sms/whatsapp/webchat, authoritative), `status`, `client_identifier` (the customer's phone), `summary`, token tracking. Auto-expired — see Session Lifecycle below |
 | `transcripts` | Per-session messages — role (system/assistant/user/draft), content. Content only; all SMS/Twilio metadata lives in `sms_messages` |
 | `transcripts-sophia-sandbox` | Sandbox/test UI messages — same as transcripts + `t`, `param` columns |
 | `faqs` | FAQ entries — question, answer, category, is_active |
@@ -84,9 +84,7 @@ Migrations live in `supabase/migrations/` (managed by Supabase CLI). Never add l
 | `bookings` | Cal.com bookings linked to sessions |
 | `sms_messages` | SMS + WhatsApp message/cost ledger — **single source of truth** for per-message delivery status, pricing, and Twilio SIDs (`channel`, `message_type`, `direction`, `price`, `num_segments`). WhatsApp rows also carry a rate-card fee split (`meta_fee_usd`, `twilio_fee_usd`, `service_window`) — see Costs below. Links to content via `transcript_id` |
 | `pending_notifications` | Deferred owner alert queue — session_id, send_after |
-| `system_logs` | Structured server-side logs — level, source, message, metadata |
-| `event_logs` | Client event tracking — category, event, tenant_id, session_id, metadata |
-| `error_logs` | Server error logs — source, message, stack, context |
+| `app_logs` | **All** app-side logs — one row per event, discriminated by `type` (see Logging below). Replaced `system_logs` / `event_logs` / `error_logs`, which were dropped in `20260811130000` |
 
 Import the shared client: `import { supabase } from '@/lib/supabase'` — never instantiate directly.
 
@@ -124,8 +122,8 @@ Each session has a `channel` column (`'sms' | 'whatsapp' | 'webchat'`, default `
 | `lib/booking_service.ts` | Cal.com booking logic |
 | `lib/owner-email-notifications.ts` | Resend email alerts for business owners |
 | `lib/error-logger.ts` | Google Cloud Logging error handler |
-| `lib/logger.ts` | `safeLog()` — structured server-side logging |
-| `lib/client-events.ts` | `trackClientEvent()` — client-side event tracking |
+| `lib/logger.ts` | Unified logger — `logError`/`logTimeout`/`logInteraction`/`logIntegration`/`logJob`/`logAudit`, plus `withTiming()` and `withRequestContext()` |
+| `lib/client-events.ts` | Client-side logging — `trackInteraction()`, `trackClientError()`, `trackAudit()` |
 
 ---
 
@@ -156,10 +154,75 @@ The window state is derived by looking for an inbound WhatsApp row from that cus
 
 **Not modelled:** carrier surcharges and MMS.
 
+## Three different things are called "session"
+
+Keep these apart — they have different lifetimes, owners, and columns.
+
+| Concept | What it is | Lifetime | Where |
+|---|---|---|---|
+| **Conversation session** | A customer's SMS/WhatsApp/voice thread | Closes after **5 min** idle | `public.sessions`; `app_logs.session_id` (FK) |
+| **Dashboard auth session** | The owner's login cookie | **8h**, or **30d** with "remember me" | `resevia_dashboard_session` cookie; not a table |
+| **User sitting** | One continuous burst of dashboard use, for grouping interaction logs | Rolls over after **30 min** idle or tab close | `app_logs.user_session_id` |
+
+`app_logs.session_id` is a foreign key to `public.sessions`, so it can **only** hold a conversation id — never a dashboard sitting. Use `user_session_id` for that, and `user_id` (the owner's email) for who.
+
+`user_id` and `tenant_id` are both derived server-side from the signed cookie in `/api/log-error`, never read from the request body — a browser can't claim another identity. `user_session_id` is client-minted in `sessionStorage` ([lib/client-events.ts](lib/client-events.ts)) and isn't security-sensitive; it only has to be consistent.
+
+Replay one sitting in order:
+
+```sql
+select created_at, event, type, path
+  from public.app_logs
+ where user_session_id = 'sit_...'
+ order by created_at;
+```
+
+---
+
+## Session Lifecycle
+
+Sessions close themselves — there is no manual reset step and no daily batch.
+
+`public.expire_inactive_sessions_and_holds()` runs **every minute** via a **pg_cron** job (`expire-inactive-sessions-every-minute`), scheduled inside Postgres in `20260513152000`. It:
+
+- marks `active` / `review` sessions `completed` after **5 minutes** of inactivity — this is the per-conversation reset;
+- marks `needs_approval` sessions `expired` after **7 days**, so an unapproved draft can't sit forever;
+- expires `held` bookings past `expires_at`;
+- skips anything with `metadata.source = 'sophia-sandbox'`.
+
+Both windows are tunable without a code change:
+
+```sql
+alter database postgres set app.session_inactivity_minutes = '5';
+alter database postgres set app.approval_stale_days = '7';
+```
+
+**`/api/cron/cleanup` calls the same RPC but has no schedule behind it** (there's no `vercel.json`). pg_cron is the live path; the route is a manual trigger. Don't assume instrumenting the route covers session expiry — the RPC writes its own `app_logs` rows (`sessions_expired` per tenant, `session_expiry_run` summary), logging when it does work plus an hourly heartbeat so it stays verifiable without adding ~43k empty rows a month.
+
+---
+
 ## Logging & Analytics
 
-- **Server-side:** `safeLog()` from `lib/logger.ts` — structured JSON with `level`, `category`, `event`, context (`tenant_id`, `session_id`). Never use `console.log`.
-- **Client-side:** `trackClientEvent()` from `lib/client-events.ts` — call before/after meaningful user actions.
+Every app-side log is one row in **`app_logs`**, classified by `type` — the axis logs are queried on. `category` (`sms`/`ai`/`tool`/`session`/`dashboard`/`auth`/`billing`/`observer`/`system`) is the subsystem sub-axis.
+
+| `type` | Use for | Helper |
+|--------|---------|--------|
+| `error` | Exceptions and failures | `logError(category, event, error, ctx)` |
+| `timeout` | External call past its threshold (`LOG_SLOW_CALL_MS`, default 5000ms) | `logTimeout()` — usually emitted by `withTiming()` |
+| `interaction` | Clicks, submits, page views and their results | `logInteraction()` / `trackInteraction()` |
+| `integration` | Outbound calls to Gemini / Cal.com / Twilio, with `duration_ms` | `withTiming()` |
+| `job` | Cron start/finish + rows processed | `logJob()` |
+| `audit` | Login/logout, settings changes, mode overrides, draft approvals | `logAudit()` / `trackAudit()` |
+
+- **Server-side:** import the typed helpers from `lib/logger.ts`. `safeLog()` still exists for calls that don't fit a helper, but `type` is required on it. Never use `console.log`.
+- **Client-side:** `trackInteraction()` / `trackClientError()` / `trackAudit()` from `lib/client-events.ts`. These POST to `/api/log-error`, which writes exactly one row.
+- **Timing external calls:** wrap them in `withTiming()`. It emits one log covering success, failure and slow-but-successful, always with `duration_ms`, and rethrows. Cal.com is instrumented globally via an axios interceptor in `lib/booking_service.ts` — individual Cal calls need no wrapping.
+- **Correlation:** `withRequestContext()` (already applied in both inbound webhooks) attaches a `request_id` to every log in that request, so one conversation turn can be pulled back as an ordered trace.
+- **PII:** the logger masks anything matching `+<7-15 digits>` down to the last four, in all string values including `path`. Don't defeat it by pre-formatting numbers differently.
+
+**Log the event and its timing, never the state.** Delivery status and price belong in `sms_messages`, token spend in `token_usage`, message content in `transcripts`, bookings in `bookings`. Duplicating those into logs is what produced the previous three-table mess.
+
+> `public.logs` is the **marketing site's** analytics table (resevia.co.uk), written by a separate codebase. Nothing in this repo may read or write it.
 
 ---
 
@@ -181,8 +244,8 @@ Use inline `style` prop only for gradients/shadows that can't be expressed as Ta
 ## Rules
 
 1. Always call `requireDashboardSession()` in dashboard server components — never skip it.
-2. Use `safeLog()` on the server. Never `console.log`.
-3. Use `trackClientEvent()` for user-facing actions in client components.
+2. Use the typed helpers from `lib/logger.ts` on the server (`logError`, `logIntegration`, `logJob`, `logAudit`, `withTiming`). Never `console.log`.
+3. Use `trackInteraction()` / `trackClientError()` from `lib/client-events.ts` for user-facing actions in client components.
 4. New migrations go in `supabase/migrations/` with Supabase CLI timestamp format.
 5. Import `supabase` from `lib/supabase.ts` — never instantiate the client elsewhere.
 6. Client components fetch `/api/dashboard/*` — never query Supabase directly from the browser.

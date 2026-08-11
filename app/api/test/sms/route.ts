@@ -15,8 +15,7 @@ import { buildSystemPrompt } from '../../../../lib/agent';
 import { callAI } from '../../../../lib/ai';
 import { isHandoff } from '../../../../lib/handoff';
 import { executeToolCall, ToolContext } from '../../../../lib/tool-handler';
-import { logAppError, toErrorLogPayload } from '../../../../lib/error-logger';
-import { log, safeLog } from '@/lib/logger';
+import { log, logError, safeLog } from '@/lib/logger';
 import { ERROR_FALLBACK_REPLY, normalizeCustomerReply } from '@/lib/reply-format';
 import { scheduleDeferredNotification } from '@/lib/deferred-notifications';
 import { addTokens, emptyTokens, recordTokenUsage } from '@/lib/token-usage';
@@ -47,6 +46,7 @@ export async function POST(req: NextRequest) {
 
     const conversation = await getOrCreateConversation(salon.id, from, sessionId);
     await log({
+      type: 'integration',
       level: 'info',
       category: 'sms',
       event: 'sms_received',
@@ -61,6 +61,7 @@ export async function POST(req: NextRequest) {
     const duplicateUserMessage = await findRecentDuplicateUserMessage(conversation.id, message);
     if (duplicateUserMessage) {
       safeLog({
+        type: 'audit',
         level: 'info',
         category: 'sms',
         event: 'duplicate_test_message_ignored',
@@ -150,6 +151,7 @@ export async function POST(req: NextRequest) {
     if (effectiveManual) {
       await saveMessage(conversation.id, 'draft' as any, reply);
       safeLog({
+        type: 'audit',
         level: 'info',
         category: 'session',
         event: 'draft_created',
@@ -197,6 +199,7 @@ export async function POST(req: NextRequest) {
 
     if (triggerHandoff) {
        safeLog({
+         type: 'audit',
          level: 'warning',
          category: 'session',
          event: 'session_escalated',
@@ -226,24 +229,11 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ reply, handoff: triggerHandoff, sessionId: conversation.id });
   } catch (error: any) {
-    const payload = toErrorLogPayload(error, 'Test SMS route error');
-    safeLog({
-      level: 'error',
-      category: 'system',
-      event: 'webhook_error',
-      error: payload.message,
-      stack: payload.stack || undefined,
-      source: 'test_sms',
-    });
-    await logAppError({
+    logError('system', 'test_sms_failed', error, {
       source: 'api.test.sms',
-      message: payload.message,
-      stack: payload.stack || undefined,
       path: '/api/test/sms',
       method: 'POST',
-      runtime: 'server',
     });
-    console.error('[Test SMS Error]', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

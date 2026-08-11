@@ -75,6 +75,7 @@ export default async function HistoryPage() {
   const phoneCards = buildPhoneCards(sessions);
 
   safeLog({
+    type: 'interaction',
     level: 'info',
     category: 'dashboard',
     event: 'page_loaded',

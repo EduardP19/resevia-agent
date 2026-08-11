@@ -55,6 +55,7 @@ export async function POST(req: NextRequest) {
 
   if (existingLedgerRow) {
     await log({
+      type: 'integration',
       level: 'info',
       category: 'sms',
       event: 'sms_status_updated',
@@ -68,6 +69,7 @@ export async function POST(req: NextRequest) {
     });
   } else {
     await log({
+      type: 'integration',
       level: 'warning',
       category: 'sms',
       event: 'sms_status_unmatched',
@@ -82,6 +84,7 @@ export async function POST(req: NextRequest) {
 
   if (status === 'failed' || status === 'undelivered' || errorCode) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'sms',
       event: 'sms_failed',

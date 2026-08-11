@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { approveTestUiDraft } from '@/lib/sophia-sandbox';
-import { logAppError, toErrorLogPayload } from '@/lib/error-logger';
-import { safeLog } from '@/lib/logger';
+import { logError, safeLog } from '@/lib/logger';
 
 export async function POST(req: NextRequest) {
   try {
@@ -24,6 +23,7 @@ export async function POST(req: NextRequest) {
 
     await approveTestUiDraft(sessionId, content, t);
     safeLog({
+      type: 'audit',
       level: 'info',
       category: 'dashboard',
       event: 'message_approved',
@@ -33,24 +33,12 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    const payload = toErrorLogPayload(error, 'Test UI approve error');
-    safeLog({
-      level: 'error',
-      category: 'system',
-      event: 'db_error',
-      error: payload.message,
-      stack: payload.stack || undefined,
-      query_description: 'Approve agent sandbox draft',
-    });
-    await logAppError({
+    logError('system', 'sandbox_approve_failed', error, {
       source: 'api.sophia-sandbox.approve',
-      message: payload.message,
-      stack: payload.stack || undefined,
       path: '/api/sophia-sandbox/approve',
       method: 'POST',
-      runtime: 'server',
+      query_description: 'Approve agent sandbox draft',
     });
-    console.error('[Test UI Approve Error]', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

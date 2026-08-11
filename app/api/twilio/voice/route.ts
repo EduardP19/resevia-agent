@@ -3,8 +3,8 @@ import { waitUntil } from '@vercel/functions';
 import twilio from 'twilio';
 import { sendSMS, sendWhatsAppTemplate, waitForWhatsAppConfirmation } from '@/lib/twilio';
 import { getDefaultSalon, getOrCreateConversation, getSalonBySmsNumber, saveMessage, supabase } from '@/lib/supabase';
-import { log, safeLog } from '@/lib/logger';
-import { logAppError, toErrorLogPayload } from '@/lib/error-logger';
+import { log, logError, safeLog, setRequestContext, withRequestContext } from '@/lib/logger';
+
 import { getAgentName } from '@/lib/agent-name';
 import { smsMetadataFromTwilioMessage, upsertSmsMessage } from '@/lib/sms-messages';
 
@@ -62,6 +62,7 @@ async function sendMissedCallFollowup(params: {
       }
 
       safeLog({
+        type: 'integration',
         level: 'warning',
         category: 'sms',
         event: 'whatsapp_missed_call_unconfirmed',
@@ -72,6 +73,7 @@ async function sendMissedCallFollowup(params: {
       });
     } catch (waError: any) {
       safeLog({
+        type: 'integration',
         level: 'warning',
         category: 'sms',
         event: 'whatsapp_missed_call_fallback',
@@ -129,6 +131,7 @@ async function processMissedCall(params: {
   if (!salon) {
     console.warn(`[voice] ✗ no salon found for toNumber: ${toNumber}`);
     await log({
+      type: 'error',
       level: 'error',
       category: 'sms',
       event: 'voice_webhook_missing_salon',
@@ -149,6 +152,10 @@ async function processMissedCall(params: {
   const conversation = await getOrCreateConversation(salon.id, fromNumber);
   console.log(`[voice] conversation ready — id: ${conversation.id}, status: ${conversation.status}`);
 
+  // Tag the rest of the background follow-up (WhatsApp template, delivery
+  // poll, SMS fallback) with the tenant and session.
+  setRequestContext({ tenant_id: salon.id, session_id: conversation.id });
+
   const profileTwilioNumber = normalizeE164Candidate((salon as any)?.twilio_number || null);
   const senderNumber = profileTwilioNumber || toNumber || undefined;
 
@@ -157,6 +164,7 @@ async function processMissedCall(params: {
   if (profileTwilioNumber && profileTwilioNumber !== toNumber) {
     console.warn(`[voice] ⚠ twilio number mismatch — profile: ${profileTwilioNumber}, inbound to: ${toNumber}`);
     await log({
+      type: 'integration',
       level: 'warning',
       category: 'sms',
       event: 'voice_webhook_to_number_mismatch',
@@ -215,6 +223,7 @@ async function processMissedCall(params: {
   console.log(`[voice] ✓ sms_messages ledger row recorded (type: ${messageType})`);
 
   await log({
+    type: 'integration',
     level: 'info',
     category: 'sms',
     event: 'voice_call_auto_followup_sent',
@@ -235,6 +244,9 @@ export async function POST(req: NextRequest) {
 
   console.log('[voice] ▶ webhook received');
 
+  // Correlates the TwiML response with the background follow-up work, which
+  // finishes long after this handler returns.
+  return withRequestContext({ path: '/api/twilio/voice' }, async () => {
   try {
     const formData = await req.formData();
     const callerRaw = ((formData.get('Caller') as string | null) || (formData.get('From') as string | null))?.trim() || null;
@@ -251,6 +263,7 @@ export async function POST(req: NextRequest) {
     if (!fromNumber) {
       console.warn(`[voice] ✗ invalid caller number — raw: ${callerRaw}`);
       await log({
+        type: 'integration',
         level: 'warning',
         category: 'sms',
         event: 'voice_webhook_invalid_caller',
@@ -270,52 +283,24 @@ export async function POST(req: NextRequest) {
     // up-to-30s WhatsApp delivery confirmation poll), but the serverless
     // invocation is kept alive until the background work actually finishes.
     waitUntil(
-      processMissedCall({ callerRaw, calledRaw, callSid, fromNumber, toNumber, statusCallbackUrl }).catch(async (error: any) => {
-        console.error(`[voice] ✗ background processing error — ${error?.message}`, error?.stack);
-        const payload = toErrorLogPayload(error, 'Twilio voice webhook background processing error');
-        await log({
-          level: 'error',
-          category: 'sms',
-          event: 'voice_webhook_error',
-          error: payload.message,
-          stack: payload.stack,
-        });
-        await logAppError({
+      processMissedCall({ callerRaw, calledRaw, callSid, fromNumber, toNumber, statusCallbackUrl }).catch((error: any) => {
+        logError('sms', 'voice_background_processing_failed', error, {
           source: 'api.twilio.voice',
-          message: payload.message,
-          level: 'error',
-          stack: payload.stack || undefined,
-          context: { path: '/api/twilio/voice' },
           path: '/api/twilio/voice',
           method: 'POST',
-          runtime: 'server',
+          call_sid: callSid,
         });
       })
     );
 
     return new NextResponse(buildVoiceTwiML(), { status: 200, headers: xmlHeaders });
   } catch (error: any) {
-    console.error(`[voice] ✗ uncaught error — ${error?.message}`, error?.stack);
-    const payload = toErrorLogPayload(error, 'Twilio voice webhook error');
-    await log({
-      level: 'error',
-      category: 'sms',
-      event: 'voice_webhook_error',
-      error: payload.message,
-      stack: payload.stack,
-    });
-    await logAppError({
+    logError('sms', 'voice_webhook_error', error, {
       source: 'api.twilio.voice',
-      message: payload.message,
-      level: 'error',
-      stack: payload.stack || undefined,
-      context: {
-        path: '/api/twilio/voice',
-      },
       path: '/api/twilio/voice',
       method: 'POST',
-      runtime: 'server',
     });
     return new NextResponse(buildVoiceTwiML(), { status: 200, headers: xmlHeaders });
   }
+  });
 }

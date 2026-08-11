@@ -70,6 +70,7 @@ export async function isServiceWindowOpen(customerNumber: string, at: Date = new
     return (data || []).length > 0;
   } catch (error: any) {
     safeLog({
+      type: 'error',
       level: 'warning',
       category: 'sms',
       event: 'whatsapp_service_window_lookup_failed',

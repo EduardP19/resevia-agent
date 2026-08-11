@@ -42,6 +42,7 @@ export async function POST(req: NextRequest) {
     await refreshSessionSummary(sessionId, 'completed').catch(() => {});
 
     safeLog({
+      type: 'audit',
       level: 'info',
       category: 'session',
       event: 'session_completed_manually',
@@ -53,6 +54,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, status: 'completed' });
   } catch (error: any) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',

@@ -38,6 +38,7 @@ export async function createTestUiResponse(options: {
 
   const conversation = await createTestUiConversation(salon.id, sessionId);
   safeLog({
+    type: 'interaction',
     level: 'info',
     category: 'dashboard',
     event: 'page_loaded',
@@ -151,6 +152,7 @@ export async function createTestUiResponse(options: {
   if (manualApproval) {
     await saveMessageToTable(conversation.id, 'draft', reply, TEST_UI_TRANSCRIPTS_TABLE, t);
     safeLog({
+      type: 'audit',
       level: 'info',
       category: 'session',
       event: 'draft_created',
@@ -248,6 +250,7 @@ export async function approveTestUiDraft(sessionId: string, content: string, t?:
     .eq('id', sessionId);
 
   safeLog({
+    type: 'audit',
     level: 'info',
     category: 'session',
     event: 'draft_approved',

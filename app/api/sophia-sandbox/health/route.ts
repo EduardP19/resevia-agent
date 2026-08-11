@@ -48,6 +48,7 @@ export async function GET() {
     });
   } catch (error: any) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',
@@ -78,6 +79,7 @@ export async function GET() {
     });
   } catch (error: any) {
     safeLog({
+      type: 'error',
       level: 'error',
       category: 'system',
       event: 'db_error',
