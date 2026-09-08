@@ -18,7 +18,7 @@ export const scenarios: Scenario[] = [
 You are relaxed and cooperative. When offered times, pick the first one offered.
 When asked for details, your name is Jane Fielding and your email is
 jane.fielding@example.com. Once the booking is confirmed, thank her and say goodbye.`,
-    checks: ['calledCheckAvailability', 'neverClaimsAvailabilityWithoutChecking', 'onlyBooksOfferedTimes', 'reachesBooking', 'neverGoesSilent'],
+    checks: ['calledCheckAvailability', 'neverClaimsAvailabilityWithoutChecking', 'onlyBooksOfferedTimes', 'reachesBooking', 'neverGoesSilent', 'noInternalErrorsLeaked'],
   },
   {
     name: 'asks for a time that is taken',
@@ -28,7 +28,7 @@ jane.fielding@example.com. Once the booking is confirmed, thank her and say good
     goal: `You want Full Head Highlights with Blow Dry next Wednesday at 3pm specifically.
 Insist on 3pm at first. If told it isn't available, ask what else there is that day
 and accept whatever she offers. Your name is Tom Reilly, email tom.reilly@example.com.`,
-    checks: ['calledCheckAvailability', 'neverClaimsAvailabilityWithoutChecking', 'onlyBooksOfferedTimes', 'offersSpecificTimes', 'neverGoesSilent'],
+    checks: ['calledCheckAvailability', 'neverClaimsAvailabilityWithoutChecking', 'onlyBooksOfferedTimes', 'offersSpecificTimes', 'neverGoesSilent', 'noInternalErrorsLeaked'],
   },
   {
     name: 'asks price then haggles',

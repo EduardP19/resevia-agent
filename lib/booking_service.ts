@@ -708,7 +708,18 @@ export async function confirmBooking(holdUid: string) {
     logCalError(error, {
       query_description: 'Confirm Cal.com booking',
     });
-    return { success: false, error: 'Failed to confirm booking.' };
+    // Cal's own words, not ours. A 409 means the slot went while we were
+    // collecting the client's details — the agent can say so and offer another
+    // time, which "Failed to confirm booking" gave it no way to do.
+    const calMessage = error?.response?.data?.error?.message || error?.response?.data?.message;
+    const isConflict = error?.response?.status === 409;
+    return {
+      success: false,
+      error: isConflict
+        ? 'That slot was taken while we were booking it. Check availability again and offer the client another time.'
+        : calMessage || 'Failed to confirm booking.',
+      slotTaken: isConflict,
+    };
   }
 }
 
@@ -733,7 +744,18 @@ export async function bookDirect(details: {
 
     // 2. Confirm immediately
     const confirm = await confirmBooking(hold.bookingUid!);
-    if (!confirm.success) return confirm;
+    if (!confirm.success) {
+      // Release the hold. holdBooking treats any overlapping held/confirmed row
+      // as a conflict, so leaving this behind locked the caller out of every
+      // nearby slot until it expired — on a live call the agent reported the
+      // next two times as unavailable when only its own ghost was blocking.
+      await supabase
+        .from('bookings')
+        .update({ status: 'expired', expires_at: new Date().toISOString() })
+        .eq('cal_booking_uid', hold.bookingUid!)
+        .eq('status', 'held');
+      return confirm;
+    }
 
     return { 
         success: true, 

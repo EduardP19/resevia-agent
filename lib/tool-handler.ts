@@ -33,6 +33,26 @@ export interface ToolCallResult {
   updatedSystemPrompt?: string;
 }
 
+/** Times as HH:mm from an availability result like "09:00 (Eduard), 14:30 (Elena)". */
+function extractTimes(text: string): string[] {
+  return Array.from(String(text || '').matchAll(/\b([0-2]?\d:[0-5]\d)\b/g)).map(m => m[1]);
+}
+
+/**
+ * Whether the requested time was actually offered for this service and date.
+ *
+ * Permissive by design: if availability hasn't been checked, or was checked for
+ * a different day or service, this doesn't block the booking — Cal.com remains
+ * the real authority and will reject a genuine clash. It only catches the
+ * specific failure of booking a time the client was never offered.
+ */
+function isOfferedTime(args: any, state: Record<string, any>): boolean {
+  const offered: string[] = state?.offered_slots || [];
+  if (offered.length === 0) return true;
+  if (state?.offered_for !== `${args.date}|${args.serviceName}`) return true;
+  return offered.includes(args.time);
+}
+
 function isWithinSixMonthWindow(date?: string): boolean {
   if (!date) return true;
   const requestedDate = new Date(`${date}T00:00:00`);
@@ -119,6 +139,16 @@ export async function executeToolCall(
       }
 
     } else if (name === 'book_direct') {
+      const missing = ['serviceName', 'date', 'time'].filter(k => !args?.[k]);
+      if (missing.length) {
+        // The model has called this with undefined service/date/time. Name the
+        // gaps rather than letting holdBooking fail with something opaque.
+        toolResult = `Failed: cannot book yet — still missing ${missing.join(', ')}. Ask the client for what's missing, then try again.`;
+      } else if (!isOfferedTime(args, currentBookingState)) {
+        toolResult =
+          `Failed: ${args.time} was not one of the times availability returned for that day. ` +
+          `Call check_availability again and offer the client only the times it gives you.`;
+      } else {
       const directRes = await bookDirect({
         serviceName: args.serviceName,
         date: args.date,
@@ -131,6 +161,7 @@ export async function executeToolCall(
         salonServices: ctx.salonServices
       });
       toolResult = JSON.stringify(directRes);
+      }
 
     } else if (name === 'book_appointment') {
       const result = await holdBooking({
@@ -188,6 +219,9 @@ export async function executeToolCall(
       tool_name: name,
       tenant_id: ctx.salonId,
       session_id: ctx.sessionId,
+      // Truncated, but present: without the result there was no way to tell
+      // which slots Cal actually offered when reviewing a call afterwards.
+      result: String(toolResult).slice(0, 500),
     });
     return { toolResult, updatedBookingState, updatedSystemPrompt };
   } catch (error: any) {

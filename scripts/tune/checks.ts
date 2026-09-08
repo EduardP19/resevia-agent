@@ -77,12 +77,29 @@ export const checks = {
     return bad ? `booked ${bad.args.time}, which was not in the offered slots (${offered.join(', ')})` : null;
   },
 
-  offersSpecificTimes: (r: RunRecord) =>
-    /\b([0-2]?\d[:.][0-5]\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s?(o'clock|am|pm)\b)/i.test(
-      r.turns.filter(t => t.role === 'sophia').map(t => t.content).join(' ')
-    )
+  /**
+   * Covers how a time is actually said out loud: "3pm", "15:00", "three
+   * o'clock", "nine in the morning". The first version only matched the spelled
+   * -out forms and failed a run where she said "3pm" four times.
+   */
+  offersSpecificTimes: (r: RunRecord) => {
+    const said = r.turns.filter(t => t.role === 'sophia').map(t => t.content).join(' ');
+    const WORDS = "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve";
+    return new RegExp(
+      `(\\b\\d{1,2}[:.]\\d{2}\\b|\\b\\d{1,2}\\s?(am|pm)\\b|\\b(${WORDS})\\s?(o'clock|am|pm)\\b|\\b(${WORDS})\\s+(in the (morning|afternoon|evening)))`,
+      'i'
+    ).test(said)
       ? null
-      : 'never offered a specific time back to the caller',
+      : 'never offered a specific time back to the caller';
+  },
+
+  /** She told a caller "I'm missing some of the details to finalize on my end". */
+  noInternalErrorsLeaked: (r: RunRecord) => {
+    const said = agentText(r);
+    const leak = ['on my end', 'let me quickly try again', 'system error', 'missing some of the details', 'technical']
+      .find(p => said.includes(p));
+    return leak ? `narrated an internal failure to the client ("${leak}")` : null;
+  },
 
   reachesBooking: (r: RunRecord) =>
     r.tools.some(t => (t.name === 'book_direct' || t.name === 'book_appointment') && !/^failed/i.test(t.result))
