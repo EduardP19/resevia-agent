@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { handleFunctionCallRequest } from '@/lib/voice-tools';
-import { logError, withRequestContext } from '@/lib/logger';
+import { logError, safeLog, withRequestContext } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -23,11 +23,30 @@ export const maxDuration = 30;
  */
 export async function POST(req: NextRequest) {
   return withRequestContext({ path: '/api/voice/turn' }, async () => {
+    // Every rejection is logged. The first live call failed silently precisely
+    // because these paths returned a status code and wrote nothing: no tool
+    // logs, no error logs, no way to tell a refused request from a request that
+    // never arrived.
     const secret = process.env.VOICE_TURN_SECRET;
     if (!secret) {
+      safeLog({
+        type: 'error',
+        level: 'error',
+        category: 'tool',
+        event: 'voice_turn_unconfigured',
+        source: 'api.voice.turn',
+      });
       return NextResponse.json({ error: 'Voice turn endpoint not configured' }, { status: 503 });
     }
     if (req.headers.get('authorization') !== `Bearer ${secret}`) {
+      safeLog({
+        type: 'error',
+        level: 'warning',
+        category: 'tool',
+        event: 'voice_turn_unauthorized',
+        source: 'api.voice.turn',
+        has_authorization_header: Boolean(req.headers.get('authorization')),
+      });
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -37,6 +56,15 @@ export async function POST(req: NextRequest) {
     const customerPhone = url.searchParams.get('from');
 
     if (!salonId || !sessionId || !customerPhone) {
+      safeLog({
+        type: 'error',
+        level: 'warning',
+        category: 'tool',
+        event: 'voice_turn_missing_context',
+        source: 'api.voice.turn',
+        tenant_id: salonId,
+        session_id: sessionId,
+      });
       return NextResponse.json(
         { error: 'salonId, sessionId and from are required query parameters' },
         { status: 400 }

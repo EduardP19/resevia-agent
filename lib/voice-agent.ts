@@ -86,7 +86,11 @@ export function buildVoiceAgentSettings(input: VoiceSettingsInput) {
         functions,
       },
       speak: {
-        provider: { type: 'deepgram', model: process.env.DEEPGRAM_SPEAK_MODEL || 'aura-2-thalia-en' },
+        // Pandora is Aura-2's British female voice. Thalia (the previous
+        // default) is American, which reads as an offshore call centre to a
+        // London salon's clients. Neither escapes the 8kHz phone codec —
+        // accent is the part that's actually ours to choose.
+        provider: { type: 'deepgram', model: process.env.DEEPGRAM_SPEAK_MODEL || 'aura-2-pandora-en' },
       },
       greeting: buildVoiceGreeting(input.salon),
     },

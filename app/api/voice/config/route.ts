@@ -52,20 +52,17 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: 'Salon not found' }, { status: 404 });
       }
 
-      const toolUrl = new URL('/api/voice/turn', req.url);
-      toolUrl.searchParams.set('salonId', salonId);
-      toolUrl.searchParams.set('sessionId', sessionId);
-      toolUrl.searchParams.set('from', customerPhone);
-
+      // Tools run client-side: Deepgram asks the bridge, the bridge calls
+      // /api/voice/turn. The first attempt used Deepgram's server-side
+      // `endpoint` instead, and on the managed Gemini path no tool ever ran and
+      // nothing was logged anywhere — the agent simply invented availability
+      // after a 46-second pause. Routing through the bridge means we own the
+      // request, so a failure is visible and attributable.
       const settings = buildVoiceAgentSettings({
         salon,
         workers,
         faqs,
         bookingState: (session?.metadata as any)?.booking_state || null,
-        toolEndpoint: {
-          url: toolUrl.toString(),
-          headers: { authorization: `Bearer ${secret}` },
-        },
       });
 
       safeLog({

@@ -30,6 +30,11 @@ const PORT = Number(process.env.PORT) || 8080;
 // this only matters while a tool call is in flight — cheap insurance.
 const KEEPALIVE_MS = 8000;
 
+// Cal.com availability is the slowest thing in a turn. A caller will tolerate a
+// few seconds of "one moment"; they will not tolerate the 46 seconds the first
+// live call produced. Past this we give the agent something to say instead.
+const TOOL_TIMEOUT_MS = Number(process.env.TOOL_TIMEOUT_MS) || 12000;
+
 function requireEnv(name) {
   const value = process.env[name];
   if (!value) {
@@ -146,6 +151,56 @@ wss.on('connection', (twilioWs) => {
     deepgram.on('close', () => teardown('deepgram_closed'));
   }
 
+  /**
+   * Executes a batch of tool calls by proxying them to the Next app, then
+   * returns one FunctionCallResponse per function. Never throws: a tool that
+   * fails must produce something the agent can say, not dead air.
+   */
+  async function runFunctions(message) {
+    const functions = Array.isArray(message.functions) ? message.functions : [];
+
+    await Promise.all(
+      functions.map(async (fn) => {
+        const startedAt = Date.now();
+        let content;
+        try {
+          const url = new URL(`${APP_BASE_URL}/api/voice/turn`);
+          url.searchParams.set('salonId', ctx.salonId);
+          url.searchParams.set('sessionId', ctx.sessionId);
+          url.searchParams.set('from', ctx.from);
+
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              authorization: `Bearer ${VOICE_TURN_SECRET}`,
+            },
+            body: JSON.stringify({ functions: [fn] }),
+            signal: AbortSignal.timeout(TOOL_TIMEOUT_MS),
+          });
+
+          if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+          const body = await res.json();
+          content = body.content ?? body.responses?.[0]?.content ?? '';
+        } catch (error) {
+          log('tool_failed', { callSid, tool: fn.name, ms: Date.now() - startedAt, error: String(error) });
+          // Phrased as an instruction because it is read by the model, not the
+          // caller — without it the agent invents a plausible answer instead.
+          content =
+            "Failed: the booking system did not respond. Tell the caller you can't check that right now and that the team will follow up. Do not guess whether the slot is free.";
+        }
+
+        log('tool_done', { callSid, tool: fn.name, ms: Date.now() - startedAt });
+
+        if (deepgram?.readyState === WebSocket.OPEN) {
+          deepgram.send(
+            JSON.stringify({ type: 'FunctionCallResponse', id: fn.id, name: fn.name, content })
+          );
+        }
+      })
+    );
+  }
+
   function handleDeepgramEvent(raw) {
     let message;
     try {
@@ -167,6 +222,13 @@ wss.on('connection', (twilioWs) => {
         if (streamSid && twilioWs.readyState === WebSocket.OPEN) {
           twilioWs.send(JSON.stringify({ event: 'clear', streamSid }));
         }
+        break;
+
+      case 'FunctionCallRequest':
+        // Tools run here rather than through Deepgram's server-side `endpoint`,
+        // so a failure is ours to see and report. Deliberately not awaited: the
+        // socket must keep pumping audio while Cal.com is being queried.
+        runFunctions(message);
         break;
 
       case 'ConversationText':
