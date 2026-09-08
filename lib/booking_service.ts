@@ -675,7 +675,12 @@ export async function confirmBooking(holdUid: string) {
         timeZone: 'Europe/London',
         language: 'en'
       },
-      bookingFieldsResponses: hold.responses || {},
+      // `service` is a hidden custom booking field on every worker's event
+      // type, and each event type's "event name" template renders it as
+      // "{service} - {Scheduler}". Without it Cal falls back to the event type
+      // name — which is the stylist, not the service — so a salon calendar
+      // reads "Eduard's booking" all day and tells nobody anything.
+      bookingFieldsResponses: { ...(hold.responses || {}), service: hold.service_name },
       metadata: {
         service_name: hold.service_name,
         status: 'confirmed'
