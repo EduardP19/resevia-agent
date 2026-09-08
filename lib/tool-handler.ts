@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import { buildSystemPrompt, type AgentChannel } from './agent';
 import { safeLog } from '@/lib/logger';
 import type { ClientProfile } from '@/lib/client-profile';
+import { updateClientContact } from '@/lib/clients';
 import {
   holdBooking,
   confirmBooking,
@@ -73,7 +74,17 @@ export async function executeToolCall(
   });
 
   try {
-    if (name === 'check_availability') {
+    if (name === 'update_client_profile') {
+      try {
+        ctx.client = await updateClientContact(ctx.salonId, ctx.customerPhone, args);
+        updatedSystemPrompt = buildSystemPrompt(ctx.salon, ctx.workers, ctx.faqs, currentBookingState, { channel: ctx.channel, client: ctx.client });
+        toolResult = 'Client contact details saved.';
+      } catch (error: any) {
+        safeLog({ type: 'error', level: 'error', category: 'tool', event: 'client_contact_save_failed',
+          tenant_id: ctx.salonId, session_id: ctx.sessionId, error: error?.message });
+        toolResult = 'Contact details could not be saved to the client record. Keep the supplied details in this conversation and continue helping with the booking.';
+      }
+    } else if (name === 'check_availability') {
       if (!isWithinSixMonthWindow(args?.date)) {
         toolResult = 'Failed: Bookings are available from today up to 6 months ahead only.';
       } else {

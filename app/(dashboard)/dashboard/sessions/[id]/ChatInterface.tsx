@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation';
 import { trackClientEvent } from '@/lib/client-events';
 import { getAgentName, getAgentPossessiveName } from '@/lib/agent-name';
+import { Phone, PhoneOff, LockKeyhole, WifiOff } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -59,6 +60,11 @@ export default function ChatInterface({
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [currentStatus, setCurrentStatus] = useState(sessionStatus);
+  const [currentChannel, setCurrentChannel] = useState(sessionChannel);
+  const [syncError, setSyncError] = useState(false);
+  const isVoice = currentChannel === 'voice';
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const followLatestRef = useRef(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -82,13 +88,14 @@ export default function ChatInterface({
   const latestDraft = [...transcript].reverse().find(m => m.role === 'draft');
   hasDraftRef.current = !!latestDraft;
   const isArchived = currentStatus !== 'active' && currentStatus !== 'needs_approval';
-  const isReview = !isArchived && (currentStatus === 'needs_approval' || !!latestDraft);
+  const isReview = !isVoice && !isArchived && (currentStatus === 'needs_approval' || !!latestDraft);
   const visibleTranscript = useMemo(
     () =>
       transcript
         .filter(msg => msg.role !== 'system')
-        .filter(msg => !(isArchived && msg.role === 'draft'))
+        .filter(msg => !((isArchived || isVoice) && msg.role === 'draft'))
         .filter((msg, index, messages) => {
+          if (isVoice || msg.channel === 'voice') return true;
           const previous = messages[index - 1];
           if (!previous || previous.role !== msg.role || previous.content.trim() !== msg.content.trim()) {
             return true;
@@ -98,31 +105,35 @@ export default function ChatInterface({
           const currentTime = new Date(msg.created_at).getTime();
           return Number.isNaN(previousTime) || Number.isNaN(currentTime) || currentTime - previousTime > 30_000;
         }),
-    [transcript]
+    [transcript, isArchived, isVoice]
   );
   const latestVisibleMessage = visibleTranscript[visibleTranscript.length - 1];
-  const showAgentPending = !isArchived && !isReview && !isSending && latestVisibleMessage?.role === 'user';
+  const showAgentPending = !isVoice && !isArchived && !isReview && !isSending && latestVisibleMessage?.role === 'user';
 
   useEffect(() => {
     setTranscript(initialTranscript);
     setCurrentStatus(sessionStatus);
+    setCurrentChannel(sessionChannel);
     seenIds.current = new Set(initialTranscript.map(m => m.id));
     lastSyncedAt.current = initialTranscript.length > 0
       ? initialTranscript[initialTranscript.length - 1].created_at
       : null;
     hasDraftRef.current = initialTranscript.some(m => m.role === 'draft');
-  }, [initialTranscript, sessionStatus]);
+  }, [initialTranscript, sessionStatus, sessionChannel]);
 
   const syncTranscript = useCallback(async () => {
     if (isSyncingRef.current || isSendingRef.current) return;
     isSyncingRef.current = true;
     try {
       const since = lastSyncedAt.current;
-      const url = `/api/test/poll?sessionId=${sessionId}${since ? `&since=${encodeURIComponent(since)}` : ''}&t=${Date.now()}`;
-      const res = await fetch(url, { cache: 'no-store' });
+      const url = `/api/dashboard/session/transcript?sessionId=${sessionId}${since ? `&since=${encodeURIComponent(since)}` : ''}`;
+      const res = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+      if (!res.ok) throw new Error('Could not refresh conversation');
       const data = await res.json();
+      setSyncError(false);
 
       if (data.status) setCurrentStatus(data.status);
+      if (data.channel) setCurrentChannel(data.channel);
 
       const newMsgs: Message[] = data.messages || [];
       const unprocessed = newMsgs.filter(m => !seenIds.current.has(m.id));
@@ -156,7 +167,7 @@ export default function ChatInterface({
         setTranscript(prev => prev.filter(m => m.role !== 'draft'));
         hasDraftRef.current = false;
       }
-    } catch {/* silent */} finally {
+    } catch { setSyncError(true); } finally {
       isSyncingRef.current = false;
     }
   }, [sessionId, router]);
@@ -168,10 +179,10 @@ export default function ChatInterface({
     void syncTranscript();
     const pid = setInterval(() => {
       if (document.visibilityState !== 'hidden') syncTranscript();
-    }, 8000);
+    }, isVoice ? 2000 : 8000);
     return () => clearInterval(pid);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, isVoice]);
 
   useEffect(() => {
     // Keep the composer empty after approving/sending a draft.
@@ -184,7 +195,9 @@ export default function ChatInterface({
   }, [latestDraft?.id]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (followLatestRef.current && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: 'smooth' });
+    }
   }, [visibleTranscript, showAgentPending]);
 
   useEffect(() => {
@@ -195,7 +208,7 @@ export default function ChatInterface({
   }, []);
 
   const handleSend = async () => {
-    if (!input.trim() || isSending) return;
+    if (isVoice || !input.trim() || isSending) return;
     const messageMode = latestDraft ? 'approve' : 'manual';
     trackClientEvent({
       event: 'button_clicked',
@@ -282,6 +295,14 @@ export default function ChatInterface({
         minHeight: '400px',
       }}
     >
+      {isVoice && <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-white px-4 py-3 text-sm" role="status">
+        <span className={`inline-flex items-center gap-2 font-semibold ${syncError ? 'text-amber-700' : isArchived ? 'text-gray-500' : 'text-emerald-700'}`}>
+          {syncError ? <WifiOff size={16} /> : isArchived ? <PhoneOff size={16} /> : <Phone size={16} />}
+          {syncError ? 'Reconnecting...' : isArchived ? 'Call ended' : 'Live call'}
+        </span>
+        <span className="inline-flex items-center gap-1.5 text-xs text-gray-500"><LockKeyhole size={13} />Read-only</span>
+      </div>}
+      {!isVoice && syncError && <div role="status" className="px-4 py-2 text-sm text-amber-700">Reconnecting...</div>}
       {/* Approval banner */}
       {isReview && !isArchived && (
         <div
@@ -296,7 +317,11 @@ export default function ChatInterface({
       )}
 
       {/* Transcript */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-4 scrollbar-thin" style={{ background: '#faf8fd' }}>
+      <div ref={scrollContainerRef} onScroll={event => {
+        const element = event.currentTarget;
+        followLatestRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100;
+      }} className="flex-1 overflow-y-auto p-5 space-y-4 scrollbar-thin" style={{ background: '#faf8fd' }}>
+        {isVoice && !visibleTranscript.length && <p className="text-center text-sm text-gray-500 py-8">{isArchived ? 'No transcript was received for this call.' : 'Waiting for conversation...'}</p>}
         {visibleTranscript.map((msg) => {
           const isUser = msg.role === 'user';
           const isDraft = msg.role === 'draft';
@@ -358,7 +383,7 @@ export default function ChatInterface({
                       <span>Awaiting approval before sending</span>
                     </div>
                   )}
-                  <div className="whitespace-pre-wrap">{msg.content}</div>
+                  <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content}</div>
                 </div>
               </div>
             </div>
@@ -396,7 +421,7 @@ export default function ChatInterface({
       </div>
 
       {/* Action bar */}
-      {isArchived ? (
+      {isVoice ? null : isArchived ? (
         <div
           className="p-4 flex items-center gap-3 flex-shrink-0"
           style={{ background: '#faf8fd', borderTop: '1px solid rgba(109,40,217,0.07)' }}

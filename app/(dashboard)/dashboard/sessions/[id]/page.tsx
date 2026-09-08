@@ -10,6 +10,8 @@ import SessionModeToggle from './SessionModeToggle';
 import ObserverFlagsPanel from '@/app/(dashboard)/ObserverFlagsPanel';
 import { getSessionObserverFlags } from '@/lib/observer';
 import { getAgentName } from '@/lib/agent-name';
+import { getClientByPhone } from '@/lib/clients';
+import { clientDisplayName } from '@/lib/client-profile';
 
 export const revalidate = 0;
 
@@ -56,9 +58,10 @@ export default async function SessionTranscriptPage({
   const queryPhone = typeof searchParams?.phone === 'string' ? searchParams.phone : undefined;
   const backHref = resolveBackDestination(source, session.client_identifier, queryPhone);
 
-  const [transcript, observerFlags] = await Promise.all([
+  const [transcript, observerFlags, client] = await Promise.all([
     getSessionTranscript(params.id),
     getSessionObserverFlags(params.id),
+    getClientByPhone(auth.tenantId, session.client_identifier),
   ]);
   const isReview = session.status === 'needs_approval' || transcript.some((m: any) => m.role === 'draft');
   safeLog({
@@ -94,11 +97,12 @@ export default async function SessionTranscriptPage({
           </TrackableLink>
 
           <h2 className="text-2xl font-bold tracking-tight" style={{ color: '#271549' }}>
-            Conversation
+            {session.channel === 'voice' ? 'Phone conversation' : 'Conversation'}
           </h2>
 
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 mt-1.5">
-            <span className="text-sm font-mono font-semibold text-gray-600">{session.client_identifier}</span>
+            <Link href={`/dashboard/client/${encodeURIComponent(session.client_identifier)}`} className="text-sm font-semibold text-gray-600 hover:underline break-all">{clientDisplayName(client) || session.client_identifier}</Link>
+            {clientDisplayName(client) && <span className="text-xs text-gray-500">{session.client_identifier}</span>}
             <span className="text-gray-300">·</span>
             <span className="text-sm text-gray-500">{session.business_profiles?.name}</span>
             <span className="text-gray-300">·</span>
@@ -108,7 +112,7 @@ export default async function SessionTranscriptPage({
             >
               {getChannelLabel(session.channel)}
             </span>
-            {isReview && (
+            {isReview && session.channel !== 'voice' && (
               <>
                 <span className="text-gray-300">·</span>
                 <span
@@ -121,7 +125,7 @@ export default async function SessionTranscriptPage({
             )}
           </div>
         </div>
-        <div className="flex flex-col items-start gap-3 md:items-end">
+        {session.channel !== 'voice' && <div className="flex flex-col items-start gap-3 md:items-end">
           {!isArchived ? (
             <SessionModeToggle
               sessionId={params.id}
@@ -133,7 +137,7 @@ export default async function SessionTranscriptPage({
           ) : (
             <CompleteSessionButton sessionId={params.id} isArchived={isArchived} />
           )}
-        </div>
+        </div>}
       </div>
 
       <ObserverFlagsPanel flags={observerFlags} variant="session" />

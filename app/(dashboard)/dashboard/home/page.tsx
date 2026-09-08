@@ -7,6 +7,8 @@ import InitiateConversation from '@/app/(dashboard)/InitiateConversation';
 import ObserverFlagsPanel from '@/app/(dashboard)/ObserverFlagsPanel';
 import { getRecentObserverFlags } from '@/lib/observer';
 import { getAgentName } from '@/lib/agent-name';
+import { supabase } from '@/lib/supabase';
+import { clientDisplayName } from '@/lib/client-profile';
 
 export const revalidate = 0;
 
@@ -40,6 +42,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     getSalonById(auth.tenantId),
   ]);
   const agentName = getAgentName(salon);
+  const phones = [...new Set(allClients.map((session: any) => session.client_identifier))];
+  const { data: profiles } = phones.length ? await supabase.from('clients').select('phone, first_name, last_name')
+    .eq('salon_id', auth.tenantId).in('phone', phones) : { data: [] };
+  const clientNames = new Map((profiles || []).map(profile => [profile.phone, clientDisplayName(profile)]));
   const filter = filterParam || 'active';
   const isNeedsApprovalFilter = filter === 'approval' || filter === 'needs_approval';
   safeLog({
@@ -87,6 +93,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   );
 
   const getStatusConfig = (c: any) => {
+    if (c.channel === 'voice' && c.status === 'active') return { label: 'Live call', dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border border-emerald-200', pulse: true };
     if (c.status === 'escalated' || c.has_escalation) return { label: 'Escalated', dot: 'bg-rose-500', badge: 'bg-rose-50 text-rose-600 border border-rose-200', pulse: false };
     if (c.status === 'needs_approval' || c.has_review) return { label: 'Needs Approval', dot: 'bg-amber-500', badge: 'bg-amber-50 text-amber-700 border border-amber-200', pulse: true };
     return { label: 'Active', dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border border-emerald-200', pulse: false };
@@ -94,7 +101,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   return (
     <div className="max-w-5xl mx-auto">
-      <AutoRefresh />
+      <AutoRefresh intervalMs={5000} />
 
       <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-5">
         <div>
@@ -153,7 +160,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                   </div>
                   <div>
                     <div className="flex items-center gap-2.5 mb-0.5">
-                      <h3 className="text-sm font-bold text-gray-900 font-mono tracking-tight">{c.client_identifier}</h3>
+                      <h3 className="text-sm font-bold text-gray-900 break-words">{clientNames.get(c.client_identifier) || c.client_identifier}</h3>
+                      {clientNames.get(c.client_identifier) && <p className="text-xs text-gray-500">{c.client_identifier}</p>}
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${status.badge} ${status.pulse ? 'animate-pulse' : ''}`}>
                         <span className={`w-1 h-1 rounded-full ${status.dot}`} />
                         {status.label}

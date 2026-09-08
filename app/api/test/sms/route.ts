@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
     const [workers, faqs, activeHold, history] = await Promise.all([
       getWorkers(salon.id),
       getFAQs(salon.id),
-      getActiveHold(from),
+      getActiveHold(from, salon.id),
       getTranscriptHistory(conversation.id)
     ]);
 

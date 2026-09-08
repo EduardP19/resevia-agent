@@ -58,7 +58,7 @@ export async function createTestUiResponse(options: {
   const [workers, faqs, activeHold, history] = await Promise.all([
     getWorkers(salon.id),
     getFAQs(salon.id),
-    getActiveHold(conversation.client_identifier),
+    getActiveHold(conversation.client_identifier, salon.id),
     getTranscriptHistoryFromTable(conversation.id, TEST_UI_TRANSCRIPTS_TABLE),
   ]);
 

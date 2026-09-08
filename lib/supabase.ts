@@ -752,7 +752,7 @@ export async function getWorkers(salonId: string) {
 }
 
 // The most recent held (unconfirmed) booking for a customer
-export async function getActiveHold(customerPhone: string, salonId?: string) {
+export async function getActiveHold(customerPhone: string, salonId: string) {
   const nowIso = new Date().toISOString();
   let query = supabase
     .from('bookings')
@@ -762,7 +762,7 @@ export async function getActiveHold(customerPhone: string, salonId?: string) {
     .gte('start_time', nowIso)
     .or(`expires_at.is.null,expires_at.gte.${nowIso}`)
     .order('start_time', { ascending: true });
-  if (salonId) query = query.eq('salon_id', salonId);
+  query = query.eq('salon_id', salonId);
   const { data } = await query
     .limit(1)
     .maybeSingle();

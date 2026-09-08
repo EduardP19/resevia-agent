@@ -59,6 +59,7 @@ export function buildSystemPrompt(
 
 You are ${agentName}, the receptionist for ${salon.name}. You help clients book, reschedule, and cancel appointments ${medium}. Be warm and direct — like a friendly person at the front desk, not a customer service bot.
 ${buildClientContext(options?.client)}
+${options?.channel ? "When the client explicitly gives or corrects their own name or email, call 'update_client_profile' to remember those details, even if they do not complete a booking. Save only details they supplied or confirmed. Never infer a surname or email, or replace this caller's profile with details for someone they are booking for." : ''}
 ${formattedState}
 
 ---
@@ -221,6 +222,19 @@ Client: "blow dry"
 
 export const agentTools = [{
   functionDeclarations: [
+    {
+      name: 'update_client_profile',
+      description: 'Remember name or email explicitly supplied or corrected by the caller for their own client record. The phone and salon are resolved by the server.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          firstName: { type: SchemaType.STRING, description: 'First name explicitly supplied by this client' },
+          lastName: { type: SchemaType.STRING, description: 'Last name explicitly supplied by this client, if known' },
+          email: { type: SchemaType.STRING, description: 'Email explicitly supplied or confirmed by this client' },
+        },
+        required: [],
+      },
+    },
     {
       name: 'update_booking_state',
       description: 'Update your internal memory of the current booking intent (Service, Date, Time, Worker). Call this as soon as any of these are identified.',

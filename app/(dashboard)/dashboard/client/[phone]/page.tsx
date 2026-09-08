@@ -3,6 +3,9 @@ import { isTestUiSession, supabase } from '@/lib/supabase';
 import { requireDashboardSession } from '@/lib/dashboard-auth';
 import PageViewTracker from '@/app/(dashboard)/PageViewTracker';
 import TrackableLink from '@/app/(dashboard)/TrackableLink';
+import { getClientByPhone } from '@/lib/clients';
+import { normalizeClientPhone } from '@/lib/client-profile';
+import ClientDetails from '../../clients/ClientDetails';
 
 export const revalidate = 0;
 
@@ -30,7 +33,8 @@ function getChannelLabel(channel: string | null | undefined) {
 
 export default async function ClientHistoryPage({ params }: { params: { phone: string } }) {
   const auth = requireDashboardSession();
-  const decodedPhone = decodeURIComponent(params.phone);
+  const decodedPhone = normalizeClientPhone(decodeURIComponent(params.phone)) || decodeURIComponent(params.phone);
+  const client = await getClientByPhone(auth.tenantId, decodedPhone);
 
   const { data: sessions } = await supabase
     .from('sessions')
@@ -71,6 +75,7 @@ export default async function ClientHistoryPage({ params }: { params: { phone: s
   }
 
   if (visibleSessions.length === 0) {
+    if (client) return <div className="max-w-5xl mx-auto"><ClientDetails client={client} /><p className="text-sm text-gray-500">No conversations yet.</p></div>;
     return (
       <div className="max-w-4xl mx-auto p-20 text-center">
         <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4 text-gray-300">
@@ -183,6 +188,7 @@ export default async function ClientHistoryPage({ params }: { params: { phone: s
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-12">
+      {client && <ClientDetails client={client} />}
       <PageViewTracker page="dashboard/client" extra={{ phone: decodedPhone, session_count: visibleSessions.length }} />
       {/* Header */}
       <div className="mb-10">

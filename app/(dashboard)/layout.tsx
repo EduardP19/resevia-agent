@@ -9,6 +9,7 @@ import ApprovalToggle from './ApprovalToggle';
 import { ApprovalProvider } from './ApprovalContext';
 import { trackClientEvent } from '@/lib/client-events';
 import { getAgentName } from '@/lib/agent-name';
+import { Users } from 'lucide-react';
 
 const navItems = [
   {
@@ -29,6 +30,7 @@ const navItems = [
       </svg>
     ),
   },
+  { href: '/dashboard/clients', label: 'Clients', icon: <Users className="w-5 h-5" /> },
   {
     href: '/dashboard/history',
     label: 'History',

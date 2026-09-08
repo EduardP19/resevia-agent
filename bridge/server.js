@@ -66,6 +66,7 @@ wss.on('connection', (twilioWs) => {
   let keepalive = null;
   let heartbeat = null;
   let eventQueue = Promise.resolve();
+  let lastEventTime = 0;
   let closed = false;
   let deepgramReady = false;
   let ctx = {};
@@ -90,7 +91,8 @@ wss.on('connection', (twilioWs) => {
   }
 
   function postEvent(body) {
-    const payload = JSON.stringify({ ...body, eventId: randomUUID(), occurredAt: new Date().toISOString() });
+    lastEventTime = Math.max(Date.now(), lastEventTime + 1);
+    const payload = JSON.stringify({ ...body, eventId: randomUUID(), occurredAt: new Date(lastEventTime).toISOString() });
     // Preserve spoken order and flush the final transcript before recording hangup.
     // A stable event ID makes retries safe when the response, but not the write, is lost.
     eventQueue = eventQueue.then(async () => {
@@ -136,6 +138,7 @@ wss.on('connection', (twilioWs) => {
       return teardown('config_fetch_failed');
     }
     const settings = await res.json();
+    if (closed) return;
 
     deepgram = new WebSocket(DEEPGRAM_AGENT_URL, {
       headers: { Authorization: `Token ${DEEPGRAM_API_KEY}` },
@@ -223,6 +226,7 @@ wss.on('connection', (twilioWs) => {
 
     switch (message.type) {
       case 'SettingsApplied':
+        if (closed) break;
         deepgramReady = true;
         while (pending.length) deepgram.send(pending.shift());
         log('agent_ready', { callSid, sessionId: ctx.sessionId });

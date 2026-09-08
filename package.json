@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test:clients": "node --test tests/clients.test.mjs tests/voice-bridge.test.mjs",
     "provision:phone": "node scripts/provision-phone.mjs"
   },
   "dependencies": {
@@ -26,6 +27,8 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@playwright/test": "^1.63.0",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",

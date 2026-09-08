@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_noStore as noStore } from 'next/cache';
-import { supabase } from '@/lib/supabase';
+import { isTestUiSession, supabase } from '@/lib/supabase';
+import { requireDashboardSessionFromRequest } from '@/lib/dashboard-auth';
 import { safeLog } from '@/lib/logger';
 import { cancelDeferredNotification } from '@/lib/deferred-notifications';
 
@@ -29,6 +30,14 @@ export async function GET(req: NextRequest) {
   const since = req.nextUrl.searchParams.get('since');
 
   if (!sessionId) return NextResponse.json({ messages: [] });
+
+  const { data: pollSession } = await supabase.from('sessions').select('salon_id, metadata').eq('id', sessionId).maybeSingle();
+  if (!pollSession) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+  if (!isTestUiSession(pollSession)) {
+    const auth = requireDashboardSessionFromRequest(req);
+    if (auth.response) return auth.response;
+    if (pollSession.salon_id !== auth.session.tenantId) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+  }
 
   // Cancel any pending deferred notification — the owner has the session open.
   void cancelDeferredNotification(sessionId).catch(() => {});
