@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { ObserverFlagRow } from '@/lib/observer';
+import ObserverFlagDismiss from './ObserverFlagDismiss';
 
 const SEVERITY_STYLE: Record<string, { dot: string; text: string; bg: string; border: string }> = {
   critical: { dot: '#E11D48', text: '#9F1239', bg: 'rgba(225,29,72,0.06)', border: 'rgba(225,29,72,0.25)' },
@@ -16,13 +17,21 @@ const TYPE_LABEL: Record<string, string> = {
   hallucination: 'Possible hallucination',
 };
 
-function FlagRow({ flag, href }: { flag: ObserverFlagRow; href?: string }) {
+function FlagRow({
+  flag,
+  href,
+  dismissible,
+}: {
+  flag: ObserverFlagRow;
+  href?: string;
+  dismissible?: boolean;
+}) {
   const s = SEVERITY_STYLE[flag.severity] || SEVERITY_STYLE.info;
-  const body = (
-    <div
-      className="rounded-xl px-3.5 py-2.5 flex items-start gap-3"
-      style={{ background: s.bg, border: `1px solid ${s.border}` }}
-    >
+
+  // Only the text is a link. The dismiss control sits alongside it, because a
+  // button nested inside an <a> would navigate to the session on click.
+  const content = (
+    <>
       <span className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: s.dot }} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
@@ -39,9 +48,24 @@ function FlagRow({ flag, href }: { flag: ObserverFlagRow; href?: string }) {
       <span className="text-[10px] text-gray-400 font-mono flex-shrink-0 whitespace-nowrap">
         {new Date(flag.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
       </span>
+    </>
+  );
+
+  return (
+    <div
+      className="rounded-xl px-3.5 py-2.5 flex items-start gap-3"
+      style={{ background: s.bg, border: `1px solid ${s.border}` }}
+    >
+      {href ? (
+        <Link href={href} className="contents">
+          {content}
+        </Link>
+      ) : (
+        content
+      )}
+      {dismissible && <ObserverFlagDismiss flagId={flag.id} />}
     </div>
   );
-  return href ? <Link href={href} className="block">{body}</Link> : body;
 }
 
 /**
@@ -85,6 +109,7 @@ export default function ObserverFlagsPanel({
               key={f.id}
               flag={f}
               href={variant === 'home' && f.session_id ? `/dashboard/sessions/${f.session_id}?from=home` : undefined}
+              dismissible={variant === 'home' && !f.resolved}
             />
           ))}
         </div>
