@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 
 /**
@@ -63,6 +64,8 @@ wss.on('connection', (twilioWs) => {
   let callSid = null;
   let deepgram = null;
   let keepalive = null;
+  let heartbeat = null;
+  let eventQueue = Promise.resolve();
   let closed = false;
   let deepgramReady = false;
   let ctx = {};
@@ -77,6 +80,7 @@ wss.on('connection', (twilioWs) => {
     if (closed) return;
     closed = true;
     if (keepalive) clearInterval(keepalive);
+    if (heartbeat) clearInterval(heartbeat);
     try { deepgram?.close(); } catch {}
     try { twilioWs.close(); } catch {}
     log('call_ended', { callSid, reason });
@@ -85,20 +89,28 @@ wss.on('connection', (twilioWs) => {
     }
   }
 
-  async function postEvent(body) {
-    try {
-      await fetch(`${APP_BASE_URL}/api/voice/event`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          authorization: `Bearer ${VOICE_TURN_SECRET}`,
-        },
-        body: JSON.stringify(body),
-      });
-    } catch (error) {
-      // A dropped transcript must never end a live call.
-      log('event_post_failed', { callSid, error: String(error) });
-    }
+  function postEvent(body) {
+    const payload = JSON.stringify({ ...body, eventId: randomUUID(), occurredAt: new Date().toISOString() });
+    // Preserve spoken order and flush the final transcript before recording hangup.
+    // A stable event ID makes retries safe when the response, but not the write, is lost.
+    eventQueue = eventQueue.then(async () => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const response = await fetch(`${APP_BASE_URL}/api/voice/event`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', authorization: `Bearer ${VOICE_TURN_SECRET}` },
+            body: payload,
+            signal: AbortSignal.timeout(5000),
+          });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return;
+        } catch (error) {
+          if (attempt === 2) log('event_post_failed', { callSid, event: body.event, error: String(error) });
+          else await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+        }
+      }
+    });
+    return eventQueue;
   }
 
   function sendToTwilio(audio) {
@@ -214,6 +226,9 @@ wss.on('connection', (twilioWs) => {
         deepgramReady = true;
         while (pending.length) deepgram.send(pending.shift());
         log('agent_ready', { callSid, sessionId: ctx.sessionId });
+        heartbeat = setInterval(() => {
+          if (!closed) postEvent({ sessionId: ctx.sessionId, tenantId: ctx.salonId, event: 'heartbeat' });
+        }, 30000);
         break;
 
       case 'UserStartedSpeaking':

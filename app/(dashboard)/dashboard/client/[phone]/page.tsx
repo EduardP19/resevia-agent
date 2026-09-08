@@ -21,6 +21,13 @@ function getDefaultSummaryByStatus(status: string) {
   return 'Conversation summary pending...';
 }
 
+function getChannelLabel(channel: string | null | undefined) {
+  if (channel === 'voice') return 'Voice';
+  if (channel === 'whatsapp') return 'WhatsApp';
+  if (channel === 'webchat') return 'Web chat';
+  return 'SMS';
+}
+
 export default async function ClientHistoryPage({ params }: { params: { phone: string } }) {
   const auth = requireDashboardSession();
   const decodedPhone = decodeURIComponent(params.phone);
@@ -141,21 +148,12 @@ export default async function ClientHistoryPage({ params }: { params: { phone: s
                     {cfg.label}
                   </span>
                 )}
-                {session.channel === 'whatsapp' ? (
-                  <span
-                    className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest"
-                    style={{ background: 'rgba(109,40,217,0.08)', color: '#6D28D9', border: '1px solid rgba(109,40,217,0.2)' }}
-                  >
-                    WhatsApp
-                  </span>
-                ) : (
-                  <span
-                    className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest"
-                    style={{ background: 'rgba(109,40,217,0.08)', color: '#6D28D9', border: '1px solid rgba(109,40,217,0.2)' }}
-                  >
-                    SMS
-                  </span>
-                )}
+                <span
+                  className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest"
+                  style={{ background: 'rgba(109,40,217,0.08)', color: '#6D28D9', border: '1px solid rgba(109,40,217,0.2)' }}
+                >
+                  {getChannelLabel(session.channel)}
+                </span>
               </div>
             </div>
 

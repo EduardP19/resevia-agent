@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     // Ensure the chat belongs to the authenticated salon before mutating it.
     const { data: session, error: sError } = await supabase
       .from('sessions')
-      .select('id, salon_id')
+      .select('id, salon_id, channel')
       .eq('id', sessionId)
       .eq('salon_id', auth.session.tenantId)
       .single();
@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
     if (!session || sError) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
+    if (session.channel === 'voice') return NextResponse.json({ error: 'Phone conversations are read-only' }, { status: 409 });
 
     const { data, error } = await supabase
       .from('sessions')

@@ -23,6 +23,13 @@ function formatLastActive(value: string) {
   };
 }
 
+function getChannelLabel(channel: string | null | undefined) {
+  if (channel === 'voice') return 'Voice';
+  if (channel === 'whatsapp') return 'WhatsApp';
+  if (channel === 'webchat') return 'Web chat';
+  return 'SMS';
+}
+
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
   const auth = requireDashboardSession();
   const { filter: filterParam } = await searchParams;
@@ -151,21 +158,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                         <span className={`w-1 h-1 rounded-full ${status.dot}`} />
                         {status.label}
                       </span>
-                      {c.channel === 'whatsapp' ? (
-                        <span
-                          className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest"
-                          style={{ background: 'rgba(109,40,217,0.08)', color: '#6D28D9', border: '1px solid rgba(109,40,217,0.2)' }}
-                        >
-                          WhatsApp
-                        </span>
-                      ) : (
-                        <span
-                          className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest"
-                          style={{ background: 'rgba(109,40,217,0.08)', color: '#6D28D9', border: '1px solid rgba(109,40,217,0.2)' }}
-                        >
-                          SMS
-                        </span>
-                      )}
+                      <span
+                        className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest"
+                        style={{ background: 'rgba(109,40,217,0.08)', color: '#6D28D9', border: '1px solid rgba(109,40,217,0.2)' }}
+                      >
+                        {getChannelLabel(c.channel)}
+                      </span>
                     </div>
                     <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">
                       {c.business_profiles?.name || 'Local Salon'}

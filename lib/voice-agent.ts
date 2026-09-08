@@ -1,5 +1,6 @@
 import { agentTools, buildSystemPrompt } from '@/lib/agent';
 import { getAgentName } from '@/lib/agent-name';
+import type { ClientProfile } from '@/lib/client-profile';
 
 /**
  * Deepgram Voice Agent API — Settings payload builder.
@@ -43,6 +44,7 @@ export interface VoiceSettingsInput {
   workers?: any[];
   faqs?: any[];
   bookingState?: any;
+  client?: ClientProfile | null;
   /**
    * When given, every function is configured for **server-side** execution:
    * Deepgram calls this URL itself instead of asking the client to run the tool.
@@ -52,8 +54,8 @@ export interface VoiceSettingsInput {
   toolEndpoint?: { url: string; headers?: Record<string, string> };
 }
 
-export function buildVoiceSystemPrompt({ salon, workers, faqs, bookingState }: VoiceSettingsInput): string {
-  return buildSystemPrompt(salon, workers, faqs, bookingState, { channel: 'voice' });
+export function buildVoiceSystemPrompt({ salon, workers, faqs, bookingState, client }: VoiceSettingsInput): string {
+  return buildSystemPrompt(salon, workers, faqs, bookingState, { channel: 'voice', client });
 }
 
 export function buildVoiceGreeting(salon: any): string {

@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (!session || sError) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    if (session.channel === 'voice') return NextResponse.json({ error: 'Phone conversations are read-only' }, { status: 409 });
 
     // 1. Send on the session's own channel (WhatsApp replies here are free-form,
     //    which is valid because the customer just messaged — we're inside the 24h window).
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
     });
 
     // 2. Save as final assistant message
-    const assistantMessage = await saveMessage(sessionId, 'assistant', content);
+    const assistantMessage = await saveMessage(sessionId, 'assistant', content, channel);
 
     const outboundMetadata = {
       twilioMessageSid: outboundMessage.sid,

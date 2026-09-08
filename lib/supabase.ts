@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { safeLog } from '@/lib/logger';
+import { generateSummary } from '@/lib/ai';
+import { normalizeClientPhone } from '@/lib/client-profile';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!;
@@ -23,6 +25,7 @@ export const TEST_UI_TRANSCRIPTS_TABLE = 'transcripts-sophia-sandbox';
 
 type TranscriptTableName = 'transcripts' | typeof TEST_UI_TRANSCRIPTS_TABLE;
 type TranscriptRole = 'user' | 'assistant' | 'system' | 'draft';
+export type TranscriptChannel = 'sms' | 'whatsapp' | 'voice' | 'webchat' | 'test' | 'sandbox';
 const SESSION_SUMMARY_MAX_CHARS = 180;
 
 export function isTestUiSession(session: { metadata?: any } | null | undefined) {
@@ -50,6 +53,18 @@ function isMissingSophiaSandboxTColumnError(error: any) {
     code === 'PGRST204' ||
     message.includes("Could not find the 't' column") ||
     details.includes("Could not find the 't' column")
+  );
+}
+
+function isMissingTranscriptChannelColumnError(error: any) {
+  const message = typeof error?.message === 'string' ? error.message : '';
+  const details = typeof error?.details === 'string' ? error.details : '';
+  const code = typeof error?.code === 'string' ? error.code : '';
+
+  return (
+    code === 'PGRST204' ||
+    message.includes("Could not find the 'channel' column") ||
+    details.includes("Could not find the 'channel' column")
   );
 }
 
@@ -116,13 +131,23 @@ export async function getOrCreateConversation(
   salonId: string,
   customerPhone: string,
   sessionId?: string,
-  channel: 'sms' | 'whatsapp' | 'voice' = 'sms'
+  channel: 'sms' | 'whatsapp' | 'voice' = 'sms',
+  callSid?: string | null
 ) {
-  let query = supabase.from('sessions').select('*');
+  customerPhone = normalizeClientPhone(customerPhone) || customerPhone;
+  const query = () => {
+    const base = supabase.from('sessions').select('*').eq('salon_id', salonId).eq('client_identifier', customerPhone);
+    return channel === 'voice' ? base.eq('channel', 'voice') : base.neq('channel', 'voice');
+  };
+
+  if (channel === 'voice' && callSid) {
+    const { data: existing } = await query().eq('metadata->>voice_call_sid', callSid).maybeSingle();
+    if (existing) return existing;
+  }
 
   if (sessionId) {
     // If an ID is provided, try to find it and ensure it's still open
-    const { data: byId } = await query
+    const { data: byId } = await query()
       .eq('id', sessionId)
       .not('status', 'in', '("expired","completed")')
       .single();
@@ -130,9 +155,7 @@ export async function getOrCreateConversation(
   }
 
   // Fallback to finding existing open session for this phone
-  let { data } = await query
-    .eq('salon_id', salonId)
-    .eq('client_identifier', customerPhone)
+  let { data } = channel === 'voice' ? { data: null } : await query()
     .in('status', ['active', 'needs_approval', 'escalated'])
     .order('updated_at', { ascending: false })
     .limit(1)
@@ -146,7 +169,7 @@ export async function getOrCreateConversation(
         salon_id: salonId,
         client_identifier: customerPhone,
         status: 'active',
-        metadata: {}
+        metadata: channel === 'voice' ? { voice_call_sid: callSid || null } : {}
       })
       .select()
       .single();
@@ -154,12 +177,10 @@ export async function getOrCreateConversation(
     if (nsError) {
       // Race condition: another request already created the session — fetch it
       if (nsError.code === '23505') {
-        const { data: raceData } = await supabase
-          .from('sessions')
-          .select('*')
-          .eq('salon_id', salonId)
-          .eq('client_identifier', customerPhone)
-          .in('status', ['active', 'needs_approval', 'escalated'])
+        const raceQuery = query();
+        const { data: raceData } = await (channel === 'voice' && callSid
+          ? raceQuery.eq('metadata->>voice_call_sid', callSid)
+          : raceQuery.in('status', ['active', 'needs_approval', 'escalated']))
           .order('updated_at', { ascending: false })
           .limit(1)
           .single();
@@ -189,6 +210,11 @@ export async function getOrCreateConversation(
       customer_phone: customerPhone,
       channel,
     });
+  }
+  if (data.channel !== channel) {
+    const { error } = await supabase.from('sessions').update({ channel }).eq('id', data.id).eq('salon_id', salonId);
+    if (error) throw error;
+    data.channel = channel;
   }
   return data;
 }
@@ -227,8 +253,20 @@ export async function getTranscriptHistoryFromTable(
 }
 
 // Save message to transcript
-export async function saveMessage(sessionId: string, role: 'user' | 'assistant' | 'system', content: string) {
-  return saveMessageToTable(sessionId, role, content, 'transcripts');
+export async function saveMessage(
+  sessionId: string,
+  role: 'user' | 'assistant' | 'system' | 'draft',
+  content: string,
+  channel?: TranscriptChannel
+) {
+  return saveMessageToTable(
+    sessionId,
+    role,
+    content,
+    'transcripts',
+    undefined,
+    channel ? { channel } : undefined
+  );
 }
 
 export async function saveMessageToTable(
@@ -250,6 +288,12 @@ export async function saveMessageToTable(
 
   if (!includeT) {
     const { data, error } = await supabase.from(table).insert(basePayload).select().single();
+    if (error && basePayload.channel && isMissingTranscriptChannelColumnError(error)) {
+      const { channel: _channel, ...fallbackPayload } = basePayload;
+      const { data: fallbackData, error: fallbackError } = await supabase.from(table).insert(fallbackPayload).select().single();
+
+      if (!fallbackError) return fallbackData;
+    }
     if (error) {
       safeLog({
         type: 'error',
@@ -361,6 +405,14 @@ function deriveSessionSummary(status: string, transcript: Array<{ role: Transcri
   return '';
 }
 
+function isUsefulGeneratedSummary(summary: string) {
+  const normalized = summary.trim();
+  if (!normalized) return false;
+  if (normalized === 'Summary not available.') return false;
+  if (normalized.length > SESSION_SUMMARY_MAX_CHARS) return false;
+  return true;
+}
+
 export async function refreshSessionSummary(sessionId: string, statusOverride?: string) {
   const { data: session, error: sessionError } = await supabase
     .from('sessions')
@@ -383,13 +435,17 @@ export async function refreshSessionSummary(sessionId: string, statusOverride?: 
 
   if (transcriptError) throw transcriptError;
 
-  const summary = deriveSessionSummary(
-    status,
-    (transcriptRows || []).map((row: any) => ({
+  const transcript = (transcriptRows || []).map((row: any) => ({
       role: row.role as TranscriptRole,
       content: String(row.content || ''),
-    }))
-  );
+    }));
+
+  const fallbackSummary = deriveSessionSummary(status, transcript);
+  const chronologicalTranscript = [...transcript].reverse();
+  const generatedSummary = await generateSummary(chronologicalTranscript, status).catch(() => '');
+  const summary = isUsefulGeneratedSummary(generatedSummary)
+    ? truncateSummaryText(generatedSummary)
+    : fallbackSummary;
 
   if (!summary) return session.summary || null;
 
@@ -617,6 +673,7 @@ export async function completeSession(salonId: string, clientIdentifier: string)
     .update({ status: 'completed', updated_at: new Date().toISOString() })
     .eq('salon_id', salonId)
     .eq('client_identifier', clientIdentifier)
+    .neq('channel', 'voice')
     .in('status', ['active', 'needs_approval'])
     .select('id');
 
@@ -655,11 +712,21 @@ export async function completeSession(salonId: string, clientIdentifier: string)
 
 // Dashboard: all messages within a single session
 export async function getSessionTranscript(sessionId: string) {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('transcripts')
-    .select('id, role, content, created_at')
+    .select('id, role, content, created_at, channel')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true });
+
+  if (error && isMissingTranscriptChannelColumnError(error)) {
+    const { data: fallbackData } = await supabase
+      .from('transcripts')
+      .select('id, role, content, created_at')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true });
+    return fallbackData || [];
+  }
+
   return data || [];
 }
 
@@ -685,16 +752,18 @@ export async function getWorkers(salonId: string) {
 }
 
 // The most recent held (unconfirmed) booking for a customer
-export async function getActiveHold(customerPhone: string) {
+export async function getActiveHold(customerPhone: string, salonId?: string) {
   const nowIso = new Date().toISOString();
-  const { data } = await supabase
+  let query = supabase
     .from('bookings')
     .select('*')
-    .eq('customer_phone', customerPhone)
+    .eq('customer_phone', normalizeClientPhone(customerPhone) || customerPhone)
     .eq('status', 'held')
     .gte('start_time', nowIso)
     .or(`expires_at.is.null,expires_at.gte.${nowIso}`)
-    .order('start_time', { ascending: true })
+    .order('start_time', { ascending: true });
+  if (salonId) query = query.eq('salon_id', salonId);
+  const { data } = await query
     .limit(1)
     .maybeSingle();
   return data || null;

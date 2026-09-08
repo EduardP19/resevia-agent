@@ -137,18 +137,30 @@ export async function callAI(
   };
 }
 
-export async function generateSummary(transcript: { role: string; content: string }[]): Promise<string> {
+export async function generateSummary(transcript: { role: string; content: string }[], status?: string): Promise<string> {
+  if (!process.env.AI_MODEL_API_KEY) return 'Summary not available.';
+
   const model = genAI.getGenerativeModel({
     model: process.env.AI_MODEL_NAME || 'gemini-2.5-flash',
-    systemInstruction: "You are an assistant that summarizes salon customer conversations. Provide a concise, 1-sentence summary of what the client wanted or the outcome of the chat. Example: 'Client inquired about hair coloring prices and availability.'",
+    systemInstruction: [
+      'You summarize salon booking conversations for an owner dashboard.',
+      'Write one useful sentence, 12-22 words.',
+      'Lead with the customer topic or requested service, then include the concrete outcome if known.',
+      'Mention booking date/time, staff member, escalation, pending approval, or timeout only when supported by the transcript.',
+      'Do not say "client inquired" unless there is no clearer topic. Do not invent details.',
+    ].join(' '),
   });
 
-  const chatHistory = transcript.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
-  const prompt = `Summarize this salon conversation in 1 sentence:\n\n${chatHistory}`;
+  const chatHistory = transcript
+    .filter(m => m.role !== 'system')
+    .map(m => `${m.role.toUpperCase()}: ${m.content}`)
+    .join('\n');
+  const prompt = `Session status: ${status || 'unknown'}\n\nSummarize this conversation for a dashboard topic/outcome field:\n\n${chatHistory}`;
 
   try {
     const result = await model.generateContent(prompt);
-    return result.response.text().trim();
+    const summary = result.response.text().trim().replace(/^["']|["']$/g, '');
+    return summary || 'Summary not available.';
   } catch (err) {
     console.error('Summarization failed', err);
     return 'Summary not available.';

@@ -7,6 +7,18 @@ import { cancelDeferredNotification } from '@/lib/deferred-notifications';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+function isMissingTranscriptChannelColumnError(error: any) {
+  const message = typeof error?.message === 'string' ? error.message : '';
+  const details = typeof error?.details === 'string' ? error.details : '';
+  const code = typeof error?.code === 'string' ? error.code : '';
+
+  return (
+    code === 'PGRST204' ||
+    message.includes("Could not find the 'channel' column") ||
+    details.includes("Could not find the 'channel' column")
+  );
+}
+
 // Returns user/assistant messages for a session.
 // If 'since' is provided, returns only messages newer than that.
 // If 'since' is missing, returns the latest 50 messages to sync recent history.
@@ -21,22 +33,31 @@ export async function GET(req: NextRequest) {
   // Cancel any pending deferred notification — the owner has the session open.
   void cancelDeferredNotification(sessionId).catch(() => {});
 
-  const baseQuery = supabase
+  const buildMessagesQuery = (includeChannel: boolean) => supabase
     .from('transcripts')
-    .select('id, role, content, created_at')
+    .select(includeChannel ? 'id, role, content, created_at, channel' : 'id, role, content, created_at')
     .eq('session_id', sessionId)
     .in('role', ['user', 'assistant']);
 
-  const { data: rawMessages, error } = since
-    ? await baseQuery
+  let rawMessages: any[] | null = null;
+  let error: any = null;
+
+  const loadMessages = async (includeChannel: boolean) => since
+    ? await buildMessagesQuery(includeChannel)
         // Greater than or equal to avoid missing messages created in the same millisecond.
         // deduplication is handled by ID on the client.
         .gte('created_at', since)
         .order('created_at', { ascending: true })
-    : await baseQuery
+    : await buildMessagesQuery(includeChannel)
         // On first load, grab recent context, then restore chronological order.
         .order('created_at', { ascending: false })
         .limit(50);
+
+  ({ data: rawMessages, error } = await loadMessages(true));
+
+  if (error && isMissingTranscriptChannelColumnError(error)) {
+    ({ data: rawMessages, error } = await loadMessages(false));
+  }
 
   if (error) {
     safeLog({
@@ -70,7 +91,7 @@ export async function GET(req: NextRequest) {
 
   const { data: draftMessages } = await supabase
     .from('transcripts')
-    .select('id, role, content, created_at')
+    .select('id, role, content, created_at, channel')
     .eq('session_id', sessionId)
     .eq('role', 'draft')
     .order('created_at', { ascending: false })
@@ -78,7 +99,7 @@ export async function GET(req: NextRequest) {
 
   const { data: reviewMessages } = await supabase
     .from('transcripts')
-    .select('id, role, content, created_at')
+    .select('id, role, content, created_at, channel')
     .eq('session_id', sessionId)
     .in('role', ['user', 'assistant', 'draft', 'system'])
     .order('created_at', { ascending: false })

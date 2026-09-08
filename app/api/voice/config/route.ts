@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getFAQs, getWorkers, supabase } from '@/lib/supabase';
 import { buildVoiceAgentSettings } from '@/lib/voice-agent';
 import { logError, safeLog, withRequestContext } from '@/lib/logger';
+import { getClientByPhone } from '@/lib/clients';
+import { normalizeClientPhone } from '@/lib/client-profile';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 15;
@@ -41,15 +43,19 @@ export async function GET(req: NextRequest) {
     }
 
     try {
-      const [{ data: salon }, workers, faqs, { data: session }] = await Promise.all([
+      const [{ data: salon }, workers, faqs, { data: session }, client] = await Promise.all([
         supabase.from('business_profiles').select('*').eq('id', salonId).single(),
         getWorkers(salonId),
         getFAQs(salonId),
-        supabase.from('sessions').select('metadata').eq('id', sessionId).single(),
+        supabase.from('sessions').select('metadata, client_identifier').eq('id', sessionId).eq('salon_id', salonId).eq('channel', 'voice').single(),
+        getClientByPhone(salonId, customerPhone),
       ]);
 
       if (!salon) {
         return NextResponse.json({ error: 'Salon not found' }, { status: 404 });
+      }
+      if (!session || normalizeClientPhone(session.client_identifier) !== normalizeClientPhone(customerPhone)) {
+        return NextResponse.json({ error: 'Call not found' }, { status: 404 });
       }
 
       // Tools run client-side: Deepgram asks the bridge, the bridge calls
@@ -63,6 +69,7 @@ export async function GET(req: NextRequest) {
         workers,
         faqs,
         bookingState: (session?.metadata as any)?.booking_state || null,
+        client,
       });
 
       safeLog({

@@ -28,6 +28,13 @@ function resolveBackDestination(
   return `/dashboard/client/${encodeURIComponent(sessionClientIdentifier)}`;
 }
 
+function getChannelLabel(channel: string | null | undefined) {
+  if (channel === 'voice') return 'Voice';
+  if (channel === 'whatsapp') return 'WhatsApp';
+  if (channel === 'webchat') return 'Web chat';
+  return 'SMS';
+}
+
 export default async function SessionTranscriptPage({
   params,
   searchParams,
@@ -95,21 +102,12 @@ export default async function SessionTranscriptPage({
             <span className="text-gray-300">·</span>
             <span className="text-sm text-gray-500">{session.business_profiles?.name}</span>
             <span className="text-gray-300">·</span>
-            {session.channel === 'whatsapp' ? (
-              <span
-                className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest"
-                style={{ background: 'rgba(109,40,217,0.08)', color: '#6D28D9', border: '1px solid rgba(109,40,217,0.2)' }}
-              >
-                WhatsApp
-              </span>
-            ) : (
-              <span
-                className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest"
-                style={{ background: 'rgba(109,40,217,0.08)', color: '#6D28D9', border: '1px solid rgba(109,40,217,0.2)' }}
-              >
-                SMS
-              </span>
-            )}
+            <span
+              className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest"
+              style={{ background: 'rgba(109,40,217,0.08)', color: '#6D28D9', border: '1px solid rgba(109,40,217,0.2)' }}
+            >
+              {getChannelLabel(session.channel)}
+            </span>
             {isReview && (
               <>
                 <span className="text-gray-300">·</span>
@@ -146,6 +144,7 @@ export default async function SessionTranscriptPage({
         clientPhone={session.client_identifier}
         sessionStatus={session.status}
         agentName={agentName}
+        sessionChannel={session.channel}
       />
     </div>
   );

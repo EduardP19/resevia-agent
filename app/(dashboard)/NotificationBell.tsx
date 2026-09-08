@@ -32,6 +32,13 @@ function statusConfig(status: string) {
   return { label: 'Needs Approval', badge: 'bg-amber-50 text-amber-700 border border-amber-200', dot: 'bg-amber-500' };
 }
 
+function getChannelLabel(channel: string | null | undefined) {
+  if (channel === 'voice') return 'Voice';
+  if (channel === 'whatsapp') return 'WhatsApp';
+  if (channel === 'webchat') return 'Web chat';
+  return 'SMS';
+}
+
 export default function NotificationBell() {
   const [count, setCount] = useState(0);
   const [items, setItems] = useState<NotificationItem[]>([]);
@@ -174,7 +181,7 @@ export default function NotificationBell() {
                     {item.preview ? `“${item.preview}”` : 'No messages yet'}
                   </p>
                   <span className="text-[9px] font-black uppercase tracking-widest text-[#6D28D9]/50">
-                    {item.channel === 'whatsapp' ? 'WhatsApp' : item.channel === 'webchat' ? 'Web chat' : 'SMS'}
+                    {getChannelLabel(item.channel)}
                   </span>
                 </Link>
               );

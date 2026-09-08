@@ -1,5 +1,6 @@
 import { SchemaType } from '@google/generative-ai';
 import { getAgentName } from './agent-name';
+import { buildClientContext, type ClientProfile } from './client-profile';
 
 // ─── System Prompt ────────────────────────────────────────────────────────────
 
@@ -10,14 +11,14 @@ export function buildSystemPrompt(
   workers?: any[],
   faqs?: any[],
   bookingState?: any,
-  options?: { channel?: AgentChannel }
+  options?: { channel?: AgentChannel; client?: ClientProfile | null }
 ) {
   const agentName = getAgentName(salon);
   // Voice is a spoken channel: no character budget, no written formatting, and
   // the caller can't re-read anything. Only the medium-specific blocks change —
   // the booking flow, guardrails, and salon data are identical across channels.
   const isVoice = options?.channel === 'voice';
-  const medium = isVoice ? 'over the phone' : 'over SMS';
+  const medium = isVoice ? 'over the phone' : options?.channel === 'whatsapp' ? 'over WhatsApp' : 'over SMS';
   const servicesList = salon.services.map((s: any) =>
     `- ${s.name} (${s.category || 'General'}) — ${s.duration_minutes} mins — £${s.price}`
   ).join('\n');
@@ -57,6 +58,7 @@ export function buildSystemPrompt(
 # Identity
 
 You are ${agentName}, the receptionist for ${salon.name}. You help clients book, reschedule, and cancel appointments ${medium}. Be warm and direct — like a friendly person at the front desk, not a customer service bot.
+${buildClientContext(options?.client)}
 ${formattedState}
 
 ---

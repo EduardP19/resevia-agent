@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { buildSystemPrompt, type AgentChannel } from './agent';
 import { safeLog } from '@/lib/logger';
+import type { ClientProfile } from '@/lib/client-profile';
 import {
   holdBooking,
   confirmBooking,
@@ -22,6 +23,7 @@ export interface ToolContext {
   /** Channel the conversation is on — only affects the prompt rebuilt by
    *  update_booking_state, which must stay in the same voice/text register. */
   channel?: AgentChannel;
+  client?: ClientProfile | null;
 }
 
 export interface ToolCallResult {
@@ -157,6 +159,7 @@ export async function executeToolCall(
       // Rebuild prompt with new state so AI knows it has been saved
       updatedSystemPrompt = buildSystemPrompt(ctx.salon, ctx.workers, ctx.faqs, updatedBookingState, {
         channel: ctx.channel,
+        client: ctx.client,
       });
       toolResult = validDate
         ? 'Memory updated. I will remember these details.'

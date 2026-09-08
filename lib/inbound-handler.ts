@@ -14,6 +14,7 @@ import {
   supabase,
 } from '@/lib/supabase';
 import { buildSystemPrompt } from '@/lib/agent';
+import { getClientByPhone } from '@/lib/clients';
 import { callAI } from '@/lib/ai';
 import { sendOnChannel, stripWhatsAppPrefix, type MessageChannel } from '@/lib/twilio';
 import { isHandoff } from '@/lib/handoff';
@@ -114,7 +115,7 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
     return twiml();
   }
 
-  const userMessage = await saveMessage(conversation.id, 'user', userInput);
+  const userMessage = await saveMessage(conversation.id, 'user', userInput, channel);
 
   if (inboundMessageSid && userMessage?.id) {
     const inboundSmsStatus = (formData.get('SmsStatus') as string | null) || 'received';
@@ -152,15 +153,16 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
     });
   }
 
-  const [workers, faqs, activeHold, history] = await Promise.all([
+  const [workers, faqs, activeHold, history, client] = await Promise.all([
     getWorkers(salon.id),
     getFAQs(salon.id),
-    getActiveHold(fromNumber),
+    getActiveHold(fromNumber, salon.id),
     getTranscriptHistory(conversation.id),
+    getClientByPhone(salon.id, fromNumber),
   ]);
 
   const bookingState = (conversation.metadata as any)?.booking_state || null;
-  let systemPrompt = buildSystemPrompt(salon, workers, faqs, bookingState);
+  let systemPrompt = buildSystemPrompt(salon, workers, faqs, bookingState, { channel, client });
   let updatedBookingState = bookingState || {};
 
   if (activeHold) {
@@ -179,6 +181,8 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
     workers,
     faqs,
     salonServices: salon.services,
+    channel,
+    client,
   };
 
   let aiResponse = await callAI(
@@ -200,7 +204,7 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
     if (result.updatedBookingState) updatedBookingState = result.updatedBookingState;
     if (result.updatedSystemPrompt) systemPrompt = result.updatedSystemPrompt;
 
-    await saveMessage(conversation.id, 'system' as any, `Tool (${name}): ${result.toolResult}`);
+    await saveMessage(conversation.id, 'system' as any, `Tool (${name}): ${result.toolResult}`, channel);
     const updatedHistory = await getTranscriptHistory(conversation.id);
     aiResponse = await callAI(
       systemPrompt,
@@ -231,7 +235,7 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
   const effectiveManual = resolveEffectiveApprovalMode(conversation, salon);
 
   if (effectiveManual) {
-    await saveMessage(conversation.id, 'draft' as any, reply);
+    await saveMessage(conversation.id, 'draft' as any, reply, channel);
     safeLog({
       type: 'audit',
       level: 'info',
@@ -288,7 +292,7 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
     tenant_id: salon.id,
     session_id: conversation.id,
   });
-  const assistantMessage = await saveMessage(conversation.id, 'assistant', reply);
+  const assistantMessage = await saveMessage(conversation.id, 'assistant', reply, channel);
 
   const outboundMetadata = {
     twilioMessageSid: outboundMessage.sid,

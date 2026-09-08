@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
 
     const { data: session, error: sessionError } = await supabase
       .from('sessions')
-      .select('id, salon_id, status')
+      .select('id, salon_id, status, channel')
       .eq('id', sessionId)
       .eq('salon_id', auth.session.tenantId)
       .single();
@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
     if (sessionError || !session) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
+    if (session.channel === 'voice') return NextResponse.json({ error: 'Phone conversations close when the call ends' }, { status: 409 });
 
     if (session.status === 'completed' || session.status === 'expired') {
       return NextResponse.json({ success: true, status: session.status });

@@ -10,6 +10,7 @@ interface Message {
   role: string;
   content: string;
   created_at: string;
+  channel?: string | null;
 }
 
 function formatMessageTimestamp(value: string) {
@@ -28,18 +29,29 @@ function formatMessageTimestamp(value: string) {
   });
 }
 
+function getChannelLabel(channel: string | null | undefined) {
+  if (channel === 'voice') return 'Voice';
+  if (channel === 'whatsapp') return 'WhatsApp';
+  if (channel === 'webchat') return 'Web chat';
+  if (channel === 'test') return 'Test';
+  if (channel === 'sandbox') return 'Sandbox';
+  return 'SMS';
+}
+
 export default function ChatInterface({
   sessionId,
   initialTranscript,
   clientPhone,
   sessionStatus,
   agentName: rawAgentName,
+  sessionChannel,
 }: {
   sessionId: string;
   initialTranscript: Message[];
   clientPhone: string;
   sessionStatus: string;
   agentName?: string | null;
+  sessionChannel?: string | null;
 }) {
   const agentName = getAgentName({ agent_name: rawAgentName });
   const agentPossessiveName = getAgentPossessiveName(agentName);
@@ -290,6 +302,7 @@ export default function ChatInterface({
           const isDraft = msg.role === 'draft';
           const isSystem = msg.role === 'system';
           const timestamp = formatMessageTimestamp(msg.created_at);
+          const channelLabel = getChannelLabel(msg.channel || sessionChannel);
 
           if (isSystem) {
             return (
@@ -310,7 +323,7 @@ export default function ChatInterface({
                 <div className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${isUser ? 'text-right' : 'text-left'} text-gray-400`}>
                   <span>{roleLabel[msg.role] || msg.role}</span>
                   <span suppressHydrationWarning className="font-mono font-semibold normal-case tracking-normal text-gray-300">
-                    {' '}· {timestamp}
+                    {' '}· {channelLabel} · {timestamp}
                   </span>
                 </div>
                 <div

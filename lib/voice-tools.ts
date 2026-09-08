@@ -1,6 +1,8 @@
 import { supabase, getFAQs, getWorkers } from '@/lib/supabase';
 import { executeToolCall, type ToolContext } from '@/lib/tool-handler';
 import { safeLog } from '@/lib/logger';
+import { getClientByPhone } from '@/lib/clients';
+import { normalizeClientPhone } from '@/lib/client-profile';
 
 /**
  * Executes one Deepgram voice-agent function call against the same tool
@@ -28,14 +30,18 @@ export async function runVoiceToolCall({
   name,
   args,
 }: VoiceToolCall): Promise<string> {
-  const [{ data: session }, { data: salon }, workers, faqs] = await Promise.all([
-    supabase.from('sessions').select('id, metadata').eq('id', sessionId).single(),
+  const [{ data: session }, { data: salon }, workers, faqs, client] = await Promise.all([
+    supabase.from('sessions').select('id, metadata, client_identifier').eq('id', sessionId).eq('salon_id', salonId).eq('channel', 'voice').single(),
     supabase.from('business_profiles').select('*').eq('id', salonId).single(),
     getWorkers(salonId),
     getFAQs(salonId),
+    getClientByPhone(salonId, customerPhone),
   ]);
 
   if (!salon) return 'Failed: salon not found.';
+  if (!session || normalizeClientPhone(session.client_identifier) !== normalizeClientPhone(customerPhone)) {
+    return 'Failed: call not found.';
+  }
 
   const bookingState = (session?.metadata as any)?.booking_state || {};
 
@@ -48,6 +54,7 @@ export async function runVoiceToolCall({
     faqs,
     salonServices: salon.services,
     channel: 'voice',
+    client,
   };
 
   const { toolResult, updatedBookingState } = await executeToolCall(name, args, ctx, bookingState);

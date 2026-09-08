@@ -1,9 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { saveMessage, supabase } from '@/lib/supabase';
+import { refreshSessionSummary, saveMessageToTable, supabase } from '@/lib/supabase';
+import { waitUntil } from '@vercel/functions';
+import { z } from 'zod';
 import { logError, safeLog, withRequestContext } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 15;
+
+const eventSchema = z.object({
+  sessionId: z.string().uuid(), tenantId: z.string().uuid(),
+  event: z.enum(['transcript', 'call_ended', 'heartbeat']),
+  eventId: z.string().uuid().optional(),
+  occurredAt: z.string().datetime().optional(),
+  role: z.enum(['user', 'assistant']).optional(),
+  content: z.string().trim().min(1).max(20000).optional(),
+  reason: z.string().max(200).optional(),
+});
 
 /**
  * Conversation events forwarded by the audio bridge.
@@ -24,23 +36,45 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      const { sessionId, tenantId, event, role, content, reason } = await req.json();
-      if (!sessionId) {
-        return NextResponse.json({ error: 'sessionId is required' }, { status: 400 });
+      const parsed = eventSchema.safeParse(await req.json());
+      if (!parsed.success) {
+        return NextResponse.json({ error: 'Invalid call event' }, { status: 400 });
+      }
+      const { sessionId, tenantId, event, eventId, occurredAt, role, content, reason } = parsed.data;
+      const { data: session, error: sessionError } = await supabase.from('sessions')
+        .select('id').eq('id', sessionId).eq('salon_id', tenantId).eq('channel', 'voice').maybeSingle();
+      if (sessionError) throw sessionError;
+      if (!session) return NextResponse.json({ error: 'Call not found' }, { status: 404 });
+
+      if (event === 'transcript') {
+        if (!content || !role) return NextResponse.json({ error: 'Transcript role and content are required' }, { status: 400 });
+        try {
+          await saveMessageToTable(sessionId, role, content, 'transcripts', undefined, {
+            channel: 'voice', ...(eventId ? { id: eventId } : {}),
+            ...(occurredAt ? { created_at: occurredAt } : {}),
+          });
+        } catch (error: any) {
+          if (error?.code !== '23505' || !eventId) throw error;
+        }
       }
 
-      if (event === 'transcript' && content) {
-        await saveMessage(sessionId, role === 'user' ? 'user' : 'assistant', content);
+      if (event === 'transcript' || event === 'heartbeat') {
+        const { error } = await supabase.from('sessions').update({ updated_at: new Date().toISOString() })
+          .eq('id', sessionId).eq('salon_id', tenantId).in('status', ['active', 'review']);
+        if (error) throw error;
       }
 
       if (event === 'call_ended') {
         // Voice has an explicit end that text doesn't — the caller hangs up. No
         // need to wait for the 5-minute inactivity sweep to close the session.
-        await supabase
+        const { error } = await supabase
           .from('sessions')
           .update({ status: 'completed', updated_at: new Date().toISOString() })
           .eq('id', sessionId)
-          .in('status', ['active', 'review']);
+          .eq('salon_id', tenantId)
+          .in('status', ['active', 'review', 'needs_approval']);
+        if (error) throw error;
+        waitUntil(refreshSessionSummary(sessionId).catch(() => {}));
 
         safeLog({
           type: 'integration',

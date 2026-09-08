@@ -213,7 +213,8 @@ async function processMissedCall(params: {
   await saveMessage(
     conversation.id,
     'system',
-    `[Voice webhook] Missed call from ${fromNumber}. Auto follow-up sent via ${deliveredChannel}.`
+    `[Voice webhook] Missed call from ${fromNumber}. Auto follow-up sent via ${deliveredChannel}.`,
+    'voice'
   );
   console.log(`[voice] ✓ system message saved`);
 
@@ -223,7 +224,8 @@ async function processMissedCall(params: {
   const assistantMessage = await saveMessage(
     conversation.id,
     'assistant',
-    deliveredChannel === 'whatsapp' ? '[WhatsApp template sent]' : smsBody
+    deliveredChannel === 'whatsapp' ? '[WhatsApp template sent]' : smsBody,
+    deliveredChannel
   );
   const outboundMetadata = {
     twilioMessageSid: outboundMessage.sid,
@@ -362,7 +364,7 @@ export async function POST(req: NextRequest) {
       // The session has to exist before the TwiML goes out: the bridge gets its
       // context from <Parameter> values, and it has no request of its own to
       // resolve them from later.
-      const conversation = await getOrCreateConversation(salon.id, fromNumber, undefined, 'voice');
+      const conversation = await getOrCreateConversation(salon.id, fromNumber, undefined, 'voice', callSid);
       setRequestContext({ tenant_id: salon.id, session_id: conversation.id });
 
       if (conversation.channel !== 'voice') {

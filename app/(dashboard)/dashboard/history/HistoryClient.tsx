@@ -21,6 +21,13 @@ function formatHistoryDate(value: string) {
   return `${dateString} · ${timeString}`;
 }
 
+function getChannelLabel(channel: string | null | undefined) {
+  if (channel === 'voice') return 'Voice';
+  if (channel === 'whatsapp') return 'WhatsApp';
+  if (channel === 'webchat') return 'Web chat';
+  return 'SMS';
+}
+
 type Card = {
   phone: string;
   conversationCount: number;
@@ -126,21 +133,12 @@ export default function HistoryClient({ phoneCards }: { phoneCards: Card[] }) {
                     <span className={`w-1 h-1 rounded-full ${card.latestStatus.dot}`} />
                     {card.latestStatus.label}
                   </span>
-                  {card.latest?.channel === 'whatsapp' ? (
-                    <span
-                      className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest"
-                      style={{ background: 'rgba(109,40,217,0.08)', color: '#6D28D9', border: '1px solid rgba(109,40,217,0.2)' }}
-                    >
-                      WhatsApp
-                    </span>
-                  ) : (
-                    <span
-                      className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest"
-                      style={{ background: 'rgba(109,40,217,0.08)', color: '#6D28D9', border: '1px solid rgba(109,40,217,0.2)' }}
-                    >
-                      SMS
-                    </span>
-                  )}
+                  <span
+                    className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest"
+                    style={{ background: 'rgba(109,40,217,0.08)', color: '#6D28D9', border: '1px solid rgba(109,40,217,0.2)' }}
+                  >
+                    {getChannelLabel(card.latest?.channel)}
+                  </span>
                 </div>
               </div>
 
