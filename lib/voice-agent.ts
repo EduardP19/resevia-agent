@@ -27,11 +27,14 @@ const TELEPHONY_AUDIO = {
  * Deepgram expects. This flattens the Gemini `[{ functionDeclarations: [...] }]`
  * wrapper and nothing else — keeping one canonical tool definition.
  */
-export function deepgramFunctions() {
+export function deepgramFunctions(toolEndpoint?: VoiceSettingsInput['toolEndpoint']) {
   return agentTools.flatMap((t: any) => t.functionDeclarations).map((fn: any) => ({
     name: fn.name,
     description: fn.description,
     parameters: fn.parameters,
+    ...(toolEndpoint
+      ? { endpoint: { url: toolEndpoint.url, method: 'POST', headers: toolEndpoint.headers || {} } }
+      : {}),
   }));
 }
 
@@ -40,6 +43,13 @@ export interface VoiceSettingsInput {
   workers?: any[];
   faqs?: any[];
   bookingState?: any;
+  /**
+   * When given, every function is configured for **server-side** execution:
+   * Deepgram calls this URL itself instead of asking the client to run the tool.
+   * That is what keeps the bridge dumb — it never needs Supabase, Cal.com, or
+   * any of the booking logic, so it can live on a different host entirely.
+   */
+  toolEndpoint?: { url: string; headers?: Record<string, string> };
 }
 
 export function buildVoiceSystemPrompt({ salon, workers, faqs, bookingState }: VoiceSettingsInput): string {
@@ -58,6 +68,7 @@ export function buildVoiceGreeting(salon: any): string {
  * Gemini versions; DEEPGRAM_VOICE_MODEL overrides it for voice alone.
  */
 export function buildVoiceAgentSettings(input: VoiceSettingsInput) {
+  const functions = deepgramFunctions(input.toolEndpoint);
   return {
     type: 'Settings',
     audio: TELEPHONY_AUDIO,
@@ -72,7 +83,7 @@ export function buildVoiceAgentSettings(input: VoiceSettingsInput) {
           model: process.env.DEEPGRAM_VOICE_MODEL || process.env.AI_MODEL_NAME || 'gemini-2.5-flash',
         },
         prompt: buildVoiceSystemPrompt(input),
-        functions: deepgramFunctions(),
+        functions,
       },
       speak: {
         provider: { type: 'deepgram', model: process.env.DEEPGRAM_SPEAK_MODEL || 'aura-2-thalia-en' },

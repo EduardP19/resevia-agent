@@ -1,0 +1,10 @@
+{
+  "name": "resevia-voice-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Audio-only WebSocket bridge between Twilio Media Streams and the Deepgram Voice Agent API.",
+  "engines": { "node": ">=20" },
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "ws": "^8.20.0" }
+}

@@ -128,10 +128,14 @@ function buildAgentTwiML(params: {
   return voiceResponse.toString();
 }
 
-function bridgeUrlFrom(requestUrl: string): string {
-  const url = new URL('/api/voice/bridge', requestUrl);
-  url.protocol = url.protocol === 'http:' ? 'ws:' : 'wss:';
-  return url.toString();
+/**
+ * The bridge runs off-platform (see bridge/README.md), so its address is
+ * configuration rather than something derivable from this request.
+ */
+function bridgeUrl(): string | null {
+  const configured = (process.env.VOICE_BRIDGE_URL || '').trim();
+  if (!configured) return null;
+  return configured.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:').replace(/\/$/, '');
 }
 
 function normalizeE164Candidate(value: string | null): string | null {
@@ -320,7 +324,7 @@ export async function POST(req: NextRequest) {
     // at least texts the caller back. Same for 'agent' without an API key.
     let voiceMode: string = (salon as any)?.voice_mode || 'reject';
     if (voiceMode === 'forward' && !forwardNumber) voiceMode = 'reject';
-    if (voiceMode === 'agent' && !process.env.DEEPGRAM_API_KEY) voiceMode = 'reject';
+    if (voiceMode === 'agent' && !bridgeUrl()) voiceMode = 'reject';
 
     if (voiceMode !== ((salon as any)?.voice_mode || 'reject')) {
       await log({
@@ -379,7 +383,7 @@ export async function POST(req: NextRequest) {
 
       return new NextResponse(
         buildAgentTwiML({
-          bridgeUrl: bridgeUrlFrom(req.url),
+          bridgeUrl: bridgeUrl()!,
           salonId: salon.id,
           sessionId: conversation.id,
           fromNumber,
