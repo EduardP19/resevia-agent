@@ -1,5 +1,7 @@
 # Voice Agent Plan — 11th August 2026
 
+> **Updated 8th September 2026** by [voice-channel-plan-2026-09-08.md](voice-channel-plan-2026-09-08.md). The decision below still stands; §1's Vercel WebSocket constraint no longer holds, and the prices have been refreshed. Read this document for the reasoning, that one for what to build first.
+
 **Goal:** Let the agent answer inbound calls conversationally, instead of today's reject-and-text-back.
 **Current state:** `/api/twilio/voice` always hangs up (`<Reject>`), then sends a WhatsApp-or-SMS follow-up via `sendMissedCallFollowup()`. There is no IVR and no speech handling anywhere.
 

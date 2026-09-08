@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ApprovalToggle from '@/app/(dashboard)/ApprovalToggle';
+import VoiceModeToggle from './VoiceModeToggle';
 import { trackClientEvent } from '@/lib/client-events';
 import { getAgentName } from '@/lib/agent-name';
 
@@ -112,6 +113,27 @@ export default function ProfileEditor({ salon }: { salon: any }) {
             <ApprovalToggle withDescription />
           </div>
         </div>
+      </Card>
+
+      {/* ── Phone calls ──────────────────────────────────────────────── */}
+      <Card>
+        <CardHeader
+          icon={
+            <SectionIcon>
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+              </svg>
+            </SectionIcon>
+          }
+          title="Phone Calls"
+          subtitle="What happens when someone rings your number"
+        />
+        <VoiceModeToggle
+          salonId={salon.id}
+          initialMode={salon.voice_mode || 'reject'}
+          initialForwardNumber={salon.voice_forward_number || ''}
+          agentName={agentName}
+        />
       </Card>
 
       {/* ── Save bar ─────────────────────────────────────────────────── */}

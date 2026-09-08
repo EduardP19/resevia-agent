@@ -1,0 +1,83 @@
+import { agentTools, buildSystemPrompt } from '@/lib/agent';
+import { getAgentName } from '@/lib/agent-name';
+
+/**
+ * Deepgram Voice Agent API — Settings payload builder.
+ *
+ * Deepgram runs the STT -> LLM -> TTS loop; we supply the brain's configuration.
+ * `agent.think.prompt` and `agent.think.functions` are provider-agnostic
+ * top-level fields, so the exact system prompt and the exact 8 tool schemas the
+ * SMS/WhatsApp pipeline already uses port across untouched — one agent, three
+ * channels, one place to change its behaviour.
+ */
+
+export const DEEPGRAM_AGENT_URL = 'wss://agent.deepgram.com/v1/agent/converse';
+
+// Twilio Media Streams are 8kHz mu-law in both directions. Matching that on
+// both sides of Deepgram makes the bridge a byte passthrough — no resampling,
+// no added latency, no audio quality lost to a needless conversion.
+const TELEPHONY_AUDIO = {
+  input: { encoding: 'mulaw', sample_rate: 8000 },
+  output: { encoding: 'mulaw', sample_rate: 8000, container: 'none' },
+};
+
+/**
+ * Gemini's `SchemaType` enum members are the lowercase JSON Schema type names
+ * ('object', 'string', ...), so the declarations are already in the shape
+ * Deepgram expects. This flattens the Gemini `[{ functionDeclarations: [...] }]`
+ * wrapper and nothing else — keeping one canonical tool definition.
+ */
+export function deepgramFunctions() {
+  return agentTools.flatMap((t: any) => t.functionDeclarations).map((fn: any) => ({
+    name: fn.name,
+    description: fn.description,
+    parameters: fn.parameters,
+  }));
+}
+
+export interface VoiceSettingsInput {
+  salon: any;
+  workers?: any[];
+  faqs?: any[];
+  bookingState?: any;
+}
+
+export function buildVoiceSystemPrompt({ salon, workers, faqs, bookingState }: VoiceSettingsInput): string {
+  return buildSystemPrompt(salon, workers, faqs, bookingState, { channel: 'voice' });
+}
+
+export function buildVoiceGreeting(salon: any): string {
+  const salonName = (typeof salon?.name === 'string' && salon.name.trim()) || 'the salon';
+  return `Hello, you've reached ${salonName}. This is ${getAgentName(salon)} — how can I help?`;
+}
+
+/**
+ * The Settings message sent as the first frame on the Deepgram socket.
+ *
+ * Model comes from AI_MODEL_NAME so voice and text never drift onto different
+ * Gemini versions; DEEPGRAM_VOICE_MODEL overrides it for voice alone.
+ */
+export function buildVoiceAgentSettings(input: VoiceSettingsInput) {
+  return {
+    type: 'Settings',
+    audio: TELEPHONY_AUDIO,
+    agent: {
+      language: 'en',
+      listen: {
+        provider: { type: 'deepgram', model: process.env.DEEPGRAM_LISTEN_MODEL || 'flux-general-en' },
+      },
+      think: {
+        provider: {
+          type: 'google',
+          model: process.env.DEEPGRAM_VOICE_MODEL || process.env.AI_MODEL_NAME || 'gemini-2.5-flash',
+        },
+        prompt: buildVoiceSystemPrompt(input),
+        functions: deepgramFunctions(),
+      },
+      speak: {
+        provider: { type: 'deepgram', model: process.env.DEEPGRAM_SPEAK_MODEL || 'aura-2-thalia-en' },
+      },
+      greeting: buildVoiceGreeting(input.salon),
+    },
+  };
+}

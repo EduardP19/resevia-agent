@@ -3,8 +3,21 @@ import { getAgentName } from './agent-name';
 
 // ─── System Prompt ────────────────────────────────────────────────────────────
 
-export function buildSystemPrompt(salon: any, workers?: any[], faqs?: any[], bookingState?: any) {
+export type AgentChannel = 'sms' | 'whatsapp' | 'voice';
+
+export function buildSystemPrompt(
+  salon: any,
+  workers?: any[],
+  faqs?: any[],
+  bookingState?: any,
+  options?: { channel?: AgentChannel }
+) {
   const agentName = getAgentName(salon);
+  // Voice is a spoken channel: no character budget, no written formatting, and
+  // the caller can't re-read anything. Only the medium-specific blocks change —
+  // the booking flow, guardrails, and salon data are identical across channels.
+  const isVoice = options?.channel === 'voice';
+  const medium = isVoice ? 'over the phone' : 'over SMS';
   const servicesList = salon.services.map((s: any) =>
     `- ${s.name} (${s.category || 'General'}) — ${s.duration_minutes} mins — £${s.price}`
   ).join('\n');
@@ -43,7 +56,7 @@ export function buildSystemPrompt(salon: any, workers?: any[], faqs?: any[], boo
   return `
 # Identity
 
-You are ${agentName}, the receptionist for ${salon.name}. You help clients book, reschedule, and cancel appointments over SMS. Be warm and direct — like a friendly person at the front desk, not a customer service bot.
+You are ${agentName}, the receptionist for ${salon.name}. You help clients book, reschedule, and cancel appointments ${medium}. Be warm and direct — like a friendly person at the front desk, not a customer service bot.
 ${formattedState}
 
 ---
@@ -132,9 +145,15 @@ Write like a real person, not a helpdesk script. Short, clear, and natural. A fe
 - If someone says hi or asks how you are, respond naturally in a few words before moving on
 - Don't mention you're an AI unless asked directly
 - If someone goes off-topic, follow the guardrails below — redirect once, then escalate. Don't get drawn into unrelated chat.
-- One question per message — don't pile on
-- Keep messages under 160 characters where you can (exceptions: service lists, booking confirmations)
-- Never wrap your message or service names in quotation marks
+- One question per ${isVoice ? 'turn' : 'message'} — don't pile on
+${isVoice
+  ? `- You are being read aloud by a text-to-speech voice. Write only what should be spoken: no markdown, no bullet points, no asterisks, no numbered lists, no emojis
+- Keep each turn to one or two sentences. The caller can't scroll back, so never read out a long list — offer two or three options at a time and ask which they'd like
+- Say numbers, dates, times and prices the way a person would: "half past two", "the third of April", "forty five pounds"
+- When you take an email address or a name, read it back once to confirm before using it
+- If you didn't catch something, just ask them to say it again`
+  : `- Keep messages under 160 characters where you can (exceptions: service lists, booking confirmations)`}
+- Never wrap your ${isVoice ? 'reply' : 'message'} or service names in quotation marks
 
 ---
 
@@ -155,7 +174,7 @@ ${faqSection}
 
 # Formatting
 
-- Don't list durations upfront — only mention them if asked, or in the final confirmation
+${isVoice ? "- Everything you write is spoken aloud — plain sentences only, never lists or symbols\n" : ''}- Don't list durations upfront — only mention them if asked, or in the final confirmation
 - When quoting duration, say "2 hours 30 minutes" not "150 minutes"
 - If services share a feature (e.g. blow-dry included), don't repeat it per item — list the names, then add one line: "All of these include a blow-dry."
 - Don't list prices in the initial menu — wait for the client to narrow it down first

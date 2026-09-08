@@ -4,7 +4,21 @@ import { safeLog } from '@/lib/logger';
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!;
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+/**
+ * Next patches global fetch and caches responses, which supabase-js sits on top
+ * of. That silently served stale rows inside route handlers — a spend check
+ * kept reading a tenant's old cost limit for minutes after it had been updated,
+ * while a direct call to the same endpoint returned the new value.
+ *
+ * Every dashboard page already declares `revalidate = 0`, so nothing here wants
+ * cached reads; opting the whole client out makes that explicit and global
+ * rather than per-call.
+ */
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+  global: {
+    fetch: (input: any, init?: any) => fetch(input, { ...init, cache: 'no-store' }),
+  },
+});
 export const TEST_UI_TRANSCRIPTS_TABLE = 'transcripts-sophia-sandbox';
 
 type TranscriptTableName = 'transcripts' | typeof TEST_UI_TRANSCRIPTS_TABLE;
@@ -102,7 +116,7 @@ export async function getOrCreateConversation(
   salonId: string,
   customerPhone: string,
   sessionId?: string,
-  channel: 'sms' | 'whatsapp' = 'sms'
+  channel: 'sms' | 'whatsapp' | 'voice' = 'sms'
 ) {
   let query = supabase.from('sessions').select('*');
 

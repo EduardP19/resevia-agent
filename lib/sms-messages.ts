@@ -1,4 +1,5 @@
 import { safeLog } from '@/lib/logger';
+import { checkTenantSpend } from '@/lib/cost-guard';
 import { normalizeSmsPrice } from '@/lib/sms-pricing';
 import { supabase } from '@/lib/supabase';
 import { resolveSmsFees, resolveWhatsAppFees, type MessageFees, type ServiceWindow } from '@/lib/message-rate-card';
@@ -222,6 +223,10 @@ export async function upsertSmsMessage(input: SmsMessageUpsert) {
       });
       return null;
     }
+
+    // Spend monitoring. Deliberately not awaited: this is an alert-only check
+    // and must never add latency to, or fail, a message write.
+    void checkTenantSpend(input.salonId);
 
     return data;
   } catch (error: any) {

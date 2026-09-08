@@ -21,6 +21,8 @@ const allowedProfileFields = new Set([
   'twilio_auth_token',
   'notify_sms_to',
   'approval_mode',
+  'voice_mode',
+  'voice_forward_number',
 ]);
 
 export async function GET(req: NextRequest) {
@@ -32,7 +34,7 @@ export async function GET(req: NextRequest) {
 
   const { data } = await supabase
     .from('business_profiles')
-    .select('id, name, agent_name, approval_mode')
+    .select('id, name, agent_name, approval_mode, voice_mode, voice_forward_number')
     .eq('id', auth.session.tenantId)
     .single();
 
@@ -56,6 +58,45 @@ export async function PATCH(req: NextRequest) {
 
     if (typeof safeUpdates.agent_name === 'string') {
       safeUpdates.agent_name = safeUpdates.agent_name.trim() || null;
+    }
+
+    if (typeof safeUpdates.voice_mode === 'string') {
+      // The DB check constraint would reject anything else, but a 400 here is a
+      // clearer answer to the dashboard than a Postgres constraint violation.
+      if (!['reject', 'forward', 'agent'].includes(safeUpdates.voice_mode)) {
+        return NextResponse.json({ error: 'Invalid voice_mode' }, { status: 400 });
+      }
+    }
+
+    if (typeof safeUpdates.voice_forward_number === 'string') {
+      const trimmed = safeUpdates.voice_forward_number.trim();
+      if (trimmed && !/^\+[1-9]\d{7,14}$/.test(trimmed)) {
+        return NextResponse.json(
+          { error: 'Forwarding number must be in E.164 format, e.g. +447700900123' },
+          { status: 400 }
+        );
+      }
+      safeUpdates.voice_forward_number = trimmed || null;
+    }
+
+    // Forwarding to nowhere silently drops calls, so refuse the combination
+    // rather than letting the webhook quietly fall back to reject.
+    if (safeUpdates.voice_mode === 'forward') {
+      const { data: current } = await supabase
+        .from('business_profiles')
+        .select('voice_forward_number')
+        .eq('id', auth.session.tenantId)
+        .single();
+      const effective =
+        'voice_forward_number' in safeUpdates
+          ? safeUpdates.voice_forward_number
+          : current?.voice_forward_number;
+      if (!effective) {
+        return NextResponse.json(
+          { error: 'Add a forwarding number before switching calls to forwarding' },
+          { status: 400 }
+        );
+      }
     }
 
     const data = await updateSalonProfile(auth.session.tenantId, safeUpdates);

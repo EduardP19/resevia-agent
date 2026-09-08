@@ -1,0 +1,14 @@
+-- Remote migration placeholder — NOT owned by this repo.
+--
+-- The sibling repo ../resevia shares this same Supabase project and pushes its
+-- own migrations to it. This file's only job is to keep the shared
+-- supabase_migrations.schema_migrations history matching this repo's local
+-- directory, so `supabase db push` from here doesn't fail with
+-- "Remote migration versions not found in local migrations directory".
+--
+-- Real migration: resevia/supabase/migrations/
+--   20260811211000_add_scheduled_message_sending_source.sql
+--   (alter table scheduled_messages add column if not exists sending_source text)
+--
+-- Mirrors the convention ../resevia already uses for this repo's migrations.
+-- Deliberately empty: the change is applied by the owning repo.

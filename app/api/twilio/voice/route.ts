@@ -93,10 +93,45 @@ async function sendMissedCallFollowup(params: {
   return { channel: 'sms', message, messageType: 'missed_call_followup' };
 }
 
-function buildVoiceTwiML(): string {
+function buildRejectTwiML(): string {
   const voiceResponse = new twilio.twiml.VoiceResponse();
   voiceResponse.reject({ reason: 'rejected' });
   return voiceResponse.toString();
+}
+
+function buildForwardTwiML(forwardNumber: string, callerId?: string): string {
+  const voiceResponse = new twilio.twiml.VoiceResponse();
+  // callerId must be a number owned by the account, so it's the salon's own
+  // Twilio line — the caller's number would be rejected by Twilio.
+  voiceResponse.dial({ callerId, answerOnBridge: true }, forwardNumber);
+  return voiceResponse.toString();
+}
+
+/**
+ * Hands the live call to the Deepgram voice agent via our bridge socket.
+ *
+ * The tenant, session, and caller are passed as <Parameter> children rather than
+ * query string, because Twilio surfaces them in the stream's `start` frame — the
+ * bridge has no HTTP request to read them from.
+ */
+function buildAgentTwiML(params: {
+  bridgeUrl: string;
+  salonId: string;
+  sessionId: string;
+  fromNumber: string;
+}): string {
+  const voiceResponse = new twilio.twiml.VoiceResponse();
+  const stream = voiceResponse.connect().stream({ url: params.bridgeUrl });
+  stream.parameter({ name: 'salonId', value: params.salonId });
+  stream.parameter({ name: 'sessionId', value: params.sessionId });
+  stream.parameter({ name: 'from', value: params.fromNumber });
+  return voiceResponse.toString();
+}
+
+function bridgeUrlFrom(requestUrl: string): string {
+  const url = new URL('/api/voice/bridge', requestUrl);
+  url.protocol = url.protocol === 'http:' ? 'ws:' : 'wss:';
+  return url.toString();
 }
 
 function normalizeE164Candidate(value: string | null): string | null {
@@ -116,33 +151,13 @@ function normalizeE164Candidate(value: string | null): string | null {
  * conversation, and send the (potentially 30s-polling) WhatsApp/SMS follow-up.
  */
 async function processMissedCall(params: {
-  callerRaw: string | null;
-  calledRaw: string | null;
+  salon: any;
   callSid: string | null;
   fromNumber: string;
   toNumber: string | null;
   statusCallbackUrl: string;
 }) {
-  const { callerRaw, calledRaw, callSid, fromNumber, toNumber, statusCallbackUrl } = params;
-
-  console.log(`[voice] looking up salon for toNumber: ${toNumber}`);
-  const salon = toNumber ? await getSalonBySmsNumber(toNumber) : await getDefaultSalon();
-
-  if (!salon) {
-    console.warn(`[voice] ✗ no salon found for toNumber: ${toNumber}`);
-    await log({
-      type: 'error',
-      level: 'error',
-      category: 'sms',
-      event: 'voice_webhook_missing_salon',
-      from: callerRaw,
-      to: calledRaw,
-      call_sid: callSid,
-    });
-    return;
-  }
-
-  console.log(`[voice] salon found — id: ${salon.id}, name: ${(salon as any).name}`);
+  const { salon, callSid, fromNumber, toNumber, statusCallbackUrl } = params;
 
   const smsBody = renderMissedCallSms(salon);
 
@@ -271,19 +286,115 @@ export async function POST(req: NextRequest) {
         to: calledRaw,
         call_sid: callSid,
       });
-      return new NextResponse(buildVoiceTwiML(), { status: 200, headers: xmlHeaders });
+      return new NextResponse(buildRejectTwiML(), { status: 200, headers: xmlHeaders });
     }
 
     const statusCallbackUrl =
       process.env.TWILIO_STATUS_CALLBACK_URL || new URL('/api/twilio/status', req.url).toString();
 
-    // Reject immediately — everything else (salon lookup, conversation,
-    // WhatsApp/SMS follow-up) runs in the background via waitUntil(), so the
-    // caller isn't kept ringing while we do DB/API work (including the
-    // up-to-30s WhatsApp delivery confirmation poll), but the serverless
-    // invocation is kept alive until the background work actually finishes.
+    // The salon lookup moved ahead of the TwiML because `voice_mode` decides
+    // what the TwiML *is*. It costs one indexed read (~tens of ms) against
+    // Twilio's 15s TwiML deadline; everything slow still runs after the
+    // response, in waitUntil.
+    const salon = toNumber ? await getSalonBySmsNumber(toNumber) : await getDefaultSalon();
+
+    if (!salon) {
+      console.warn(`[voice] ✗ no salon found for toNumber: ${toNumber}`);
+      await log({
+        type: 'error',
+        level: 'error',
+        category: 'sms',
+        event: 'voice_webhook_missing_salon',
+        from: callerRaw,
+        to: calledRaw,
+        call_sid: callSid,
+      });
+      return new NextResponse(buildRejectTwiML(), { status: 200, headers: xmlHeaders });
+    }
+
+    setRequestContext({ tenant_id: salon.id });
+
+    const forwardNumber = normalizeE164Candidate((salon as any)?.voice_forward_number || null);
+    // A tenant set to 'forward' with no usable number would otherwise <Dial>
+    // nowhere and drop the call in silence — worse than the reject path, which
+    // at least texts the caller back. Same for 'agent' without an API key.
+    let voiceMode: string = (salon as any)?.voice_mode || 'reject';
+    if (voiceMode === 'forward' && !forwardNumber) voiceMode = 'reject';
+    if (voiceMode === 'agent' && !process.env.DEEPGRAM_API_KEY) voiceMode = 'reject';
+
+    if (voiceMode !== ((salon as any)?.voice_mode || 'reject')) {
+      await log({
+        type: 'error',
+        level: 'warning',
+        category: 'session',
+        event: 'voice_mode_downgraded',
+        tenant_id: salon.id,
+        call_sid: callSid,
+        configured_mode: (salon as any)?.voice_mode,
+        effective_mode: voiceMode,
+      });
+    }
+
+    console.log(`[voice] mode: ${voiceMode}`);
+
+    if (voiceMode === 'forward') {
+      await log({
+        type: 'integration',
+        level: 'info',
+        category: 'session',
+        event: 'voice_call_forwarded',
+        tenant_id: salon.id,
+        from: fromNumber,
+        to: toNumber,
+        call_sid: callSid,
+      });
+      return new NextResponse(buildForwardTwiML(forwardNumber!, toNumber || undefined), {
+        status: 200,
+        headers: xmlHeaders,
+      });
+    }
+
+    if (voiceMode === 'agent') {
+      // The session has to exist before the TwiML goes out: the bridge gets its
+      // context from <Parameter> values, and it has no request of its own to
+      // resolve them from later.
+      const conversation = await getOrCreateConversation(salon.id, fromNumber, undefined, 'voice');
+      setRequestContext({ tenant_id: salon.id, session_id: conversation.id });
+
+      if (conversation.channel !== 'voice') {
+        await supabase.from('sessions').update({ channel: 'voice' }).eq('id', conversation.id);
+      }
+
+      await log({
+        type: 'integration',
+        level: 'info',
+        category: 'session',
+        event: 'voice_call_answered_by_agent',
+        tenant_id: salon.id,
+        session_id: conversation.id,
+        from: fromNumber,
+        to: toNumber,
+        call_sid: callSid,
+      });
+
+      return new NextResponse(
+        buildAgentTwiML({
+          bridgeUrl: bridgeUrlFrom(req.url),
+          salonId: salon.id,
+          sessionId: conversation.id,
+          fromNumber,
+        }),
+        { status: 200, headers: xmlHeaders }
+      );
+    }
+
+    // Reject immediately — everything else (conversation, WhatsApp/SMS
+    // follow-up) runs in the background via waitUntil(), so the caller isn't
+    // kept ringing while we do DB/API work (including the up-to-30s WhatsApp
+    // delivery confirmation poll), but the serverless invocation is kept alive
+    // until the background work actually finishes.
     waitUntil(
-      processMissedCall({ callerRaw, calledRaw, callSid, fromNumber, toNumber, statusCallbackUrl }).catch((error: any) => {
+      processMissedCall({ salon, callSid, fromNumber, toNumber, statusCallbackUrl }).catch((error: any) => {
         logError('sms', 'voice_background_processing_failed', error, {
           source: 'api.twilio.voice',
           path: '/api/twilio/voice',
@@ -293,14 +404,14 @@ export async function POST(req: NextRequest) {
       })
     );
 
-    return new NextResponse(buildVoiceTwiML(), { status: 200, headers: xmlHeaders });
+    return new NextResponse(buildRejectTwiML(), { status: 200, headers: xmlHeaders });
   } catch (error: any) {
     logError('sms', 'voice_webhook_error', error, {
       source: 'api.twilio.voice',
       path: '/api/twilio/voice',
       method: 'POST',
     });
-    return new NextResponse(buildVoiceTwiML(), { status: 200, headers: xmlHeaders });
+    return new NextResponse(buildRejectTwiML(), { status: 200, headers: xmlHeaders });
   }
   });
 }

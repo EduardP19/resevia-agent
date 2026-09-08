@@ -1,0 +1,7 @@
+-- Remote migration placeholder — NOT owned by this repo. See the note in
+-- 20260623133613_remote_placeholder.sql for why these files exist.
+--
+-- Real migration: resevia/supabase/migrations/
+--   20260623141728_add_waitlist_template_key.sql
+--   adds message_templates.template_key + its unique index, and seeds the
+--   'waitlist_signup' template row.

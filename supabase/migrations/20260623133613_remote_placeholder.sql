@@ -1,0 +1,17 @@
+-- Remote migration placeholder — NOT owned by this repo.
+--
+-- The sibling repo ../resevia shares this same Supabase project. This empty
+-- file only keeps the shared supabase_migrations.schema_migrations history
+-- aligned with this repo's local directory so `supabase db push` from here
+-- doesn't fail with "Remote migration versions not found".
+--
+-- Real migration: resevia/supabase/migrations/
+--   20260623133613_add_messaging_tables.sql
+-- Creates the scheduled-messaging feature owned by ../resevia:
+--   tables    message_templates, scheduled_messages
+--   function  set_updated_at(), claim_due_scheduled_messages(p_batch_size, p_worker)
+--   triggers  set_message_templates_updated_at, set_scheduled_messages_updated_at
+--   indexes   idx_message_templates_channel_active,
+--             idx_scheduled_messages_due_pending, idx_scheduled_messages_template_id
+--
+-- Do not drop those objects from this repo — they are live, not orphans.

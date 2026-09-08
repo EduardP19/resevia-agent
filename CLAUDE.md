@@ -76,7 +76,7 @@ Migrations live in `supabase/migrations/` (managed by Supabase CLI). Never add l
 | Table | Purpose |
 |-------|---------|
 | `business_profiles` | Tenant/salon config — name, phone, email, password, agent settings, hours, Twilio creds, `twilio_number` (SMS) + `whatsapp_number` (WhatsApp senders) |
-| `sessions` | SMS/WhatsApp/voice conversations — `channel` (sms/whatsapp/webchat, authoritative), `status`, `client_identifier` (the customer's phone), `summary`, token tracking. Auto-expired — see Session Lifecycle below |
+| `sessions` | SMS/WhatsApp/voice conversations — `channel` (sms/whatsapp/webchat/voice, authoritative), `status`, `client_identifier` (the customer's phone), `summary`, token tracking. Auto-expired — see Session Lifecycle below |
 | `transcripts` | Per-session messages — role (system/assistant/user/draft), content. Content only; all SMS/Twilio metadata lives in `sms_messages` |
 | `transcripts-sophia-sandbox` | Sandbox/test UI messages — same as transcripts + `t`, `param` columns |
 | `faqs` | FAQ entries — question, answer, category, is_active |
@@ -86,13 +86,17 @@ Migrations live in `supabase/migrations/` (managed by Supabase CLI). Never add l
 | `pending_notifications` | Deferred owner alert queue — session_id, send_after |
 | `app_logs` | **All** app-side logs — one row per event, discriminated by `type` (see Logging below). Replaced `system_logs` / `event_logs` / `error_logs`, which were dropped in `20260811130000` |
 
+| `tenant_cost_alerts` | Spend-alert dedupe — PK `(salon_id, month_start, threshold_pct)`. The key *is* the dedupe; insert with `on conflict do nothing` and only alert if a row was created |
+
 Import the shared client: `import { supabase } from '@/lib/supabase'` — never instantiate directly.
+
+**The shared client sets `cache: 'no-store'`, and that matters.** Next patches global fetch and supabase-js sits on top of it, so without this reads inside route handlers get served from Next's fetch cache — a spend check kept seeing a tenant's old cost limit for minutes after it changed, while a direct call to the same endpoint returned the new value. Don't remove it, and don't create a second client without it.
 
 ---
 
-## Channels (SMS / WhatsApp)
+## Channels (SMS / WhatsApp / Voice)
 
-Each session has a `channel` column (`'sms' | 'whatsapp' | 'webchat'`, default `'sms'`) — the **authoritative routing field**. (The legacy `platform` free-text column was dropped in `20260805140000`.)
+Each session has a `channel` column (`'sms' | 'whatsapp' | 'webchat' | 'voice'`, default `'sms'`) — the **authoritative routing field**. (The legacy `platform` free-text column was dropped in `20260805140000`.)
 
 - **Inbound:** Twilio SMS hits `/api/sms-webhook`; WhatsApp hits `/api/whatsapp-webhook`. Both delegate to `handleInboundMessage(req, channel)` in `lib/inbound-handler.ts` (single shared pipeline). WhatsApp inbound carries a `whatsapp:` prefix on `From`/`To` — the handler strips it. The customer's reply always continues on the channel it arrived on.
 - **Outbound replies** (auto reply, approved draft, manual takeover) go through `sendOnChannel(session.channel, …)` — never call `sendSMS` directly in channel-aware paths.
@@ -106,6 +110,42 @@ Each session has a `channel` column (`'sms' | 'whatsapp' | 'webchat'`, default `
 - WhatsApp usage counts toward the monthly plan allowance (same as SMS/voice/web).
 
 ---
+
+## Voice channel
+
+`business_profiles.voice_mode` decides what happens to an inbound call. It is a live routing switch owned by the tenant (Settings → Phone Calls), saved on change rather than behind the page's Save button.
+
+| Mode | TwiML | Effect |
+|---|---|---|
+| `reject` (default) | `<Reject>` | Hang up, then send the missed-call WhatsApp/SMS follow-up in `waitUntil`. The behaviour every tenant had before voice existed. |
+| `forward` | `<Dial>` | Ring `voice_forward_number` (E.164). The agent is not involved. |
+| `agent` | `<Connect><Stream>` | Hand the live call to the Deepgram voice agent through `/api/voice/bridge`. |
+
+The salon lookup in `/api/twilio/voice` now happens **before** the TwiML, because the mode decides what the TwiML is. That's one indexed read against Twilio's 15s deadline; everything slow still runs after the response.
+
+**A misconfigured mode falls back to `reject`, never to silence** — `forward` with no `voice_forward_number`, or `agent` with no `DEEPGRAM_API_KEY`, downgrades and logs `voice_mode_downgraded`. A dropped call is worse than a declined one, because the reject path at least texts the caller back.
+
+### The bridge
+
+`/api/voice/bridge` is a WebSocket (Vercel Fluid, `experimental_upgradeWebSocket`) sitting between Twilio Media Streams and Deepgram. It exists for two reasons: Twilio's `<Stream>` cannot set the `Authorization` header Deepgram's socket requires, and the call's tenant/session context has to live somewhere.
+
+- Both sides are configured for **mu-law @ 8kHz**, so audio is a byte passthrough — no resampling. Deepgram's own docs sample uses `linear16` @ 48k/24k; that's the raw-WebSocket format and is wrong for telephony.
+- Context arrives as `<Parameter>` children of `<Stream>` (`salonId`, `sessionId`, `from`), surfaced in the stream's `start` frame. The session is created by the webhook *before* the TwiML — the bridge has no request to resolve it from.
+- Inbound audio is **buffered** until Deepgram acknowledges `SettingsApplied`, so the caller's opening words survive the setup round trip.
+- `UserStartedSpeaking` → send Twilio `{event:'clear'}`. Without this the caller talks over audio queued seconds ago.
+- `ConversationText` is written to `transcripts`, so calls appear in the inbox next to text threads.
+
+### One agent, three channels
+
+`buildSystemPrompt(salon, workers, faqs, bookingState, { channel: 'voice' })` swaps **only** the medium-specific blocks — "over the phone", no 160-character cap, no markdown, spoken numbers/dates, read the email back. Booking flow, guardrails, FAQs and salon data are identical. The 8 tool schemas are reused verbatim: Gemini's `SchemaType` members are already the lowercase JSON Schema type names, so `deepgramFunctions()` only unwraps the `functionDeclarations` array.
+
+Deepgram owns the LLM loop, so there is **no way to swap the system prompt mid-call**. Where the text pipeline reacts to `update_booking_state` by rebuilding the prompt, `runVoiceToolCall()` persists to `sessions.metadata.booking_state` and spells the locked fields back out in the tool result — that string is the only channel the model has for learning what's settled.
+
+`/api/voice/turn` is the same tool logic over HTTP, for configuring Deepgram with a server-side function `endpoint` and for exercising the booking tools without placing a call. It is bearer-authed with `VOICE_TURN_SECRET` and returns 503 when that is unset, because it can create real Cal.com bookings.
+
+`sendOnChannel()` has no voice case — a `'voice'` session falls through to SMS. That's deliberate: an owner taking over a finished call can't inject text into it, so texting the caller is the right action.
+
+**Not built yet:** per-call cost tracking (no `voice_calls` table — voice spend is invisible to `getTenantApiSpend()` and to the cost alerts), and whether Deepgram's managed Gemini path supports multiple sequential tool calls in one turn is untested.
 
 ## Key Library Files
 
@@ -121,6 +161,8 @@ Each session has a `channel` column (`'sms' | 'whatsapp' | 'webchat'`, default `
 | `lib/inbound-handler.ts` | Shared inbound pipeline for SMS + WhatsApp webhooks (`handleInboundMessage(req, channel)`) |
 | `lib/booking_service.ts` | Cal.com booking logic |
 | `lib/owner-email-notifications.ts` | Resend email alerts for business owners |
+| `lib/voice-agent.ts` | Deepgram Voice Agent Settings payload — mu-law/8kHz telephony audio, voice system prompt, tool schemas |
+| `lib/voice-tools.ts` | Runs one voice function call through `executeToolCall()` + persists booking state; shared by the bridge and `/api/voice/turn` |
 | `lib/error-logger.ts` | Google Cloud Logging error handler |
 | `lib/logger.ts` | Unified logger — `logError`/`logTimeout`/`logInteraction`/`logIntegration`/`logJob`/`logAudit`, plus `withTiming()` and `withRequestContext()` |
 | `lib/client-events.ts` | Client-side logging — `trackInteraction()`, `trackClientError()`, `trackAudit()` |
@@ -153,6 +195,18 @@ Rate-card rules:
 The window state is derived by looking for an inbound WhatsApp row from that customer number in the last 24h (index `sms_messages_inbound_window_idx`). `getTenantApiSpend()` returns the two views separately as `spend.twilio` (Twilio-reported) and `spend.rateCard` (estimate, split SMS/WhatsApp); the Settings usage card shows both, the latter labelled "est.".
 
 **Not modelled:** carrier surcharges and MMS.
+
+### Spend monitoring (alert only — nothing is ever blocked)
+
+Message spend is the meter, not tokens. Measured: **$0.056** per SMS segment against **$0.00188** per Gemini call, so messaging is ~30× the AI cost. `business_profiles.monthly_token_limit` and the unused, unrestricted `salon_token_usage_current_month` view were dropped in `20260811160000` — the limit was never referenced by a single line of code.
+
+`token_usage` is still written, as an **observability** signal rather than a billing control: the prompt/completion ratio is ~157:1 because the system prompt and full history are re-sent every call, so a prompt-loop regression shows up there first.
+
+- **Cap:** `business_profiles.monthly_cost_limit_usd`, falling back to `TENANT_MONTHLY_COST_LIMIT_USD` (default $50). Alert thresholds: `COST_ALERT_THRESHOLDS` (default `80,100`).
+- **Measured against the rate-card estimate**, never Twilio's `price`. The reported price arrives on a later status callback, only ~81% of messages have one, and the cron that backfills the rest has no schedule. The estimate runs **~1.64×** Twilio's actual billed price on this account, so alerts fire early — set limits knowing that.
+- **`evaluate_tenant_cost_alert()`** does the whole decision in one atomic RPC: computes spend, resolves the limit, picks the highest crossed threshold, and claims the alert via a primary-key insert into `tenant_cost_alerts`. Only the caller that creates the row alerts, so a batch of concurrent writes yields exactly one alert.
+- Hooked into `upsertSmsMessage` (not awaited) so every send/receive path is covered. It **never blocks a send** — `checkTenantSpend` swallows all its own errors.
+- Alerts go to `OPERATOR_ALERT_EMAIL` (the operator, not the salon owner) and are recorded in `app_logs` as `category: 'billing'`, `event: 'tenant_cost_threshold_crossed'`.
 
 ## Three different things are called "session"
 
