@@ -58,8 +58,10 @@ export function buildVoiceSystemPrompt({ salon, workers, faqs, bookingState, cli
   return buildSystemPrompt(salon, workers, faqs, bookingState, { channel: 'voice', client });
 }
 
-export function buildVoiceGreeting(salon: any): string {
+export function buildVoiceGreeting(salon: any, client?: ClientProfile | null): string {
   const salonName = (typeof salon?.name === 'string' && salon.name.trim()) || 'the salon';
+  const firstName = typeof client?.first_name === 'string' ? client.first_name.trim() : '';
+  if (firstName) return `Hello ${firstName}, you've reached ${salonName}. This is ${getAgentName(salon)} — how can I help?`;
   return `Hello, you've reached ${salonName}. This is ${getAgentName(salon)} — how can I help?`;
 }
 
@@ -94,7 +96,7 @@ export function buildVoiceAgentSettings(input: VoiceSettingsInput) {
         // accent is the part that's actually ours to choose.
         provider: { type: 'deepgram', model: process.env.DEEPGRAM_SPEAK_MODEL || 'aura-2-pandora-en' },
       },
-      greeting: buildVoiceGreeting(input.salon),
+      greeting: buildVoiceGreeting(input.salon, input.client),
     },
   };
 }

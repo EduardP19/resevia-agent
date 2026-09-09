@@ -42,6 +42,21 @@ test('recognition includes contact details and relevant bookings, without treati
   assert.match(result, /not a new booking request/);
 });
 
+test('voice greeting uses the matched client first name when available', async () => {
+  const { buildVoiceGreeting } = await loadTs('../lib/voice-agent.ts', {
+    '@/lib/agent': { agentTools: [], buildSystemPrompt: () => 'voice prompt' },
+    '@/lib/agent-name': { getAgentName: () => 'Sophia' },
+  });
+  assert.equal(
+    buildVoiceGreeting({ name: 'Resevia Salon' }, { first_name: 'Alex' }),
+    "Hello Alex, you've reached Resevia Salon. This is Sophia — how can I help?"
+  );
+  assert.equal(
+    buildVoiceGreeting({ name: 'Resevia Salon' }, { first_name: '   ' }),
+    "Hello, you've reached Resevia Salon. This is Sophia — how can I help?"
+  );
+});
+
 test('client migration backfills, links channels, enforces tenant boundaries and keeps JSON history current', async () => {
   const db = new PGlite();
   try {
