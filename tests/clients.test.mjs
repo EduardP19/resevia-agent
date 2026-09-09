@@ -49,19 +49,25 @@ test('client migration backfills, links channels, enforces tenant boundaries and
       create role anon; create role authenticated; create role service_role bypassrls;
       create table business_profiles(id uuid primary key);
       create table workers(id uuid primary key, salon_id uuid, name text);
-      create table sessions(id uuid primary key default gen_random_uuid(), salon_id uuid, client_identifier text, channel text,
+      create table sessions(id uuid primary key default gen_random_uuid(), salon_id uuid not null, client_identifier text, channel text,
         metadata jsonb default '{}', created_at timestamptz default now());
-      create table bookings(id uuid primary key default gen_random_uuid(), salon_id uuid, customer_phone text, client_name text,
+      create table transcripts(id uuid primary key default gen_random_uuid(), session_id uuid not null references sessions(id) on delete cascade,
+        role text not null, content text not null, created_at timestamptz default now());
+      create table bookings(id uuid primary key default gen_random_uuid(), salon_id uuid not null, customer_phone text, client_name text,
         client_email text, service_name text, duration_minutes int, start_time timestamptz, end_time timestamptz,
         worker_id uuid, status text, cal_booking_uid text, responses jsonb, created_at timestamptz default now());
       insert into business_profiles values ('11111111-1111-4111-8111-111111111111'), ('22222222-2222-4222-8222-222222222222');
       insert into workers values ('33333333-3333-4333-8333-333333333333', '11111111-1111-4111-8111-111111111111', 'Sam');
-      insert into sessions(salon_id, client_identifier, channel) values ('11111111-1111-4111-8111-111111111111', '07700 900123', 'sms');
-      insert into bookings(salon_id, customer_phone, client_name, client_email, service_name, start_time, end_time, status, worker_id, responses)
-      values ('11111111-1111-4111-8111-111111111111', '+447700900123', 'Alex Smith Jones', 'ALEX@EXAMPLE.ORG', 'Cut',
+      insert into sessions(id, salon_id, client_identifier, channel) values
+        ('44444444-4444-4444-8444-444444444444', '11111111-1111-4111-8111-111111111111', '07700 900123', 'sms');
+      insert into transcripts(session_id, role, content) values
+        ('44444444-4444-4444-8444-444444444444', 'user', 'Please move my appointment');
+      insert into bookings(id, salon_id, customer_phone, client_name, client_email, service_name, start_time, end_time, status, worker_id, responses)
+      values ('55555555-5555-4555-8555-555555555555', '11111111-1111-4111-8111-111111111111', '+447700900123', 'Alex Smith Jones', 'ALEX@EXAMPLE.ORG', 'Cut',
         '2026-09-10T09:00:00Z', '2026-09-10T10:00:00Z', 'confirmed', '33333333-3333-4333-8333-333333333333', '{"notes":"Short fringe"}');
     `);
     await db.exec(await readFile(new URL('../supabase/migrations/20260908140000_clients.sql', import.meta.url), 'utf8'));
+    const deletionMigration = await readFile(new URL('../supabase/migrations/20260908150000_client_deletion.sql', import.meta.url), 'utf8');
     const one = async sql => (await db.query(sql)).rows[0];
     let client = await one('select * from clients');
     assert.equal(client.first_name, 'Alex'); assert.equal(client.last_name, 'Smith Jones'); assert.equal(client.email, 'alex@example.org');
@@ -91,6 +97,43 @@ test('client migration backfills, links channels, enforces tenant boundaries and
     assert.equal((await one(`select * from clients where id = '${client.id}'`)).booking_history.find(b => b.service === 'Colour').status, 'expired');
     await db.exec(`delete from bookings where service_name = 'Colour';`);
     assert.equal((await one(`select * from clients where id = '${client.id}'`)).booking_history.length, 1);
+    await assert.rejects(db.exec(`delete from clients where id = '${client.id}'`), /foreign key/);
+    const originalClientId = client.id;
+    const originalTenantId = client.salon_id;
+    const originalBooking = await one(`select id, salon_id, customer_phone, client_id, status, start_time from bookings where id = '55555555-5555-4555-8555-555555555555'`);
+    const originalSession = await one(`select id, salon_id, client_identifier, client_id, channel from sessions where id = '44444444-4444-4444-8444-444444444444'`);
+    const tenantTwoClientId = (await one(`select client_id from sessions where salon_id = '22222222-2222-4222-8222-222222222222'`)).client_id;
+    await db.exec(deletionMigration);
+    await assert.rejects(db.exec(`update sessions set client_id = '${originalClientId}' where salon_id = '22222222-2222-4222-8222-222222222222'`), /foreign key/);
+    await db.exec(`delete from clients where id = '${originalClientId}'`);
+    assert.equal((await one(`select count(*)::int as n from clients where id = '${originalClientId}'`)).n, 0);
+    const detachedBooking = await one(`select id, salon_id, customer_phone, client_id, status, start_time from bookings where id = '${originalBooking.id}'`);
+    assert.equal(detachedBooking.salon_id, originalBooking.salon_id);
+    assert.equal(detachedBooking.customer_phone, originalBooking.customer_phone);
+    assert.equal(detachedBooking.status, originalBooking.status);
+    assert.equal(Date.parse(detachedBooking.start_time), Date.parse(originalBooking.start_time));
+    assert.equal(detachedBooking.client_id, null);
+    const detachedSession = await one(`select id, salon_id, client_identifier, client_id, channel from sessions where id = '${originalSession.id}'`);
+    assert.equal(detachedSession.salon_id, originalSession.salon_id);
+    assert.equal(detachedSession.client_identifier, originalSession.client_identifier);
+    assert.equal(detachedSession.channel, originalSession.channel);
+    assert.equal(detachedSession.client_id, null);
+    assert.equal((await one(`select count(*)::int as n from transcripts where session_id = '${originalSession.id}'`)).n, 1);
+    assert.equal((await one(`select client_id from sessions where salon_id = '22222222-2222-4222-8222-222222222222'`)).client_id, tenantTwoClientId);
+    await db.exec(`update bookings set status = 'confirmed', start_time = '2026-09-13T10:00:00Z' where id = '${originalBooking.id}'`);
+    await db.exec(`update sessions set channel = 'sms' where id = '${originalSession.id}'`);
+    assert.equal((await one(`select count(*)::int as n from clients where salon_id = '${originalTenantId}' and phone = '+447700900123'`)).n, 0);
+    assert.equal((await one(`select client_id from bookings where id = '${originalBooking.id}'`)).client_id, null);
+    assert.equal((await one(`select client_id from sessions where id = '${originalSession.id}'`)).client_id, null);
+    await db.exec(`insert into sessions(salon_id, client_identifier, channel) values ('${originalTenantId}', '+44 7700 900123', 'sms')`);
+    const freshClient = await one(`select * from clients where salon_id = '${originalTenantId}' and phone = '+447700900123'`);
+    assert.notEqual(freshClient.id, originalClientId);
+    await db.exec(`update bookings set status = 'cancelled' where id = '${originalBooking.id}'`);
+    assert.equal((await one(`select client_id from bookings where id = '${originalBooking.id}'`)).client_id, null);
+    assert.equal((await one(`select booking_history from clients where id = '${freshClient.id}'`)).booking_history.length, 0);
+    await db.exec(`insert into bookings(salon_id, customer_phone, client_name, client_email, service_name, start_time, status)
+      values ('${originalTenantId}', '+447700900123', 'Alex Smith', 'alex@example.org', 'Restyle', '2026-11-01', 'confirmed');`);
+    assert.equal((await one(`select booking_history from clients where id = '${freshClient.id}'`)).booking_history.length, 1);
     for (const role of ['anon', 'authenticated']) {
       await db.exec(`set role ${role}`);
       await assert.rejects(db.query('select * from clients'), /permission denied/);

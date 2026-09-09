@@ -19,6 +19,10 @@ The shared `update_client_profile` tool saves explicitly supplied contact detail
 even without a completed booking. Confirming a caller's identity/contact details
 remains part of the conversation. Dashboard users can add clients and edit names,
 email and notes; phone numbers are fixed on existing records to preserve links.
+Deleting a client profile manually detaches it from existing bookings and
+conversations while preserving those records and their transcripts. Routine
+booking or session edits do not recreate the deleted profile; a fresh incoming
+message, call or booking for the same phone can create a new profile.
 
 Phone calls have separate sessions, identified by Twilio CallSid, so a concurrent
 SMS cannot switch a call's routing. The dashboard polls phone transcripts every
@@ -30,10 +34,11 @@ session and schedules its topic summary. Forwarded calls have no agent transcrip
 
 ## Rollout
 
-1. Apply `20260908130000_transcript_channel.sql` and
-   `20260908140000_clients.sql` to Supabase in migration order. The client migration
-   backfills real contact records and booking history. It requires the existing
-   workers, bookings and voice migrations.
+1. Apply `20260908130000_transcript_channel.sql`,
+   `20260908140000_clients.sql` and `20260908150000_client_deletion.sql` to
+   Supabase in migration order. The client migration backfills real contact
+   records and booking history. It requires the existing workers, bookings and
+   voice migrations.
 2. Deploy the Next.js app and the `bridge/` service. Both deployments are needed
    for ordered transcript retries and heartbeats. Existing bridge secrets remain
    unchanged.
