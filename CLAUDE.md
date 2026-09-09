@@ -141,6 +141,17 @@ The salon lookup in `/api/twilio/voice` now happens **before** the TwiML, becaus
 
 Deepgram owns the LLM loop, so there is **no way to swap the system prompt mid-call**. Where the text pipeline reacts to `update_booking_state` by rebuilding the prompt, `runVoiceToolCall()` persists to `sessions.metadata.booking_state` and spells the locked fields back out in the tool result — that string is the only channel the model has for learning what's settled.
 
+### No email on voice — the confirmation goes to the caller's number
+
+The voice agent never asks for an email address: reading one back over a phone line is slow and gets it wrong. `get_booking_requirements` hides the `email` field on voice, `book_direct` fills it from the client record when one exists (otherwise Cal.com's placeholder stands), and the written confirmation goes to the number the caller rang from.
+
+`sendBookingConfirmation()` ([lib/booking-confirmation.ts](lib/booking-confirmation.ts)) does that send — WhatsApp first, SMS if WhatsApp doesn't confirm, the same shape as the missed-call follow-up. Two things to know:
+
+- The WhatsApp send is **free-form**, so it only lands inside the 24h customer-service window. A caller who has never messaged the salon on WhatsApp is outside it, which makes the SMS fallback the normal path rather than the exception.
+- The outcome is written back to `clients.whatsapp_available` (`null` unknown / `true` confirmed / `false` failed) with `whatsapp_checked_at`. A `false` makes the next confirmation skip WhatsApp entirely. It's only set to `false` when Twilio itself rejected or failed the message — a missing sender or missing credentials is our misconfiguration and must not mark a client unreachable forever.
+
+It runs detached from the call (`waitUntil`, falling through to a bare promise off-Vercel), because the WhatsApp delivery poll takes up to 20s (`WHATSAPP_CONFIRM_TIMEOUT_MS`) and the caller is still on the line. The tool result tells the model the confirmation is on its way, since Deepgram's prompt can't change mid-call. Ledger rows are written as `message_type = 'booking_confirmation'`.
+
 `/api/voice/turn` is the same tool logic over HTTP, for configuring Deepgram with a server-side function `endpoint` and for exercising the booking tools without placing a call. It is bearer-authed with `VOICE_TURN_SECRET` and returns 503 when that is unset, because it can create real Cal.com bookings.
 
 `sendOnChannel()` has no voice case — a `'voice'` session falls through to SMS. That's deliberate: an owner taking over a finished call can't inject text into it, so texting the caller is the right action.
