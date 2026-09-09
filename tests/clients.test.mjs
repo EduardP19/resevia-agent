@@ -43,7 +43,7 @@ test('recognition includes contact details and relevant bookings, without treati
 });
 
 test('voice greeting uses the matched client first name when available', async () => {
-  const { buildVoiceGreeting } = await loadTs('../lib/voice-agent.ts', {
+  const { buildVoiceGreeting, deepgramFunctions } = await loadTs('../lib/voice-agent.ts', {
     '@/lib/agent': { agentTools: [], buildSystemPrompt: () => 'voice prompt' },
     '@/lib/agent-name': { getAgentName: () => 'Sophia' },
   });
@@ -55,6 +55,11 @@ test('voice greeting uses the matched client first name when available', async (
     buildVoiceGreeting({ name: 'Resevia Salon' }, { first_name: '   ' }),
     "Hello, you've reached Resevia Salon. This is Sophia — how can I help?"
   );
+  const endCall = deepgramFunctions().find(fn => fn.name === 'end_call');
+  assert.ok(endCall);
+  assert.match(endCall.description, /Do not use this for errors/);
+  assert.match(endCall.parameters.properties.outcome.description, /booked/);
+  assert.doesNotMatch(endCall.parameters.properties.outcome.description, /escalated|unresolved/);
 });
 
 test('client migration backfills, links channels, enforces tenant boundaries and keeps JSON history current', async () => {

@@ -34,13 +34,13 @@ export function deepgramFunctions(toolEndpoint?: VoiceSettingsInput['toolEndpoin
   const voiceFunctions = [
     {
       name: 'end_call',
-      description: 'End the live phone call after a final outcome has been reached and no further answer is needed from the caller.',
+      description: 'End the live phone call after a clean booking outcome or the caller clearly decides not to proceed. Do not use this for errors, failed tools, escalation, complaints, uncertainty, or anything that needs the team.',
       parameters: {
         type: SchemaType.OBJECT,
         properties: {
           outcome: {
             type: SchemaType.STRING,
-            description: 'One of booked, rescheduled, cancelled, declined, no_fit, escalated, or unresolved',
+            description: 'One of booked, rescheduled, cancelled, declined, or no_fit',
           },
           closingMessage: {
             type: SchemaType.STRING,
