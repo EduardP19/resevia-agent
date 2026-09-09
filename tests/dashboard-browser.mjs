@@ -7,6 +7,7 @@ import { copyFile, mkdir, rm } from 'node:fs/promises';
 const fixturePath = new URL('../app/verify-clients-internal/', import.meta.url);
 await mkdir(fixturePath);
 await copyFile(new URL('./fixtures/dashboard-preview.tsx', import.meta.url), new URL('page.tsx', fixturePath));
+const baseUrl = process.env.DASHBOARD_BROWSER_BASE_URL || 'http://localhost:3001';
 
 const browser = await chromium.launch({
   ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE }
@@ -30,7 +31,7 @@ await page.route('**/api/**', async route => {
   await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) });
 });
 try {
-  await page.goto('http://localhost:3001/verify-clients-internal');
+  await page.goto(`${baseUrl}/verify-clients-internal`);
   await page.getByRole('heading', { name: 'Clients', exact: true }).waitFor();
   assert.equal(await page.getByRole('link', { name: 'Alexandra Smith Jones', exact: true }).count(), 1);
   await page.screenshot({ path: '/private/tmp/resevia-clients-desktop.png', fullPage: true });
@@ -43,18 +44,22 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: '/private/tmp/resevia-clients-mobile.png', fullPage: true });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Client directory overflows mobile viewport');
-  await page.goto('http://localhost:3001/verify-clients-internal?view=profile');
+  await page.goto(`${baseUrl}/verify-clients-internal?view=profile`);
   await page.getByRole('heading', { name: 'Alexandra Smith Jones' }).waitFor();
+  await page.getByText('Prefers morning appointments.', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Remove note' }).count(), 1);
   await page.getByLabel('First name', { exact: true }).fill('Alex');
+  await page.getByLabel('Add note', { exact: true }).fill('Likes a quiet chair.');
   await page.getByRole('button', { name: 'Save changes' }).click();
   await page.getByRole('status').getByText('Saved', { exact: true }).waitFor();
   assert.equal(savedProfile.first_name, 'Alex');
+  assert.equal(savedProfile.note, 'Likes a quiet chair.');
   assert.equal(savedProfile.id, '33333333-3333-4333-8333-333333333333');
   assert.equal(savedProfile.booking_history, undefined);
-  assert.ok(await page.getByLabel('Phone number').getAttribute('readonly') !== null);
+  assert.equal(await page.getByLabel('Phone number').getAttribute('readonly'), null);
   await page.screenshot({ path: '/private/tmp/resevia-profile-mobile.png', fullPage: true });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Client profile overflows mobile viewport');
-  await page.goto('http://localhost:3001/verify-clients-internal?view=call');
+  await page.goto(`${baseUrl}/verify-clients-internal?view=call`);
   await page.getByText('Live call', { exact: true }).waitFor();
   assert.equal(await page.locator('textarea').count(), 0);
   messages.push({ id: '44444444-4444-4444-8444-444444444444', role: 'user', channel: 'voice', content: 'Could I book a haircut for Thursday?', created_at: new Date().toISOString() });

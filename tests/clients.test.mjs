@@ -27,19 +27,22 @@ test('phone matching handles SMS, WhatsApp, UK local and international formats w
 });
 
 test('recognition includes contact details and relevant bookings, without treating history as current intent', async () => {
-  const { buildClientContext } = await loadTs('../lib/client-profile.ts');
-  const result = buildClientContext({ first_name: 'Alex', last_name: 'Smith', email: 'alex@example.org', phone: '+447700900123', metadata: {}, booking_history: [
+  const { buildClientContext, clientNotes } = await loadTs('../lib/client-profile.ts');
+  const legacyClient = { first_name: 'Alex', last_name: 'Smith', email: 'alex@example.org', phone: '+447700900123', created_at: '2026-09-08T12:00:00Z', metadata: { notes: 'Prefers quiet appointments.' }, booking_history: [
     { service: 'Colour', start_time: '2099-10-01T09:00:00Z', status: 'confirmed' },
     { service: 'Cut', start_time: '2020-01-01T09:00:00Z', status: 'confirmed' },
     { service: 'Abandoned hold', start_time: '2020-01-01T09:00:00Z', status: 'expired' },
-  ] });
+  ] };
+  const result = buildClientContext(legacyClient);
   assert.match(result, /Alex Smith/);
   assert.match(result, /alex@example.org/);
   assert.match(result, /Colour/);
   assert.match(result, /Cut/);
+  assert.match(result, /Prefers quiet appointments/);
   assert.doesNotMatch(result, /Abandoned hold/);
   assert.match(result, /confirm the name before disclosing appointment details/);
   assert.match(result, /not a new booking request/);
+  assert.equal(JSON.stringify(clientNotes(legacyClient)), JSON.stringify([{ id: 'legacy-note', text: 'Prefers quiet appointments.', created_at: '2026-09-08T12:00:00Z' }]));
 });
 
 test('voice greeting uses the matched client first name when available', async () => {

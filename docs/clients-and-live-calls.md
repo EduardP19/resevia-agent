@@ -17,8 +17,8 @@ that have never been imported. Unknown contact fields remain null.
 Both agents receive saved contact details plus upcoming and recent bookings.
 The shared `update_client_profile` tool saves explicitly supplied contact details
 even without a completed booking. Confirming a caller's identity/contact details
-remains part of the conversation. Dashboard users can add clients and edit names,
-email and notes; phone numbers are fixed on existing records to preserve links.
+remains part of the conversation. Dashboard users can add clients, edit contact
+details, and append timestamped notes; removing a note requires confirmation.
 Deleting a client profile manually detaches it from existing bookings and
 conversations while preserving those records and their transcripts. Routine
 booking or session edits do not recreate the deleted profile; a fresh incoming
