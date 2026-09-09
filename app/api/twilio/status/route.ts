@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { log, safeLog } from '@/lib/logger';
 import { normalizeSmsPrice } from '@/lib/sms-pricing';
 import {
-  findSmsMessageBySid,
+  findMessageCostBySid,
   formDataToRecord,
   numberOrNull,
-  upsertSmsMessage,
-} from '@/lib/sms-messages';
+  recordMessageCost,
+} from '@/lib/costs';
 
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
@@ -39,14 +39,14 @@ export async function POST(req: NextRequest) {
     fromNumber: callbackFrom,
     toNumber: callbackTo,
   };
-  // sms_messages is the source of truth for this SID — it already carries the
+  // costs is the source of truth for this SID — it already carries the
   // session/transcript linkage and direction, so no transcript lookup is needed.
-  const existingLedgerRow = await findSmsMessageBySid(messageSid);
+  const existingLedgerRow = await findMessageCostBySid(messageSid);
 
-  const ledgerRow = await upsertSmsMessage({
+  const ledgerRow = await recordMessageCost({
     ...statusMetadata,
-    // Omitting direction lets upsertSmsMessage preserve whatever is already on
-    // the ledger row rather than overwriting it with a guess.
+    // Omitting direction lets recordMessageCost preserve whatever is already on
+    // the cost row rather than overwriting it with a guess.
     ...(existingLedgerRow?.direction ? { direction: existingLedgerRow.direction as any } : {}),
     sessionId: existingLedgerRow?.session_id,
     transcriptId: existingLedgerRow?.transcript_id,

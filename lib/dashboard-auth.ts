@@ -87,6 +87,27 @@ function parseCredentials(): DashboardCredential[] {
   return [];
 }
 
+function parseEmailList(value?: string | null) {
+  return String(value || '')
+    .split(',')
+    .map(email => email.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+export function isDashboardAdminEmail(email?: string | null) {
+  const normalized = email?.trim().toLowerCase();
+  if (!normalized) return false;
+
+  const adminEmails = [
+    ...parseEmailList(process.env.DASHBOARD_ADMIN_EMAILS),
+    ...parseEmailList(process.env.ADMIN_DASHBOARD_EMAILS),
+    ...parseEmailList(process.env.ADMIN_EMAILS),
+    ...parseEmailList(process.env.OPERATOR_ALERT_EMAIL),
+  ];
+
+  return adminEmails.includes(normalized);
+}
+
 export function createDashboardSession(tenantId: string, email: string, remember = false) {
   const now = Math.floor(Date.now() / 1000);
   const ttl = remember ? REMEMBER_SESSION_TTL_SECONDS : DEFAULT_SESSION_TTL_SECONDS;

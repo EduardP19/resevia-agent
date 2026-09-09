@@ -546,6 +546,39 @@ After each test suite run:
 
 ---
 
+### [2026-09-09] — WhatsApp booking confirmation template
+
+**What changed:** Booking confirmations now try a dedicated WhatsApp Content template first (`amo_hair_booking_confirmation`, configured by `TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_SID` or `business_profiles.whatsapp_booking_confirmation_template_sid`) and fall back to SMS if WhatsApp is unavailable, rejected or unconfirmed. Successful `book_direct` and `confirm_booking` tool calls dispatch the confirmation for real SMS/WhatsApp conversations, while test/sandbox tool calls stay quiet.
+**Why:** Feature request to send the new approved booking confirmation template after bookings, respecting the WhatsApp-first/SMS-fallback funnel.
+**Files touched:** `lib/booking-confirmation.ts`, `lib/tool-handler.ts`, `lib/booking_service.ts`, `lib/rate-card.ts`, `.env.example`, `CLAUDE.md`, `supabase/migrations/20260909150000_booking_confirmation_template.sql`, `skills/RESEVIA-AGENT-SKILL.md`.
+**Outcome:** Pass — `npx tsc --noEmit --pretty false` and `npm run build` both pass.
+**Lesson learned:** Booking confirmations are utility templates with their own variable shape, so they should not share the generic outreach template SID or WhatsApp rate-card treatment.
+**Commit:** Uncommitted.
+
+---
+
+### [2026-09-09] — Billing catalog and tenant charge schema
+
+**What changed:** Added a compact billing schema for what Resevia charges salons: `billing_services` for packages/add-ons/top-ups, `salon_billing_services` for active salon entitlements, and `billing_ledger` for monthly charges, one-off top-ups, payments, refunds and credit movements.
+**Why:** Feature request to support monthly billing for initial packages plus extra services such as credit top-ups, separate from provider API costs.
+**Files touched:** `supabase/migrations/20260909140000_billing_catalog.sql`, `skills/RESEVIA-AGENT-SKILL.md`.
+**Outcome:** Pass for TypeScript/build — `npx tsc --noEmit --pretty false` and `npm run build` pass. `supabase db lint` could not run because local Postgres was not running at `127.0.0.1:54322`.
+**Lesson learned:** Keep customer billing distinct from provider `costs`, but avoid invoice-shaped table sprawl until payment automation genuinely needs separate headers and line items.
+**Commit:** Uncommitted.
+
+---
+
+### [2026-09-09] — Admin spend and tenant usage split
+
+**What changed:** Settings now shows API spend only to admin/operator emails, with total platform spend and per-salon rows. Salon owners instead see SMS, WhatsApp, call count and total call minutes over a selectable billing/history range.
+**Why:** Feature request to reserve provider API spend for the admin view while giving salon owners usage visibility without exposing platform costs.
+**Files touched:** `lib/dashboard-auth.ts`, `lib/costs.ts`, `app/(dashboard)/dashboard/settings/page.tsx`, `app/(dashboard)/dashboard/settings/UsageCard.tsx`, `skills/RESEVIA-AGENT-SKILL.md`.
+**Outcome:** Pass — `npx tsc --noEmit --pretty false` and `npm run build` both pass.
+**Lesson learned:** The unified `costs` branch already had two evolving report shapes, so the settings card should consume the reporting boundary carefully and keep tenant usage separate from operator spend.
+**Commit:** Uncommitted.
+
+---
+
 ### [2026-06-23] — Token tracking, per-chat mode, guardrails, observer agent
 
 **What changed:** Shipped five features.

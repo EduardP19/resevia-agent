@@ -3,7 +3,7 @@ import { supabase, TEST_UI_TRANSCRIPTS_TABLE } from './supabase';
 import { safeLog } from '@/lib/logger';
 import { ERROR_FALLBACK_REPLY } from './reply-format';
 import { getAgentName, getAgentPossessiveName } from './agent-name';
-import { recordTokenUsage, type UsageChannel } from './token-usage';
+import { recordAiCost, type UsageChannel } from '@/lib/costs';
 
 /**
  * Lightweight observer / supervisor agent.
@@ -283,7 +283,7 @@ async function runLlmCheck(
     const result = await model.generateContent(prompt);
 
     const usage = result.response.usageMetadata;
-    await recordTokenUsage({
+    await recordAiCost({
       salonId: ctx.salonId,
       sessionId: ctx.sessionId,
       model: process.env.AI_MODEL_NAME || 'gemini-2.5-flash',

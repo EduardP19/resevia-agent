@@ -1,28 +1,21 @@
 import { saveMessage } from '@/lib/supabase';
-import { sendSMS, sendWhatsAppMessage, waitForWhatsAppConfirmation } from '@/lib/twilio';
-import { smsMetadataFromTwilioMessage, upsertSmsMessage } from '@/lib/sms-messages';
+import { sendSMS, sendWhatsAppTemplate, waitForWhatsAppConfirmation } from '@/lib/twilio';
+import { smsMetadataFromTwilioMessage, recordMessageCost } from '@/lib/costs';
 import { recordClientWhatsAppAvailability } from '@/lib/clients';
 import type { ClientProfile } from '@/lib/client-profile';
 import { safeLog } from '@/lib/logger';
 
 /**
- * Written confirmation of a booking taken on a channel that can't carry one.
+ * Written confirmation of a booking.
  *
- * A phone call leaves the caller with nothing to look at, and we no longer ask
- * for an email address on voice — so the confirmation goes to the number they
- * called from: WhatsApp first, SMS if WhatsApp doesn't land. Same
- * WhatsApp-then-SMS shape as the missed-call follow-up in /api/twilio/voice,
- * with one addition: the outcome is written back to `clients.whatsapp_available`
- * so the next message to this person skips a WhatsApp attempt we already know
- * falls back.
- *
- * Note the WhatsApp send here is free-form, which Meta only delivers inside the
- * 24h customer-service window. A caller who has never messaged the salon on
- * WhatsApp is outside it, so the SMS fallback is the normal path, not the
- * exception — which is why the whole thing runs detached from the call.
+ * The approved WhatsApp Content template is tried first, so confirmations work
+ * outside Meta's 24h service window. If WhatsApp is unavailable, unconfirmed or
+ * rejected, the same rendered body falls back to SMS.
  */
 
 const WHATSAPP_CONFIRM_TIMEOUT_MS = Number(process.env.WHATSAPP_CONFIRM_TIMEOUT_MS || 20000);
+const BOOKING_CONFIRMATION_TEMPLATE_SID =
+  process.env.TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_SID || null;
 
 export interface BookingConfirmationInput {
   salon: any;
@@ -30,6 +23,10 @@ export interface BookingConfirmationInput {
   customerPhone: string;
   body: string;
   client?: ClientProfile | null;
+  customerName?: string | null;
+  appointment?: string | null;
+  serviceName?: string | null;
+  confirmationNumber?: string | null;
 }
 
 function normalizeE164(value: unknown): string | undefined {
@@ -37,6 +34,32 @@ function normalizeE164(value: unknown): string | undefined {
   if (!trimmed.includes('+')) return undefined;
   const normalized = `+${trimmed.slice(trimmed.indexOf('+') + 1).replace(/\D/g, '')}`;
   return normalized.length >= 8 ? normalized : undefined;
+}
+
+function firstNameFrom(input: BookingConfirmationInput) {
+  const provided = String(input.customerName || '').trim();
+  const fromClient = String(input.client?.first_name || '').trim();
+  return provided.split(/\s+/)[0] || fromClient || 'there';
+}
+
+function bookingConfirmationTemplateSid(salon: any) {
+  return (
+    String(salon?.whatsapp_booking_confirmation_template_sid || '').trim() ||
+    BOOKING_CONFIRMATION_TEMPLATE_SID ||
+    null
+  );
+}
+
+function renderBookingConfirmationBody(input: BookingConfirmationInput) {
+  return [
+    `Hi ${firstNameFrom(input)},`,
+    `Your appointment is scheduled for ${input.appointment || 'your selected time'}.`,
+    '',
+    `Service: ${input.serviceName || 'your appointment'}`,
+    `Confirmation number: ${input.confirmationNumber || 'pending'}`,
+    '',
+    "We're looking forward to your visit.",
+  ].join('\n');
 }
 
 async function recordOutbound(params: {
@@ -47,7 +70,7 @@ async function recordOutbound(params: {
   message: any;
 }) {
   const transcript = await saveMessage(params.sessionId, 'assistant', params.body, params.channel);
-  await upsertSmsMessage({
+  await recordMessageCost({
     twilioMessageSid: params.message.sid,
     direction: 'outbound',
     ...smsMetadataFromTwilioMessage(params.message),
@@ -66,9 +89,24 @@ export async function sendBookingConfirmation({
   customerPhone,
   body,
   client,
+  customerName,
+  appointment,
+  serviceName,
+  confirmationNumber,
 }: BookingConfirmationInput): Promise<{ channel: 'whatsapp' | 'sms' } | null> {
   const statusCallbackUrl = process.env.TWILIO_STATUS_CALLBACK_URL || undefined;
   const logContext = { tenant_id: salon?.id, session_id: sessionId };
+  const confirmationBody = body || renderBookingConfirmationBody({
+    salon,
+    sessionId,
+    customerPhone,
+    body,
+    client,
+    customerName,
+    appointment,
+    serviceName,
+    confirmationNumber,
+  });
 
   // `false` means a previous send to this number failed on WhatsApp. Unknown
   // (`null`) still gets a try — that's how the flag ever gets set.
@@ -76,11 +114,29 @@ export async function sendBookingConfirmation({
 
   if (whatsappWorthTrying) {
     try {
-      const message = await sendWhatsAppMessage(customerPhone, body, statusCallbackUrl, logContext);
+      const contentSid = bookingConfirmationTemplateSid(salon);
+      if (!contentSid) {
+        throw new Error('[Twilio] Missing booking confirmation WhatsApp template. Set TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_SID or business_profiles.whatsapp_booking_confirmation_template_sid.');
+      }
+
+      const message = await sendWhatsAppTemplate(
+        customerPhone,
+        {
+          contentSid,
+          contentVariables: {
+            '1': firstNameFrom({ salon, sessionId, customerPhone, body: confirmationBody, client, customerName }),
+            '2': appointment || 'your selected time',
+            '3': serviceName || 'your appointment',
+            '4': confirmationNumber || 'pending',
+          },
+          statusCallbackUrl,
+        },
+        logContext
+      );
       const { confirmed, status } = await waitForWhatsAppConfirmation(message.sid, WHATSAPP_CONFIRM_TIMEOUT_MS);
 
       if (confirmed) {
-        await recordOutbound({ salonId: salon.id, sessionId, channel: 'whatsapp', body, message });
+        await recordOutbound({ salonId: salon.id, sessionId, channel: 'whatsapp', body: confirmationBody, message });
         await recordClientWhatsAppAvailability(salon.id, customerPhone, true);
         return { channel: 'whatsapp' };
       }
@@ -104,10 +160,10 @@ export async function sendBookingConfirmation({
     }
   }
 
-  const message = await sendSMS(customerPhone, body, statusCallbackUrl, {
+  const message = await sendSMS(customerPhone, confirmationBody, statusCallbackUrl, {
     ...logContext,
     fromNumber: normalizeE164(salon?.twilio_number),
   });
-  await recordOutbound({ salonId: salon.id, sessionId, channel: 'sms', body, message });
+  await recordOutbound({ salonId: salon.id, sessionId, channel: 'sms', body: confirmationBody, message });
   return { channel: 'sms' };
 }

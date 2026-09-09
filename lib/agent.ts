@@ -1,6 +1,7 @@
 import { SchemaType } from '@google/generative-ai';
 import { getAgentName } from './agent-name';
 import { buildClientContext, type ClientProfile } from './client-profile';
+import { usesPhoneIdentifier } from './booking_service';
 
 // ─── System Prompt ────────────────────────────────────────────────────────────
 
@@ -18,6 +19,8 @@ export function buildSystemPrompt(
   // the caller can't re-read anything. Only the medium-specific blocks change —
   // the booking flow, guardrails, and salon data are identical across channels.
   const isVoice = options?.channel === 'voice';
+  // No email is collected when Cal identifies attendees by phone, on any channel.
+  const skipEmail = isVoice || usesPhoneIdentifier();
   const medium = isVoice ? 'over the phone' : options?.channel === 'whatsapp' ? 'over WhatsApp' : 'over SMS';
   const servicesList = salon.services.map((s: any) =>
     `- ${s.name} (${s.category || 'General'}) — ${s.duration_minutes} mins — £${s.price}`
@@ -59,7 +62,7 @@ export function buildSystemPrompt(
 
 You are ${agentName}, the receptionist for ${salon.name}. You help clients book, reschedule, and cancel appointments ${medium}. Be warm and direct — like a friendly person at the front desk, not a customer service bot.
 ${buildClientContext(options?.client)}
-${options?.channel ? `When the client explicitly gives or corrects their own name${isVoice ? ' (or offers an email address unprompted)' : ' or email'}, call 'update_client_profile' to remember those details, even if they do not complete a booking. Save only details they supplied or confirmed. Never infer a surname or email, or replace this caller's profile with details for someone they are booking for.` : ''}
+${options?.channel ? `When the client explicitly gives or corrects their own name${skipEmail ? ' (or offers an email address unprompted)' : ' or email'}, call 'update_client_profile' to remember those details, even if they do not complete a booking. Save only details they supplied or confirmed. Never infer a surname or email, or replace this caller's profile with details for someone they are booking for.` : ''}
 ${formattedState}
 
 ---
@@ -92,12 +95,12 @@ Work through this in order, always checking [CURRENT BOOKING STATE] first.
 3. As soon as you have service, date, or time — call 'update_booking_state' in that same turn
 4. Check availability with 'check_availability'
 5. Once a slot is confirmed available, call 'get_booking_requirements'
-6. Ask for ${isVoice ? 'their name (and anything else required)' : 'name and email (and anything else required)'}
+6. Ask for ${skipEmail ? 'their name (and anything else required)' : 'name and email (and anything else required)'}
 7. Call 'book_direct' to confirm the booking
-8. Let them know they're booked in${isVoice ? ", and that you'll send a confirmation to the number they're calling from" : ' and a confirmation email is on its way'}
+8. Let them know they're booked in${isVoice ? ", and that you'll send a confirmation to the number they're calling from" : skipEmail ? ' and their confirmation is on its way' : ' and a confirmation email is on its way'}
 
-**Never ask for personal details before confirming a slot is free.** There's no point collecting ${isVoice ? 'a name' : 'a name and email'} for a slot that isn't available.
-${isVoice ? "\n**Never ask a caller for their email address.** You don't need one to book — the confirmation goes to the phone number they're calling from, by WhatsApp or text. If they volunteer an email anyway, save it with 'update_client_profile', but never request one, never read one back, and never say the confirmation is coming by email.\n" : ''}
+**Never ask for personal details before confirming a slot is free.** There's no point collecting ${skipEmail ? 'a name' : 'a name and email'} for a slot that isn't available.
+${skipEmail ? `\n**Never ask the client for their email address.** You don't need one to book — the confirmation goes to ${isVoice ? "the phone number they're calling from" : 'this number'}, by WhatsApp or text. If they volunteer an email anyway, save it with 'update_client_profile', but never request one${isVoice ? ', never read one back' : ''}, and never say the confirmation is coming by email.\n` : ''}
 ${isVoice ? "\n**End the call only after a clean decision.** If the booking, reschedule or cancellation has succeeded, or the caller clearly decides not to book, call 'end_call' with a short closingMessage. Never call 'end_call' after a problem, failed tool, uncertainty, complaint, policy exception, or anything that needs the team. In those cases say: \"I'll escalate this to someone and they'll be in touch.\" Then stay available in case the caller has anything else to add.\n" : ''}
 
 **If the exact service isn't clear, ask which service they want and stop there.** Don't mention date, time, or next steps in the same message.

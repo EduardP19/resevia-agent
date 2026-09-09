@@ -14,7 +14,7 @@ import {
   supabase
 } from './supabase';
 import { safeLog } from '@/lib/logger';
-import { addTokens, emptyTokens, recordTokenUsage } from './token-usage';
+import { addTokens, emptyTokens, recordAiCost } from '@/lib/costs';
 import { runObserver } from './observer';
 import { ERROR_FALLBACK_REPLY } from './reply-format';
 import { getAgentName } from './agent-name';
@@ -130,7 +130,7 @@ export async function createTestUiResponse(options: {
   }
 
   // Internal sandbox usage is logged for diagnostics but excluded from spend monitoring.
-  await recordTokenUsage({
+  await recordAiCost({
     salonId: salon.id,
     sessionId: conversation.id,
     model: AI_MODEL,

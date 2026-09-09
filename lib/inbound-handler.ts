@@ -22,16 +22,16 @@ import { executeToolCall, ToolContext } from '@/lib/tool-handler';
 import { log, safeLog, setRequestContext } from '@/lib/logger';
 import { normalizeCustomerReply } from '@/lib/reply-format';
 import { scheduleDeferredNotification } from '@/lib/deferred-notifications';
-import { addTokens, emptyTokens, recordTokenUsage } from '@/lib/token-usage';
+import { addTokens, emptyTokens, recordAiCost } from '@/lib/costs';
 import { resolveEffectiveApprovalMode } from '@/lib/agent-mode';
 import { runObserver } from '@/lib/observer';
 import {
-  findSmsMessageBySid,
+  findMessageCostBySid,
   formDataToRecord,
   numberOrNull,
   smsMetadataFromTwilioMessage,
-  upsertSmsMessage,
-} from '@/lib/sms-messages';
+  recordMessageCost,
+} from '@/lib/costs';
 
 const AI_MODEL = process.env.AI_MODEL_NAME || 'gemini-2.5-flash';
 const TWIML_EMPTY = '<Response></Response>';
@@ -84,9 +84,9 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
   });
 
   if (inboundMessageSid) {
-    // sms_messages holds the unique Twilio SID for every message we've seen,
+    // costs holds the unique Twilio SID for every message we've seen,
     // so it is the dedupe index for Twilio webhook retries.
-    const existingInbound = await findSmsMessageBySid(inboundMessageSid);
+    const existingInbound = await findMessageCostBySid(inboundMessageSid);
 
     if (existingInbound) {
       safeLog({
@@ -130,7 +130,7 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
       toNumber,
     };
 
-    await upsertSmsMessage({
+    await recordMessageCost({
       ...inboundMetadata,
       channel,
       sessionId: conversation.id,
@@ -215,7 +215,7 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
   }
 
   // Log token/credit consumption for this whole inbound interaction.
-  await recordTokenUsage({
+  await recordAiCost({
     salonId: salon.id,
     sessionId: conversation.id,
     model: AI_MODEL,
@@ -299,7 +299,7 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
     direction: 'outbound' as const,
     ...smsMetadataFromTwilioMessage(outboundMessage),
   };
-  await upsertSmsMessage({
+  await recordMessageCost({
     ...outboundMetadata,
     channel,
     messageType: 'auto_reply',

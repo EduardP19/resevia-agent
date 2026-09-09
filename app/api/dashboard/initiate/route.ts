@@ -12,8 +12,8 @@ import { requireDashboardSessionFromRequest } from '@/lib/dashboard-auth';
 import { getAgentName } from '@/lib/agent-name';
 import {
   smsMetadataFromTwilioMessage,
-  upsertSmsMessage,
-} from '@/lib/sms-messages';
+  recordMessageCost,
+} from '@/lib/costs';
 
 type InitiateChannel = 'whatsapp' | 'sms';
 
@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
       direction: 'outbound' as const,
       ...smsMetadataFromTwilioMessage(outboundMessage),
     };
-    await upsertSmsMessage({
+    await recordMessageCost({
       ...outboundMetadata,
       channel: deliveredChannel,
       messageType: deliveredChannel === 'whatsapp' ? 'whatsapp_template' : 'initiation',

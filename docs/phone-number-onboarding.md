@@ -76,6 +76,6 @@ After provisioning:
 1. Send an SMS to the new number and confirm a salon session is created/continued.
 2. Call the new number and confirm the missed-call follow-up is sent.
 3. Send a WhatsApp message to the sender, if enabled, and confirm the session channel is `whatsapp`.
-4. Send an outbound dashboard initiation and confirm the `sms_messages` row receives delivery status updates through `/api/twilio/status`.
+4. Send an outbound dashboard initiation and confirm the `costs` row receives delivery status updates through `/api/twilio/status`.
 
 Status callbacks do not need a per-number webhook change: the app attaches `/api/twilio/status` to outbound sends at send time.

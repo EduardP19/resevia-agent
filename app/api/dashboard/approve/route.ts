@@ -5,8 +5,8 @@ import { log, safeLog } from '@/lib/logger';
 import { requireDashboardSessionFromRequest } from '@/lib/dashboard-auth';
 import {
   smsMetadataFromTwilioMessage,
-  upsertSmsMessage,
-} from '@/lib/sms-messages';
+  recordMessageCost,
+} from '@/lib/costs';
 
 export async function POST(req: NextRequest) {
   const auth = requireDashboardSessionFromRequest(req);
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
       direction: 'outbound' as const,
       ...smsMetadataFromTwilioMessage(outboundMessage),
     };
-    await upsertSmsMessage({
+    await recordMessageCost({
       ...outboundMetadata,
       channel,
       sessionId,

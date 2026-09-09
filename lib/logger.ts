@@ -15,7 +15,7 @@ import { createClient } from '@supabase/supabase-js';
  * Nothing here writes to that table.
  *
  * Log the event and its timing, never the state. Delivery status and price
- * belong in `sms_messages`, token spend in `token_usage`, message content in
+ * belong in `costs`, which is also where token and money spend live; content in
  * `transcripts`, bookings in `bookings`.
  */
 

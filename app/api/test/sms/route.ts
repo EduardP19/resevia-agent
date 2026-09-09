@@ -18,7 +18,7 @@ import { executeToolCall, ToolContext } from '../../../../lib/tool-handler';
 import { log, logError, safeLog } from '@/lib/logger';
 import { ERROR_FALLBACK_REPLY, normalizeCustomerReply } from '@/lib/reply-format';
 import { scheduleDeferredNotification } from '@/lib/deferred-notifications';
-import { addTokens, emptyTokens, recordTokenUsage } from '@/lib/token-usage';
+import { addTokens, emptyTokens, recordAiCost } from '@/lib/costs';
 import { resolveEffectiveApprovalMode } from '@/lib/agent-mode';
 import { runObserver } from '@/lib/observer';
 
@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
       interactionTokens = addTokens(interactionTokens, aiResponse.tokens);
     }
 
-    await recordTokenUsage({
+    await recordAiCost({
       salonId: salon.id,
       sessionId: conversation.id,
       model: AI_MODEL,

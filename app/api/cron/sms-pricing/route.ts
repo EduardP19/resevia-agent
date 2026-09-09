@@ -4,8 +4,8 @@ import { supabase } from '@/lib/supabase';
 import { getSMSMessage } from '@/lib/twilio';
 import {
   smsMetadataFromTwilioMessage,
-  upsertSmsMessage,
-} from '@/lib/sms-messages';
+  recordMessageCost,
+} from '@/lib/costs';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,11 +34,15 @@ async function reconcileSmsPricing() {
   logJob('sms_pricing_started', { category: 'sms', source: 'api.cron.sms-pricing', batch_size: batchSize });
 
   try {
+    // Rows still carrying the rate-card estimate rather than Twilio's billed
+    // figure. `estimated` replaces the old "price is null" test: a cost row is
+    // never priceless, it just hasn't been confirmed yet.
     const { data: rows, error } = await supabase
-      .from('sms_messages')
-      .select('id, twilio_message_sid, session_id, transcript_id, salon_id, direction, price_lookup_attempts')
-      .is('price', null)
-      .not('twilio_message_sid', 'is', null)
+      .from('costs')
+      .select('id, reference, session_id, transcript_id, salon_id, source, direction, price_lookup_attempts')
+      .eq('estimated', true)
+      .in('source', ['sms', 'whatsapp'])
+      .not('reference', 'is', null)
       .lt('created_at', cutoffIso)
       .lt('price_lookup_attempts', MAX_LOOKUP_ATTEMPTS)
       .order('created_at', { ascending: true })
@@ -54,12 +58,13 @@ async function reconcileSmsPricing() {
     for (const row of rows || []) {
       checked++;
       try {
-        const twilioMessage = await getSMSMessage(row.twilio_message_sid);
+        const twilioMessage = await getSMSMessage(row.reference);
         const metadata = smsMetadataFromTwilioMessage(twilioMessage);
         const hasPrice = metadata.price !== null && metadata.price !== undefined;
 
-        await upsertSmsMessage({
-          twilioMessageSid: row.twilio_message_sid,
+        await recordMessageCost({
+          twilioMessageSid: row.reference,
+          channel: row.source as 'sms' | 'whatsapp',
           sessionId: row.session_id,
           transcriptId: row.transcript_id,
           salonId: row.salon_id,
@@ -76,7 +81,7 @@ async function reconcileSmsPricing() {
       } catch (error: any) {
         failed++;
         await supabase
-          .from('sms_messages')
+          .from('costs')
           .update({
             last_price_lookup_at: nowIso,
             price_lookup_attempts: (row.price_lookup_attempts || 0) + 1,
@@ -89,7 +94,7 @@ async function reconcileSmsPricing() {
           level: 'warning',
           category: 'sms',
           event: 'sms_price_lookup_failed',
-          twilio_message_sid: row.twilio_message_sid,
+          twilio_message_sid: row.reference,
           error: error?.message || String(error),
           stack: error?.stack,
         });

@@ -3,6 +3,7 @@ import { refreshSessionSummary, saveMessageToTable, supabase } from '@/lib/supab
 import { waitUntil } from '@vercel/functions';
 import { z } from 'zod';
 import { logError, safeLog, withRequestContext } from '@/lib/logger';
+import { recordVoiceCost } from '@/lib/costs';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 15;
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
       }
       const { sessionId, tenantId, event, eventId, occurredAt, role, content, reason } = parsed.data;
       const { data: session, error: sessionError } = await supabase.from('sessions')
-        .select('id').eq('id', sessionId).eq('salon_id', tenantId).eq('channel', 'voice').maybeSingle();
+        .select('id, created_at').eq('id', sessionId).eq('salon_id', tenantId).eq('channel', 'voice').maybeSingle();
       if (sessionError) throw sessionError;
       if (!session) return NextResponse.json({ error: 'Call not found' }, { status: 404 });
 
@@ -75,6 +76,24 @@ export async function POST(req: NextRequest) {
           .in('status', ['active', 'review', 'needs_approval']);
         if (error) throw error;
         waitUntil(refreshSessionSummary(sessionId).catch(() => {}));
+
+        // Voice bills two per-minute meters — Twilio for carriage, Deepgram for
+        // the agent — and the session was created by the webhook as the call
+        // came in, so its age is the call duration. This is the only point at
+        // which that duration is knowable, since the bridge is a separate
+        // service and Deepgram's usage API reports per project, not per call.
+        const seconds = session.created_at
+          ? (Date.now() - new Date(session.created_at).getTime()) / 1000
+          : 0;
+        waitUntil(
+          recordVoiceCost({
+            salonId: tenantId,
+            sessionId,
+            seconds,
+            agentHandled: true,
+            reason,
+          })
+        );
 
         safeLog({
           type: 'integration',

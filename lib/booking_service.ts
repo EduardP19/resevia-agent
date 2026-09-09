@@ -4,6 +4,33 @@ import { safeLog, describeError } from '@/lib/logger';
 
 const CAL_COM_API_KEY = process.env.CAL_COM_API_KEY;
 
+/**
+ * Which contact method Cal.com identifies an attendee by.
+ *
+ * Cal accepts either an email or a phone number — the v2 API only insists on
+ * "at least one contact method". Choosing phone means we never ask a client for
+ * an email, which is one less thing to collect over SMS and impossible to
+ * mishear over a call. It also silences Cal entirely: with no address on the
+ * booking there is nothing for it to email, including the cancellation and
+ * reschedule notices that Cal gives you no way to switch off.
+ *
+ * The number always comes from the live session (`sessions.client_identifier`,
+ * E.164 from Twilio on every channel), so there is nothing new to ask for.
+ *
+ * **Order matters when enabling this.** Each worker's Cal event type must have
+ * its attendee identifier set to Phone *first*. While an event type still marks
+ * email required, a phone-only booking is rejected with
+ * `responses - {email}error_required_field`. Hence the default of 'email':
+ * flipping this env var is the second step, not the first.
+ */
+export const usesPhoneIdentifier = () =>
+  (process.env.CAL_ATTENDEE_IDENTIFIER || 'email').trim().toLowerCase() === 'phone';
+
+/** Cal rejects anything that isn't a well-formed international number. */
+export function isE164(value?: string | null) {
+  return !!value && /^\+[1-9]\d{6,14}$/.test(String(value).trim());
+}
+
 const calApiV2 = axios.create({
   baseURL: 'https://api.cal.eu/v2',
   headers: {
@@ -457,8 +484,19 @@ export async function holdBooking(details: {
     const resolvedSalonName = salonRes.data?.name || details.salonName || 'Salon';
 
     const normalizedResponses = { ...(details.responses || {}) };
+    if (usesPhoneIdentifier()) {
+      // The event type has no email field in this mode, and sending a response
+      // for a field Cal doesn't know about is rejected.
+      delete normalizedResponses.email;
+    }
     if (!normalizedResponses.title || !String(normalizedResponses.title).trim()) {
       normalizedResponses.title = `${resolvedSalonName} - ${details.serviceName}`;
+    }
+
+    if (usesPhoneIdentifier() && !isE164(details.customerPhone)) {
+      // Fail here with something readable rather than letting Cal reject the
+      // confirm step with a validation error the agent can't act on.
+      return { success: false, error: 'Cannot book without a valid phone number for this client.' };
     }
 
     const duration = service?.duration_minutes || 60;
@@ -504,7 +542,7 @@ export async function holdBooking(details: {
       worker_id: assignedWorker.id,
       customer_phone: details.customerPhone,
       client_name: normalizedResponses.name || 'Client',
-      client_email: normalizedResponses.email || 'client@example.com',
+      client_email: usesPhoneIdentifier() ? null : normalizedResponses.email || 'client@example.com',
       responses: normalizedResponses,
       status: 'held',
       service_name: details.serviceName,
@@ -665,22 +703,34 @@ export async function confirmBooking(holdUid: string) {
     const worker = (hold as any).workers;
     if (!worker) throw new Error('Worker not found for this booking.');
 
+    const attendee: Record<string, any> = {
+      name: hold.responses?.name || hold.client_name,
+      timeZone: 'Europe/London',
+      language: 'en'
+    };
+    if (usesPhoneIdentifier()) {
+      if (!isE164(hold.customer_phone)) {
+        throw new Error('Cannot confirm without a valid phone number for this client.');
+      }
+      attendee.phoneNumber = hold.customer_phone;
+    } else {
+      attendee.email = hold.responses?.email || hold.client_email;
+    }
+
+    const fieldResponses: Record<string, any> = { ...(hold.responses || {}), service: hold.service_name };
+    if (usesPhoneIdentifier()) delete fieldResponses.email;
+
     const response = await calApiV2.post('/bookings', {
       eventTypeId: worker.cal_event_type_id,
       start: hold.start_time,
       lengthInMinutes: hold.duration_minutes,
-      attendee: {
-        name: hold.responses?.name || hold.client_name,
-        email: hold.responses?.email || hold.client_email,
-        timeZone: 'Europe/London',
-        language: 'en'
-      },
+      attendee,
       // `service` is a hidden custom booking field on every worker's event
       // type, and each event type's "event name" template renders it as
       // "{service} - {Scheduler}". Without it Cal falls back to the event type
       // name — which is the stylist, not the service — so a salon calendar
       // reads "Eduard's booking" all day and tells nobody anything.
-      bookingFieldsResponses: { ...(hold.responses || {}), service: hold.service_name },
+      bookingFieldsResponses: fieldResponses,
       metadata: {
         service_name: hold.service_name,
         status: 'confirmed'
@@ -702,7 +752,15 @@ export async function confirmBooking(holdUid: string) {
 
     await completeSession(hold.salon_id, hold.customer_phone);
 
-    return { success: true, bookingUid: newBooking.uid };
+    return {
+      success: true,
+      bookingUid: newBooking.uid,
+      serviceName: hold.service_name,
+      startTime: hold.start_time,
+      customerName: hold.responses?.name || hold.client_name || null,
+      customerPhone: hold.customer_phone,
+      workerName: worker.name || null,
+    };
   } catch (error: any) {
     console.error('[Confirm Error]', JSON.stringify(error.response?.data || error.message, null, 2));
     logCalError(error, {
@@ -760,6 +818,10 @@ export async function bookDirect(details: {
     return { 
         success: true, 
         bookingUid: confirm.bookingUid,
+        serviceName: confirm.serviceName || details.serviceName,
+        startTime: confirm.startTime,
+        customerName: confirm.customerName || details.responses?.name || null,
+        customerPhone: confirm.customerPhone || details.customerPhone,
         workerName: hold.workerName,
         duration: hold.duration
     };

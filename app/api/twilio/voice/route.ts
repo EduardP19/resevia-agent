@@ -6,7 +6,7 @@ import { getDefaultSalon, getOrCreateConversation, getSalonBySmsNumber, saveMess
 import { log, logError, safeLog, setRequestContext, withRequestContext } from '@/lib/logger';
 
 import { getAgentName } from '@/lib/agent-name';
-import { smsMetadataFromTwilioMessage, upsertSmsMessage } from '@/lib/sms-messages';
+import { smsMetadataFromTwilioMessage, recordMessageCost } from '@/lib/costs';
 
 // Covers the up-to-30s WhatsApp delivery-confirmation poll in the background
 // follow-up (kicked off via waitUntil after the TwiML response is sent),
@@ -218,7 +218,7 @@ async function processMissedCall(params: {
   );
   console.log(`[voice] ✓ system message saved`);
 
-  // Human-readable transcript row + sms_messages ledger entry, so this send
+  // Human-readable transcript row + costs entry, so this send
   // shows up in spend/pricing tracking like every other outbound message
   // (auto-reply, initiation) — this path previously recorded neither.
   const assistantMessage = await saveMessage(
@@ -232,7 +232,7 @@ async function processMissedCall(params: {
     direction: 'outbound' as const,
     ...smsMetadataFromTwilioMessage(outboundMessage),
   };
-  await upsertSmsMessage({
+  await recordMessageCost({
     ...outboundMetadata,
     channel: deliveredChannel,
     messageType,
@@ -241,7 +241,7 @@ async function processMissedCall(params: {
     salonId: salon.id,
     rawPayload: outboundMessage,
   });
-  console.log(`[voice] ✓ sms_messages ledger row recorded (type: ${messageType})`);
+  console.log(`[voice] ✓ cost row recorded (type: ${messageType})`);
 
   await log({
     type: 'integration',

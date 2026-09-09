@@ -1,19 +1,32 @@
 import React from 'react';
 import { supabase } from '@/lib/supabase';
 import ProfileEditor from './ProfileEditor';
-import UsageCard from './UsageCard';
+import UsageCard, { AdminApiSpendCard } from './UsageCard';
 import { safeLog } from '@/lib/logger';
-import { requireDashboardSession } from '@/lib/dashboard-auth';
-import { getTenantApiSpend } from '@/lib/token-usage';
+import { isDashboardAdminEmail, requireDashboardSession } from '@/lib/dashboard-auth';
+import { getPlatformSpend, getTenantChannelUsage, resolveUsageDateRange } from '@/lib/costs';
 import { getAgentName } from '@/lib/agent-name';
 
 export const revalidate = 0;
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ usagePreset?: string; usageFrom?: string; usageTo?: string }>;
+}) {
   const auth = requireDashboardSession();
-  const [{ data: salon }, spend] = await Promise.all([
+  const params = searchParams ? await searchParams : {};
+  const isAdmin = isDashboardAdminEmail(auth.email);
+  const usageRange = resolveUsageDateRange({
+    preset: params.usagePreset,
+    from: params.usageFrom,
+    to: params.usageTo,
+  });
+
+  const [{ data: salon }, usage, platformSpend] = await Promise.all([
     supabase.from('business_profiles').select('*').eq('id', auth.tenantId).single(),
-    getTenantApiSpend(auth.tenantId),
+    isAdmin ? Promise.resolve(null) : getTenantChannelUsage(auth.tenantId, usageRange),
+    isAdmin ? getPlatformSpend() : Promise.resolve(null),
   ]);
   safeLog({
     type: 'interaction',
@@ -48,7 +61,16 @@ export default async function SettingsPage() {
 
       {salon ? (
         <>
-          <UsageCard spend={spend} agentName={agentName} />
+          {isAdmin ? (
+            <AdminApiSpendCard spend={platformSpend} />
+          ) : (
+            <UsageCard
+              usage={usage}
+              agentName={agentName}
+              from={params.usageFrom}
+              to={params.usageTo}
+            />
+          )}
           <ProfileEditor salon={salon} />
         </>
       ) : (

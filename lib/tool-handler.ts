@@ -1,8 +1,10 @@
 import { supabase } from './supabase';
+import { waitUntil } from '@vercel/functions';
 import { buildSystemPrompt, type AgentChannel } from './agent';
 import { safeLog } from '@/lib/logger';
 import type { ClientProfile } from '@/lib/client-profile';
 import { updateClientContact } from '@/lib/clients';
+import { sendBookingConfirmation } from '@/lib/booking-confirmation';
 import {
   holdBooking,
   confirmBooking,
@@ -10,7 +12,8 @@ import {
   cancelBooking,
   rescheduleBooking,
   getBookingFields,
-  bookDirect
+  bookDirect,
+  usesPhoneIdentifier
 } from './booking_service';
 
 export interface ToolContext {
@@ -65,6 +68,81 @@ function isWithinSixMonthWindow(date?: string): boolean {
   maxDate.setMonth(maxDate.getMonth() + 6);
 
   return requestedDate >= today && requestedDate <= maxDate;
+}
+
+function runAfterResponse(work: Promise<unknown>) {
+  try {
+    waitUntil(work);
+  } catch {
+    void work;
+  }
+}
+
+function formatAppointment(value?: string | null, fallbackDate?: string, fallbackTime?: string) {
+  const raw = value || (fallbackDate ? `${fallbackDate}T${fallbackTime || '00:00'}:00` : null);
+  const parsed = raw ? new Date(raw) : null;
+  if (!parsed || Number.isNaN(parsed.getTime())) {
+    return [fallbackDate, fallbackTime].filter(Boolean).join(' at ') || 'your selected time';
+  }
+
+  const day = parsed.toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'Europe/London',
+  });
+  const time = parsed.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Europe/London',
+  });
+  return `${day} at ${time}`;
+}
+
+function dispatchBookingConfirmation(params: {
+  result: any;
+  args: any;
+  ctx: ToolContext;
+}) {
+  const { result, args, ctx } = params;
+  if (!result?.success || !ctx.sessionId || (ctx.channel !== 'sms' && ctx.channel !== 'whatsapp')) return;
+
+  runAfterResponse(
+    sendBookingConfirmation({
+      salon: ctx.salon,
+      sessionId: ctx.sessionId,
+      customerPhone: ctx.customerPhone,
+      client: ctx.client,
+      body: '',
+      customerName: result.customerName || args?.responses?.name || ctx.client?.first_name || null,
+      appointment: formatAppointment(result.startTime, args?.date, args?.time),
+      serviceName: result.serviceName || args?.serviceName || null,
+      confirmationNumber: result.bookingUid || null,
+    })
+      .then((sent) => {
+        safeLog({
+          type: 'integration',
+          level: 'info',
+          category: 'sms',
+          event: 'booking_confirmation_sent',
+          tenant_id: ctx.salonId,
+          session_id: ctx.sessionId,
+          channel: sent?.channel,
+        });
+      })
+      .catch((error: any) => {
+        safeLog({
+          type: 'error',
+          level: 'warning',
+          category: 'sms',
+          event: 'booking_confirmation_failed',
+          tenant_id: ctx.salonId,
+          session_id: ctx.sessionId,
+          error: error?.message || String(error),
+        });
+      })
+  );
 }
 
 /**
@@ -130,10 +208,13 @@ export async function executeToolCall(
       if (worker) {
         const fields = await getBookingFields(worker.cal_event_type_id);
         // Internal/system fields are auto-filled server-side and should never be asked from clients.
-        // On voice, email joins them: reading an address back over a phone line is
-        // slow and error-prone, and the confirmation goes to the caller's number
-        // instead — see sendBookingConfirmation in lib/booking-confirmation.ts.
-        const hiddenFields = new Set(ctx.channel === 'voice' ? ['title', 'email'] : ['title']);
+        // Email joins them whenever Cal identifies attendees by phone — there is no
+        // email field on the event type to fill. It's also hidden on voice
+        // regardless, because reading an address back over a phone line is slow and
+        // error-prone; either way the confirmation goes to the client's number.
+        // See sendBookingConfirmation in lib/booking-confirmation.ts.
+        const skipEmail = usesPhoneIdentifier() || ctx.channel === 'voice';
+        const hiddenFields = new Set(skipEmail ? ['title', 'email'] : ['title']);
         const clientFacingFields = fields.filter((f: any) => !hiddenFields.has(String(f.name || '').toLowerCase()));
         const summary = clientFacingFields.map((f: any) => `${f.name}${f.required ? ' (required)' : ''}`).join(', ');
         toolResult = `To book ${args?.serviceName || 'this service'}, I need: ${summary}`;
@@ -152,12 +233,14 @@ export async function executeToolCall(
           `Failed: ${args.time} was not one of the times availability returned for that day. ` +
           `Call check_availability again and offer the client only the times it gives you.`;
       } else {
-      // Cal.com wants an attendee email on every booking, but the voice agent no
-      // longer asks for one. Use whatever the client record already holds; when
-      // it holds nothing, bookDirect's placeholder stands and the confirmation
-      // goes out over WhatsApp/SMS instead.
+      // When Cal identifies attendees by email, the voice agent still doesn't ask
+      // for one — fall back to whatever the client record holds, and let
+      // bookDirect's placeholder stand when it holds nothing. Under the phone
+      // identifier there is no email field at all, so passing one is rejected.
       const responses = { ...(args.responses || {}) };
-      if (ctx.channel === 'voice' && !responses.email && ctx.client?.email) {
+      if (usesPhoneIdentifier()) {
+        delete responses.email;
+      } else if (ctx.channel === 'voice' && !responses.email && ctx.client?.email) {
         responses.email = ctx.client.email;
       }
       const directRes = await bookDirect({
@@ -171,6 +254,7 @@ export async function executeToolCall(
         workerName: args.workerName,
         salonServices: ctx.salonServices
       });
+      dispatchBookingConfirmation({ result: directRes, args, ctx });
       toolResult = JSON.stringify(directRes);
       }
 
@@ -185,6 +269,7 @@ export async function executeToolCall(
 
     } else if (name === 'confirm_booking') {
       const result = await confirmBooking(args.holdUid);
+      dispatchBookingConfirmation({ result, args, ctx });
       toolResult = result.success ? 'Booking confirmed!' : `Failed: ${result.error}`;
 
     } else if (name === 'cancel_booking') {
