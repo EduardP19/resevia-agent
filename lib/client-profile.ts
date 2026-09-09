@@ -18,6 +18,9 @@ export interface ClientProfile {
   last_name: string | null;
   email: string | null;
   phone: string;
+  /** null = never attempted, true = WhatsApp confirmed, false = WhatsApp failed (use SMS). */
+  whatsapp_available: boolean | null;
+  whatsapp_checked_at: string | null;
   booking_history: ClientBooking[];
   metadata: { notes?: string; [key: string]: unknown };
   created_at: string;

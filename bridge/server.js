@@ -36,6 +36,20 @@ const KEEPALIVE_MS = 8000;
 // live call produced. Past this we give the agent something to say instead.
 const TOOL_TIMEOUT_MS = Number(process.env.TOOL_TIMEOUT_MS) || 12000;
 
+// How long the line may stay quiet after a tool result before we make the agent
+// say something. Gemini sometimes answers a tool call with no words at all,
+// which on a phone is indistinguishable from a dropped call — "are you still
+// there?" is what it sounded like on the first live calls.
+const SILENCE_WATCHDOG_MS = Number(process.env.SILENCE_WATCHDOG_MS) || 4000;
+
+// Deliberately non-committal: this is filler for a gap, and it must not imply
+// an outcome the agent hasn't actually got yet.
+const HOLDING_LINES = [
+  'Bear with me one moment.',
+  "Just checking that for you now.",
+  'One second, still looking.',
+];
+
 function requireEnv(name) {
   const value = process.env[name];
   if (!value) {
@@ -76,6 +90,34 @@ wss.on('connection', (twilioWs) => {
   // dropping means the caller's opening words — often the whole point of the
   // call — survive the setup round trip.
   const pending = [];
+  let silenceTimer = null;
+  let holdingLineIndex = 0;
+
+  /**
+   * Starts the clock on a quiet line. `behavior: 'default'` means Deepgram
+   * refuses the injection outright if either party is mid-turn, so this can only
+   * ever land in real silence — it cannot talk over the caller, or over the
+   * agent's own reply arriving a moment late.
+   */
+  function armSilenceWatchdog() {
+    clearSilenceWatchdog();
+    silenceTimer = setTimeout(() => {
+      if (closed || deepgram?.readyState !== WebSocket.OPEN) return;
+      const message = HOLDING_LINES[holdingLineIndex++ % HOLDING_LINES.length];
+      deepgram.send(JSON.stringify({ type: 'InjectAgentMessage', message, behavior: 'default' }));
+      log('silence_filled', { callSid, message });
+      // Re-arm: a badly stalled tool should get a second nudge rather than one
+      // line followed by open-ended silence.
+      armSilenceWatchdog();
+    }, SILENCE_WATCHDOG_MS);
+    // Never hold the process open on this alone.
+    silenceTimer.unref?.();
+  }
+
+  function clearSilenceWatchdog() {
+    if (silenceTimer) clearTimeout(silenceTimer);
+    silenceTimer = null;
+  }
 
   function teardown(reason) {
     if (closed) return;
@@ -211,6 +253,7 @@ wss.on('connection', (twilioWs) => {
           deepgram.send(
             JSON.stringify({ type: 'FunctionCallResponse', id: fn.id, name: fn.name, content })
           );
+          armSilenceWatchdog();
         }
       })
     );
@@ -235,7 +278,18 @@ wss.on('connection', (twilioWs) => {
         }, 30000);
         break;
 
+      case 'AgentStartedSpeaking':
+      case 'AgentThinking':
+        clearSilenceWatchdog();
+        break;
+
+      case 'InjectionRefused':
+        // Someone was talking after all, so the gap has closed on its own.
+        log('injection_refused', { callSid });
+        break;
+
       case 'UserStartedSpeaking':
+        clearSilenceWatchdog();
         // Barge-in. Twilio has already buffered whatever the agent was saying;
         // without clearing it the caller talks over audio queued seconds ago.
         if (streamSid && twilioWs.readyState === WebSocket.OPEN) {
@@ -251,6 +305,7 @@ wss.on('connection', (twilioWs) => {
         break;
 
       case 'ConversationText':
+        if (message.role !== 'user') clearSilenceWatchdog();
         if (ctx.sessionId && message.content) {
           postEvent({
             sessionId: ctx.sessionId,

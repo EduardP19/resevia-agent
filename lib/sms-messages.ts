@@ -12,7 +12,8 @@ export type SmsMessageType =
   | 'whatsapp_template' // business-initiated Content template (outside 24h window)
   | 'auto_reply' // agent free-form reply to an inbound customer message
   | 'initiation' // owner-triggered outreach from the dashboard
-  | 'missed_call_followup'; // voice webhook fallback after a missed call
+  | 'missed_call_followup' // voice webhook fallback after a missed call
+  | 'booking_confirmation'; // written confirmation of a booking taken over the phone
 
 export type SmsMetadata = {
   direction?: SmsDirection | null;

@@ -1,8 +1,10 @@
+import { waitUntil } from '@vercel/functions';
 import { supabase, getFAQs, getWorkers } from '@/lib/supabase';
 import { executeToolCall, type ToolContext } from '@/lib/tool-handler';
-import { safeLog } from '@/lib/logger';
+import { logError, safeLog } from '@/lib/logger';
 import { getClientByPhone } from '@/lib/clients';
-import { normalizeClientPhone } from '@/lib/client-profile';
+import { sendBookingConfirmation } from '@/lib/booking-confirmation';
+import { clientDisplayName, normalizeClientPhone, type ClientProfile } from '@/lib/client-profile';
 
 /**
  * Executes one Deepgram voice-agent function call against the same tool
@@ -15,6 +17,50 @@ import { normalizeClientPhone } from '@/lib/client-profile';
  * to the model as text. The next turn's prompt is Deepgram's, unchanged — which
  * is why the tool result spells the locked fields back out.
  */
+/**
+ * A caller can't be sent a link and now isn't asked for an email, so the only
+ * written record of the booking is the message we send to the number they rang
+ * from. Spelled out in full: they may not have the salon's number saved.
+ */
+function renderVoiceBookingConfirmation(params: {
+  salon: any;
+  client?: ClientProfile | null;
+  serviceName: string;
+  date: string;
+  time: string;
+  workerName?: string;
+}): string {
+  const { salon, client, serviceName, date, time, workerName } = params;
+  const when = (() => {
+    const parsed = new Date(`${date}T${time || '00:00'}:00`);
+    if (Number.isNaN(parsed.getTime())) return `${date} at ${time}`;
+    const day = parsed.toLocaleDateString('en-GB', {
+      weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London',
+    });
+    return time ? `${day} at ${time}` : day;
+  })();
+  const firstName = (client?.first_name || clientDisplayName(client) || '').trim();
+  return [
+    firstName ? `Hi ${firstName}, you're booked in.` : "You're booked in.",
+    `${serviceName} on ${when}${workerName ? ` with ${workerName}` : ''} at ${salon?.name || 'the salon'}.`,
+    'Reply to this message if you need to change or cancel.',
+  ].join(' ');
+}
+
+/**
+ * The confirmation must not sit between the caller and the agent's next
+ * sentence: the WhatsApp attempt polls for a delivery status for up to 20s
+ * before falling back to SMS. On Vercel `waitUntil` keeps it alive past the
+ * response to /api/voice/turn; anywhere else the promise simply runs on.
+ */
+function runAfterResponse(work: Promise<unknown>) {
+  try {
+    waitUntil(work);
+  } catch {
+    void work;
+  }
+}
+
 export interface VoiceToolCall {
   salonId: string;
   sessionId: string;
@@ -57,7 +103,49 @@ export async function runVoiceToolCall({
     client,
   };
 
-  const { toolResult, updatedBookingState } = await executeToolCall(name, args, ctx, bookingState);
+  let { toolResult, updatedBookingState } = await executeToolCall(name, args, ctx, bookingState);
+
+  if (name === 'book_direct') {
+    let booked: any = null;
+    try {
+      booked = JSON.parse(toolResult);
+    } catch {
+      // A non-JSON result is a failure message from the tool handler, not a booking.
+    }
+    if (booked?.success) {
+      runAfterResponse(
+        sendBookingConfirmation({
+          salon,
+          sessionId,
+          customerPhone,
+          client,
+          body: renderVoiceBookingConfirmation({
+            salon,
+            client,
+            serviceName: args?.serviceName,
+            date: args?.date,
+            time: args?.time,
+            workerName: booked.workerName,
+          }),
+        })
+          .then((result) => {
+            safeLog({
+              type: 'integration', level: 'info', category: 'sms',
+              event: 'voice_booking_confirmation_sent',
+              tenant_id: salonId, session_id: sessionId, channel: result?.channel,
+            });
+          })
+          .catch((error: any) => {
+            logError('sms', 'voice_booking_confirmation_failed', error, {
+              tenant_id: salonId, session_id: sessionId,
+            });
+          })
+      );
+      // Deepgram's prompt is fixed for the call, so the tool result is the only
+      // place the model can be told what the caller is about to receive.
+      toolResult = `${toolResult} A written confirmation is on its way to the number they called from, by WhatsApp or text. Tell them that — do not mention email.`;
+    }
+  }
 
   if (updatedBookingState) {
     await supabase

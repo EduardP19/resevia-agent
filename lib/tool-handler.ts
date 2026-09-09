@@ -130,7 +130,10 @@ export async function executeToolCall(
       if (worker) {
         const fields = await getBookingFields(worker.cal_event_type_id);
         // Internal/system fields are auto-filled server-side and should never be asked from clients.
-        const hiddenFields = new Set(['title']);
+        // On voice, email joins them: reading an address back over a phone line is
+        // slow and error-prone, and the confirmation goes to the caller's number
+        // instead — see sendBookingConfirmation in lib/booking-confirmation.ts.
+        const hiddenFields = new Set(ctx.channel === 'voice' ? ['title', 'email'] : ['title']);
         const clientFacingFields = fields.filter((f: any) => !hiddenFields.has(String(f.name || '').toLowerCase()));
         const summary = clientFacingFields.map((f: any) => `${f.name}${f.required ? ' (required)' : ''}`).join(', ');
         toolResult = `To book ${args?.serviceName || 'this service'}, I need: ${summary}`;
@@ -149,11 +152,19 @@ export async function executeToolCall(
           `Failed: ${args.time} was not one of the times availability returned for that day. ` +
           `Call check_availability again and offer the client only the times it gives you.`;
       } else {
+      // Cal.com wants an attendee email on every booking, but the voice agent no
+      // longer asks for one. Use whatever the client record already holds; when
+      // it holds nothing, bookDirect's placeholder stands and the confirmation
+      // goes out over WhatsApp/SMS instead.
+      const responses = { ...(args.responses || {}) };
+      if (ctx.channel === 'voice' && !responses.email && ctx.client?.email) {
+        responses.email = ctx.client.email;
+      }
       const directRes = await bookDirect({
         serviceName: args.serviceName,
         date: args.date,
         time: args.time,
-        responses: args.responses || {},
+        responses,
         salonId: ctx.salonId,
         salonName: ctx.salon?.name,
         customerPhone: ctx.customerPhone,

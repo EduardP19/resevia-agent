@@ -38,3 +38,35 @@ export async function getClientByPhone(salonId: string, rawPhone: string): Promi
   }
   return data as ClientProfile | null;
 }
+
+/**
+ * Records what an actual send attempt told us about this number's WhatsApp
+ * reachability, so the next outbound message can skip a WhatsApp attempt that
+ * is only going to fall back to SMS again.
+ *
+ * Never throws: this is bookkeeping attached to a message that has already been
+ * delivered, and must not turn a successful send into a failed tool call.
+ */
+export async function recordClientWhatsAppAvailability(
+  salonId: string,
+  rawPhone: string,
+  available: boolean
+): Promise<void> {
+  const phone = normalizeClientPhone(rawPhone);
+  if (!salonId || !phone) return;
+  const { error } = await supabase
+    .from('clients')
+    .update({
+      whatsapp_available: available,
+      whatsapp_checked_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('salon_id', salonId)
+    .eq('phone', phone);
+  if (error) {
+    safeLog({
+      type: 'error', level: 'warning', category: 'system', event: 'client_whatsapp_flag_failed',
+      tenant_id: salonId, error: error.message,
+    });
+  }
+}

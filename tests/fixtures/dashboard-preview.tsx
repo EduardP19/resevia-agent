@@ -6,7 +6,7 @@ import type { ClientProfile } from '@/lib/client-profile';
 
 const client: ClientProfile = {
   id: '33333333-3333-4333-8333-333333333333', salon_id: '11111111-1111-4111-8111-111111111111',
-  first_name: 'Alexandra', last_name: 'Smith Jones', email: 'alexandra@example.org', phone: '+447700900123',
+  first_name: 'Alexandra', last_name: 'Smith Jones', email: 'alexandra@example.org', phone: '+447700900123', whatsapp_available: null, whatsapp_checked_at: null,
   metadata: { notes: 'Prefers morning appointments.' }, created_at: '2026-09-08T12:00:00Z', updated_at: '2026-09-08T12:00:00Z',
   booking_history: [{ booking_id: 'booking-test', service: 'Wash, Cut and Blow Dry', start_time: '2026-09-10T09:00:00Z', status: 'confirmed', worker_name: 'Sam', duration_minutes: 60 }],
 };
