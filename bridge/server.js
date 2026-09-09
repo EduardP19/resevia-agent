@@ -41,6 +41,7 @@ const TOOL_TIMEOUT_MS = Number(process.env.TOOL_TIMEOUT_MS) || 12000;
 // which on a phone is indistinguishable from a dropped call — "are you still
 // there?" is what it sounded like on the first live calls.
 const SILENCE_WATCHDOG_MS = Number(process.env.SILENCE_WATCHDOG_MS) || 4000;
+const END_CALL_DELAY_MS = Number(process.env.END_CALL_DELAY_MS) || 5500;
 
 // Deliberately non-committal: this is filler for a gap, and it must not imply
 // an outcome the agent hasn't actually got yet.
@@ -119,11 +120,45 @@ wss.on('connection', (twilioWs) => {
     silenceTimer = null;
   }
 
+  function functionArgs(fn) {
+    if (!fn || !fn.arguments) return {};
+    if (typeof fn.arguments === 'string') {
+      try { return JSON.parse(fn.arguments || '{}'); } catch { return {}; }
+    }
+    return fn.arguments;
+  }
+
+  function endCallFromAgent(fn) {
+    const args = functionArgs(fn);
+    const outcome = String(args.outcome || 'resolved').slice(0, 80);
+    const closingMessage = String(args.closingMessage || 'Thanks for calling. Goodbye.').trim().slice(0, 240);
+
+    clearSilenceWatchdog();
+    log('agent_requested_call_end', { callSid, outcome });
+    if (ctx.sessionId) {
+      postEvent({
+        sessionId: ctx.sessionId,
+        tenantId: ctx.salonId,
+        event: 'transcript',
+        role: 'assistant',
+        content: closingMessage,
+      });
+    }
+    if (deepgram?.readyState === WebSocket.OPEN) {
+      deepgram.send(JSON.stringify({ type: 'InjectAgentMessage', message: closingMessage, behavior: 'default' }));
+      deepgram.send(
+        JSON.stringify({ type: 'FunctionCallResponse', id: fn.id, name: fn.name, content: `Ending call: ${outcome}` })
+      );
+    }
+    setTimeout(() => teardown(`agent_ended_call:${outcome}`), END_CALL_DELAY_MS).unref?.();
+  }
+
   function teardown(reason) {
     if (closed) return;
     closed = true;
     if (keepalive) clearInterval(keepalive);
     if (heartbeat) clearInterval(heartbeat);
+    clearSilenceWatchdog();
     try { deepgram?.close(); } catch {}
     try { twilioWs.close(); } catch {}
     log('call_ended', { callSid, reason });
@@ -218,6 +253,11 @@ wss.on('connection', (twilioWs) => {
 
     await Promise.all(
       functions.map(async (fn) => {
+        if (fn?.name === 'end_call') {
+          endCallFromAgent(fn);
+          return;
+        }
+
         const startedAt = Date.now();
         let content;
         try {

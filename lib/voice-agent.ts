@@ -1,6 +1,7 @@
 import { agentTools, buildSystemPrompt } from '@/lib/agent';
 import { getAgentName } from '@/lib/agent-name';
 import type { ClientProfile } from '@/lib/client-profile';
+import { SchemaType } from '@google/generative-ai';
 
 /**
  * Deepgram Voice Agent API — Settings payload builder.
@@ -29,7 +30,28 @@ const TELEPHONY_AUDIO = {
  * wrapper and nothing else — keeping one canonical tool definition.
  */
 export function deepgramFunctions(toolEndpoint?: VoiceSettingsInput['toolEndpoint']) {
-  return agentTools.flatMap((t: any) => t.functionDeclarations).map((fn: any) => ({
+  const sharedFunctions = agentTools.flatMap((t: any) => t.functionDeclarations);
+  const voiceFunctions = [
+    {
+      name: 'end_call',
+      description: 'End the live phone call after a final outcome has been reached and no further answer is needed from the caller.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          outcome: {
+            type: SchemaType.STRING,
+            description: 'One of booked, rescheduled, cancelled, declined, no_fit, escalated, or unresolved',
+          },
+          closingMessage: {
+            type: SchemaType.STRING,
+            description: 'A short final sentence to say before hanging up',
+          },
+        },
+        required: ['outcome', 'closingMessage'],
+      },
+    },
+  ];
+  return [...sharedFunctions, ...voiceFunctions].map((fn: any) => ({
     name: fn.name,
     description: fn.description,
     parameters: fn.parameters,
