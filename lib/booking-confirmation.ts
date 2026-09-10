@@ -133,7 +133,12 @@ export async function sendBookingConfirmation({
         },
         logContext
       );
-      const { confirmed, status } = await waitForWhatsAppConfirmation(message.sid, WHATSAPP_CONFIRM_TIMEOUT_MS);
+      const { confirmed, status } = await waitForWhatsAppConfirmation(
+        message.sid,
+        WHATSAPP_CONFIRM_TIMEOUT_MS,
+        2000,
+        logContext
+      );
 
       if (confirmed) {
         await recordOutbound({ salonId: salon.id, sessionId, channel: 'whatsapp', body: confirmationBody, message });

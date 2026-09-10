@@ -47,6 +47,28 @@ function renderVoiceBookingConfirmation(params: {
   ].join(' ');
 }
 
+function formatAppointment(value?: string | null, fallbackDate?: string, fallbackTime?: string) {
+  const raw = value || (fallbackDate ? `${fallbackDate}T${fallbackTime || '00:00'}:00` : null);
+  const parsed = raw ? new Date(raw) : null;
+  if (!parsed || Number.isNaN(parsed.getTime())) {
+    return [fallbackDate, fallbackTime].filter(Boolean).join(' at ') || 'your selected time';
+  }
+
+  const day = parsed.toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'Europe/London',
+  });
+  const time = parsed.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Europe/London',
+  });
+  return `${day} at ${time}`;
+}
+
 /**
  * The confirmation must not sit between the caller and the agent's next
  * sentence: the WhatsApp attempt polls for a delivery status for up to 20s
@@ -127,6 +149,10 @@ export async function runVoiceToolCall({
             time: args?.time,
             workerName: booked.workerName,
           }),
+          customerName: booked.customerName || args?.responses?.name || clientDisplayName(client) || null,
+          appointment: formatAppointment(booked.startTime, args?.date, args?.time),
+          serviceName: booked.serviceName || args?.serviceName,
+          confirmationNumber: booked.bookingUid || null,
         })
           .then((result) => {
             safeLog({
@@ -143,7 +169,10 @@ export async function runVoiceToolCall({
       );
       // Deepgram's prompt is fixed for the call, so the tool result is the only
       // place the model can be told what the caller is about to receive.
-      toolResult = `${toolResult} A written confirmation is on its way to the number they called from, by WhatsApp or text. Tell them that — do not mention email.`;
+      toolResult =
+        `${toolResult} A written confirmation is on its way to the number they called from, by WhatsApp or text. ` +
+        `Next action: call end_call with outcome "booked" and a warm closingMessage that says the booking is confirmed, the confirmation is on its way, and goodbye. Do not ask another question. ` +
+        `[[VOICE_END_CALL:booked:You're all booked in, and your confirmation is on its way. Thanks for calling, goodbye.]]`;
     }
   }
 

@@ -153,6 +153,16 @@ wss.on('connection', (twilioWs) => {
     setTimeout(() => teardown(`agent_ended_call:${outcome}`), END_CALL_DELAY_MS).unref?.();
   }
 
+  function extractEndCallDirective(content) {
+    const match = String(content || '').match(/\[\[VOICE_END_CALL:([^:\]]+):([\s\S]*?)\]\]/);
+    if (!match) return null;
+    return {
+      outcome: String(match[1] || 'resolved').trim().slice(0, 80),
+      closingMessage: String(match[2] || 'Thanks for calling. Goodbye.').trim().slice(0, 240),
+      content: String(content || '').replace(match[0], '').trim(),
+    };
+  }
+
   function teardown(reason) {
     if (closed) return;
     closed = true;
@@ -288,12 +298,26 @@ wss.on('connection', (twilioWs) => {
         }
 
         log('tool_done', { callSid, tool: fn.name, ms: Date.now() - startedAt });
+        const endDirective = extractEndCallDirective(content);
+        if (endDirective) content = endDirective.content;
 
         if (deepgram?.readyState === WebSocket.OPEN) {
           deepgram.send(
             JSON.stringify({ type: 'FunctionCallResponse', id: fn.id, name: fn.name, content })
           );
           armSilenceWatchdog();
+        }
+        if (endDirective) {
+          setTimeout(() => {
+            endCallFromAgent({
+              id: `auto-end-${fn.id || randomUUID()}`,
+              name: 'end_call',
+              arguments: {
+                outcome: endDirective.outcome,
+                closingMessage: endDirective.closingMessage,
+              },
+            });
+          }, 500).unref?.();
         }
       })
     );

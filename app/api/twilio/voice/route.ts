@@ -56,7 +56,12 @@ async function sendMissedCallFollowup(params: {
         { tenant_id: salon.id, session_id: sessionId }
       );
 
-      const { confirmed, status } = await waitForWhatsAppConfirmation(message.sid, 30000);
+      const { confirmed, status } = await waitForWhatsAppConfirmation(
+        message.sid,
+        30000,
+        2000,
+        { tenant_id: salon.id, session_id: sessionId }
+      );
       if (confirmed) {
         return { channel: 'whatsapp', message, messageType: 'whatsapp_template' };
       }

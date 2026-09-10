@@ -265,9 +265,13 @@ const WHATSAPP_CONFIRMED_STATUSES = new Set(['sent', 'delivered', 'read']);
 export async function waitForWhatsAppConfirmation(
   messageSid: string,
   timeoutMs = 30000,
-  pollIntervalMs = 2000
+  pollIntervalMs = 2000,
+  context: SMSLogContext = {}
 ): Promise<{ confirmed: boolean; status: string | null }> {
-  if (!globalClient) {
+  const { client } = await resolveClientAndFromNumber(context, 'whatsapp');
+  const lookupClient = client || globalClient;
+
+  if (!lookupClient) {
     return { confirmed: false, status: null };
   }
 
@@ -276,7 +280,7 @@ export async function waitForWhatsAppConfirmation(
 
   while (Date.now() < deadline) {
     try {
-      const message = await globalClient.messages(messageSid).fetch();
+      const message = await lookupClient.messages(messageSid).fetch();
       lastStatus = message.status || null;
       if (lastStatus && WHATSAPP_CONFIRMED_STATUSES.has(lastStatus)) {
         return { confirmed: true, status: lastStatus };

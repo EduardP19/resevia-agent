@@ -546,6 +546,28 @@ After each test suite run:
 
 ---
 
+### [2026-09-09] — Twilio booking confirmation template created
+
+**What changed:** Created Twilio Content template `amo_hair_booking_confirmation` (`HX2dd40673975135520e1714cee50f91e9`), submitted it for WhatsApp approval as `UTILITY`, and set `TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_SID` in local `.env`.
+**Why:** Follow-up to configure the new booking confirmation template so confirmations can go WhatsApp-first instead of falling directly to SMS.
+**Files touched:** `.env`, `skills/RESEVIA-AGENT-SKILL.md`.
+**Outcome:** Partial — Twilio accepted the approval request and the status is currently `pending`; Amo Hair & Beauty has a WhatsApp sender configured.
+**Lesson learned:** The Content SID can be configured immediately, but sends will still fall back to SMS until WhatsApp approval reaches `approved` in Twilio.
+**Commit:** Uncommitted.
+
+---
+
+### [2026-09-09] — Voice booking closure and WhatsApp confirmation hardening
+
+**What changed:** Voice booking turns now avoid repeating the full service name after the caller has named it, pass structured appointment/name/service/booking UID variables into the WhatsApp booking confirmation template, and return a bridge-only end-call directive after successful voice bookings. The bridge strips that directive, injects a warm goodbye, and closes the Twilio stream. WhatsApp delivery polling now uses the same tenant Twilio credentials that sent the message.
+**Why:** Live QA found three issues after booking: repeated service phrasing, SMS fallback instead of WhatsApp, and no clean spoken ending/hangup.
+**Files touched:** `lib/agent.ts`, `lib/voice-tools.ts`, `lib/twilio.ts`, `lib/booking-confirmation.ts`, `app/api/twilio/voice/route.ts`, `bridge/server.js`, `skills/RESEVIA-AGENT-SKILL.md`.
+**Outcome:** Pass — `npx tsc --noEmit --pretty false`, `node --check bridge/server.js`, and `npm run build` pass. Local env currently has no `TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_SID`, so WhatsApp confirmation still requires that setting or the per-salon DB override.
+**Lesson learned:** For live calls, final call closure should be deterministic in the bridge, not solely dependent on the model choosing the `end_call` tool after a successful booking.
+**Commit:** Uncommitted.
+
+---
+
 ### [2026-09-09] — WhatsApp booking confirmation template
 
 **What changed:** Booking confirmations now try a dedicated WhatsApp Content template first (`amo_hair_booking_confirmation`, configured by `TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_SID` or `business_profiles.whatsapp_booking_confirmation_template_sid`) and fall back to SMS if WhatsApp is unavailable, rejected or unconfirmed. Successful `book_direct` and `confirm_booking` tool calls dispatch the confirmation for real SMS/WhatsApp conversations, while test/sandbox tool calls stay quiet.
