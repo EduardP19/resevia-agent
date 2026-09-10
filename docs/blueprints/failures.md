@@ -4,6 +4,34 @@ A record of every significant bug, what caused it, and how it was fixed. Read th
 
 ---
 
+## [2026-09-10] Duplicate booking confirmation WhatsApp template was submitted
+
+**Symptom:** WhatsApp Manager showed two `amo_hair_booking_confirmation` templates: the original English (US) template was active, while a new English template was in review.
+
+**Root cause:** During the booking-confirmation WhatsApp work, the app needed a Twilio `HX...` Content SID. The existing approved Meta template was not visible in Twilio Content or `LegacyContent`, so a new Twilio Content template was created and submitted instead of importing/copying the existing approved template.
+
+**Fix:** Deleted the pending duplicate Twilio Content template `HX2dd40673975135520e1714cee50f91e9`, cleared Amo's `whatsapp_booking_confirmation_template_sid`, removed the local env value, and added a code guard so the retired SID is ignored even if a remote env still contains it.
+
+**Files:** `lib/booking-confirmation.ts`, `.env`
+
+**Lesson:** If an approved template already exists in Meta/WhatsApp Manager but is missing from Twilio Content, do the Twilio copy/import step and use the resulting Content SID. Do not submit a same-name replacement for review.
+
+---
+
+## [2026-09-10] Voice goodbye was cut off and booking fallback never sent
+
+**Symptom:** After a successful voice booking, the line closed before the final sentence finished and neither WhatsApp nor SMS appeared.
+
+**Root cause:** A hidden booking-tool directive made the bridge invoke `end_call` after 500 ms instead of leaving that decision to Deepgram. The bridge then used a fixed hangup delay rather than Deepgram's audio-complete event. Separately, voice confirmation delivery was detached with `waitUntil`; production sent the WhatsApp template, but when Meta rejected the still-pending template with Twilio error `63016`, the polling/fallback chain did not survive long enough to send SMS.
+
+**Fix:** Removed the hidden auto-end directive. Deepgram now calls `end_call` as its final action, the bridge queues the complete closing message and closes only after `AgentAudioDone` (with a safety timeout). Voice booking confirmation now awaits the WhatsApp-first/SMS-fallback result before returning from the tool request, using a bounded six-second WhatsApp confirmation window.
+
+**Files:** `bridge/server.js`, `lib/agent.ts`, `lib/voice-agent.ts`, `lib/voice-tools.ts`, `lib/booking-confirmation.ts`
+
+**Lesson:** Delivery fallbacks that must happen cannot be detached from a serverless voice-tool request, and call teardown should synchronize with audio completion rather than an estimated speech duration.
+
+---
+
 ## [2026-03-27] "I'm having trouble processing that" after any tool call
 
 **Symptom:** Agent replied with the fallback string on any message that triggered a tool call (availability check, booking). Single-message conversations worked fine.

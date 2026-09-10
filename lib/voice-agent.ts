@@ -34,7 +34,7 @@ export function deepgramFunctions(toolEndpoint?: VoiceSettingsInput['toolEndpoin
   const voiceFunctions = [
     {
       name: 'end_call',
-      description: 'End the live phone call after a clean booking outcome or the caller clearly decides not to proceed. Do not use this for errors, failed tools, escalation, complaints, uncertainty, or anything that needs the team.',
+      description: 'Final action after a clean booking outcome or the caller clearly decides not to proceed. Supply the complete warm goodbye; the bridge hangs up only after Deepgram finishes speaking it. Do not use this for errors, failed tools, escalation, complaints, uncertainty, or anything that needs the team.',
       parameters: {
         type: SchemaType.OBJECT,
         properties: {

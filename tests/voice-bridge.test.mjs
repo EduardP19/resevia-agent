@@ -80,7 +80,7 @@ test('live voice events retry with a stable ID and preserve transcript order bef
   }
 });
 
-test('voice agent can end the call after a final decision', { timeout: 15000 }, async () => {
+test('voice agent ends the call only after Deepgram finishes the goodbye', { timeout: 15000 }, async () => {
   const received = [];
   const bridgeToDeepgram = [];
   let finish;
@@ -118,7 +118,7 @@ test('voice agent can end the call after a final decision', { timeout: 15000 }, 
         VOICE_TURN_SECRET: 'local-test-secret',
         DEEPGRAM_API_KEY: 'local-test-key',
         DEEPGRAM_AGENT_URL: `ws://127.0.0.1:${dgPort}`,
-        END_CALL_DELAY_MS: '20',
+        END_CALL_SAFETY_TIMEOUT_MS: '2000',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -143,6 +143,13 @@ test('voice agent can end the call after a final decision', { timeout: 15000 }, 
             }],
           }));
         }
+        const message = bridgeToDeepgram.at(-1);
+        if (message.type === 'InjectAgentMessage' && message.message === 'No problem. Thanks for calling.') {
+          setTimeout(() => {
+            assert.equal(received.some(item => item.body.event === 'call_ended'), false);
+            socket.send(JSON.stringify({ type: 'AgentAudioDone' }));
+          }, 30);
+        }
       });
     });
     caller = new WebSocket(`ws://127.0.0.1:${bridgePort}`);
@@ -157,7 +164,7 @@ test('voice agent can end the call after a final decision', { timeout: 15000 }, 
     assert.equal(received[0].body.content, 'No problem. Thanks for calling.');
     assert.equal(received[1].body.event, 'call_ended');
     assert.equal(received[1].body.reason, 'agent_ended_call:declined');
-    assert.ok(bridgeToDeepgram.some(message => message.type === 'InjectAgentMessage' && message.message === 'No problem. Thanks for calling.'));
+    assert.ok(bridgeToDeepgram.some(message => message.type === 'InjectAgentMessage' && message.message === 'No problem. Thanks for calling.' && message.behavior === 'queue'));
     assert.ok(bridgeToDeepgram.some(message => message.type === 'FunctionCallResponse' && message.name === 'end_call'));
     assert.equal(received.some(item => item.url.startsWith('/api/voice/turn')), false);
   } finally {

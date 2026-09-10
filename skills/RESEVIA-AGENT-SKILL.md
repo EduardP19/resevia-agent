@@ -546,6 +546,28 @@ After each test suite run:
 
 ---
 
+### [2026-09-10] — Retire duplicate booking confirmation template
+
+**What changed:** Deleted the unnecessary pending Twilio Content template `HX2dd40673975135520e1714cee50f91e9`, cleared Amo Hair & Beauty's `whatsapp_booking_confirmation_template_sid`, removed the local `.env` value, and added a guard so that retired SID is ignored if it remains in a remote environment.
+**Why:** The salon already had an active English (US) `amo_hair_booking_confirmation` template in WhatsApp Manager, and the duplicate English template should not have been submitted for review.
+**Files touched:** `lib/booking-confirmation.ts`, `.env`, `docs/blueprints/failures.md`, `skills/RESEVIA-AGENT-SKILL.md`.
+**Outcome:** Twilio `ContentAndApprovals` no longer lists the duplicate booking-confirmation template. The approved Meta template is still not present in Twilio Content or `LegacyContent`, so WhatsApp-first booking confirmations need the approved template copied/imported into Twilio Content and configured with its resulting `HX...` Content SID.
+**Lesson learned:** Existing Meta/WhatsApp templates are not necessarily sendable through Twilio until they have a Twilio Content SID. Use Twilio's copy/import/mapping flow for existing approved templates rather than submitting a replacement.
+**Commit:** Uncommitted.
+
+---
+
+### [2026-09-10] — Voice audio-complete hangup and durable confirmation fallback
+
+**What changed:** Removed the bridge's hidden 500 ms post-booking auto-hangup. Deepgram's LLM now owns the final `end_call` tool call, and the bridge queues its complete closing message then waits for Deepgram's `AgentAudioDone` event before closing the stream, with a 15-second safety timeout. Voice booking confirmations now await the complete WhatsApp-first/SMS-fallback flow before the tool response returns, with a six-second WhatsApp status window and a longer bridge tool timeout.
+**Why:** Live QA showed the goodbye being cut off and no written confirmation arriving.
+**Files touched:** `bridge/server.js`, `lib/agent.ts`, `lib/voice-agent.ts`, `lib/voice-tools.ts`, `lib/booking-confirmation.ts`, `docs/blueprints/failures.md`, `skills/RESEVIA-AGENT-SKILL.md`.
+**Outcome:** Live logs identified WhatsApp error `63016`: the new template was sent while still pending approval. The old detached fallback never reached SMS. `npx tsc --noEmit --pretty false`, `node --check bridge/server.js`, `npm run build`, and `node --test tests/voice-bridge.test.mjs` pass.
+**Lesson learned:** Use Deepgram's audio lifecycle as the hangup boundary, and keep required fallback delivery inside the request lifecycle.
+**Commit:** Uncommitted.
+
+---
+
 ### [2026-09-09] — Twilio booking confirmation template created
 
 **What changed:** Created Twilio Content template `amo_hair_booking_confirmation` (`HX2dd40673975135520e1714cee50f91e9`), submitted it for WhatsApp approval as `UTILITY`, and set `TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_SID` in local `.env`.

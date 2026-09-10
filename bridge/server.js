@@ -34,14 +34,14 @@ const KEEPALIVE_MS = 8000;
 // Cal.com availability is the slowest thing in a turn. A caller will tolerate a
 // few seconds of "one moment"; they will not tolerate the 46 seconds the first
 // live call produced. Past this we give the agent something to say instead.
-const TOOL_TIMEOUT_MS = Number(process.env.TOOL_TIMEOUT_MS) || 12000;
+const TOOL_TIMEOUT_MS = Number(process.env.TOOL_TIMEOUT_MS) || 25000;
 
 // How long the line may stay quiet after a tool result before we make the agent
 // say something. Gemini sometimes answers a tool call with no words at all,
 // which on a phone is indistinguishable from a dropped call — "are you still
 // there?" is what it sounded like on the first live calls.
 const SILENCE_WATCHDOG_MS = Number(process.env.SILENCE_WATCHDOG_MS) || 4000;
-const END_CALL_DELAY_MS = Number(process.env.END_CALL_DELAY_MS) || 5500;
+const END_CALL_SAFETY_TIMEOUT_MS = Number(process.env.END_CALL_SAFETY_TIMEOUT_MS) || 15000;
 
 // Deliberately non-committal: this is filler for a gap, and it must not imply
 // an outcome the agent hasn't actually got yet.
@@ -85,6 +85,8 @@ wss.on('connection', (twilioWs) => {
   let closed = false;
   let deepgramReady = false;
   let ctx = {};
+  let pendingEndCall = null;
+  let endCallSafetyTimer = null;
 
   // Twilio starts streaming the moment the call connects, but nothing can be
   // forwarded until Deepgram has accepted its Settings. Buffering instead of
@@ -131,11 +133,11 @@ wss.on('connection', (twilioWs) => {
   function endCallFromAgent(fn) {
     const args = functionArgs(fn);
     const outcome = String(args.outcome || 'resolved').slice(0, 80);
-    const closingMessage = String(args.closingMessage || 'Thanks for calling. Goodbye.').trim().slice(0, 240);
+    const closingMessage = String(args.closingMessage || '').trim().slice(0, 240);
 
     clearSilenceWatchdog();
     log('agent_requested_call_end', { callSid, outcome });
-    if (ctx.sessionId) {
+    if (ctx.sessionId && closingMessage) {
       postEvent({
         sessionId: ctx.sessionId,
         tenantId: ctx.salonId,
@@ -145,22 +147,20 @@ wss.on('connection', (twilioWs) => {
       });
     }
     if (deepgram?.readyState === WebSocket.OPEN) {
-      deepgram.send(JSON.stringify({ type: 'InjectAgentMessage', message: closingMessage, behavior: 'default' }));
+      pendingEndCall = { outcome };
+      if (closingMessage) {
+        deepgram.send(JSON.stringify({ type: 'InjectAgentMessage', message: closingMessage, behavior: 'queue' }));
+      }
       deepgram.send(
         JSON.stringify({ type: 'FunctionCallResponse', id: fn.id, name: fn.name, content: `Ending call: ${outcome}` })
       );
     }
-    setTimeout(() => teardown(`agent_ended_call:${outcome}`), END_CALL_DELAY_MS).unref?.();
-  }
-
-  function extractEndCallDirective(content) {
-    const match = String(content || '').match(/\[\[VOICE_END_CALL:([^:\]]+):([\s\S]*?)\]\]/);
-    if (!match) return null;
-    return {
-      outcome: String(match[1] || 'resolved').trim().slice(0, 80),
-      closingMessage: String(match[2] || 'Thanks for calling. Goodbye.').trim().slice(0, 240),
-      content: String(content || '').replace(match[0], '').trim(),
-    };
+    if (endCallSafetyTimer) clearTimeout(endCallSafetyTimer);
+    endCallSafetyTimer = setTimeout(
+      () => teardown(`agent_ended_call_timeout:${outcome}`),
+      END_CALL_SAFETY_TIMEOUT_MS
+    );
+    endCallSafetyTimer.unref?.();
   }
 
   function teardown(reason) {
@@ -169,6 +169,7 @@ wss.on('connection', (twilioWs) => {
     if (keepalive) clearInterval(keepalive);
     if (heartbeat) clearInterval(heartbeat);
     clearSilenceWatchdog();
+    if (endCallSafetyTimer) clearTimeout(endCallSafetyTimer);
     try { deepgram?.close(); } catch {}
     try { twilioWs.close(); } catch {}
     log('call_ended', { callSid, reason });
@@ -298,26 +299,11 @@ wss.on('connection', (twilioWs) => {
         }
 
         log('tool_done', { callSid, tool: fn.name, ms: Date.now() - startedAt });
-        const endDirective = extractEndCallDirective(content);
-        if (endDirective) content = endDirective.content;
-
         if (deepgram?.readyState === WebSocket.OPEN) {
           deepgram.send(
             JSON.stringify({ type: 'FunctionCallResponse', id: fn.id, name: fn.name, content })
           );
           armSilenceWatchdog();
-        }
-        if (endDirective) {
-          setTimeout(() => {
-            endCallFromAgent({
-              id: `auto-end-${fn.id || randomUUID()}`,
-              name: 'end_call',
-              arguments: {
-                outcome: endDirective.outcome,
-                closingMessage: endDirective.closingMessage,
-              },
-            });
-          }, 500).unref?.();
         }
       })
     );
@@ -345,6 +331,14 @@ wss.on('connection', (twilioWs) => {
       case 'AgentStartedSpeaking':
       case 'AgentThinking':
         clearSilenceWatchdog();
+        break;
+
+      case 'AgentAudioDone':
+        if (pendingEndCall) {
+          const { outcome } = pendingEndCall;
+          pendingEndCall = null;
+          setTimeout(() => teardown(`agent_ended_call:${outcome}`), 250).unref?.();
+        }
         break;
 
       case 'InjectionRefused':

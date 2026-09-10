@@ -1,4 +1,3 @@
-import { waitUntil } from '@vercel/functions';
 import { supabase, getFAQs, getWorkers } from '@/lib/supabase';
 import { executeToolCall, type ToolContext } from '@/lib/tool-handler';
 import { logError, safeLog } from '@/lib/logger';
@@ -69,20 +68,6 @@ function formatAppointment(value?: string | null, fallbackDate?: string, fallbac
   return `${day} at ${time}`;
 }
 
-/**
- * The confirmation must not sit between the caller and the agent's next
- * sentence: the WhatsApp attempt polls for a delivery status for up to 20s
- * before falling back to SMS. On Vercel `waitUntil` keeps it alive past the
- * response to /api/voice/turn; anywhere else the promise simply runs on.
- */
-function runAfterResponse(work: Promise<unknown>) {
-  try {
-    waitUntil(work);
-  } catch {
-    void work;
-  }
-}
-
 export interface VoiceToolCall {
   salonId: string;
   sessionId: string;
@@ -135,8 +120,9 @@ export async function runVoiceToolCall({
       // A non-JSON result is a failure message from the tool handler, not a booking.
     }
     if (booked?.success) {
-      runAfterResponse(
-        sendBookingConfirmation({
+      let confirmationChannel: 'whatsapp' | 'sms' | null = null;
+      try {
+        const confirmation = await sendBookingConfirmation({
           salon,
           sessionId,
           customerPhone,
@@ -153,26 +139,28 @@ export async function runVoiceToolCall({
           appointment: formatAppointment(booked.startTime, args?.date, args?.time),
           serviceName: booked.serviceName || args?.serviceName,
           confirmationNumber: booked.bookingUid || null,
-        })
-          .then((result) => {
-            safeLog({
-              type: 'integration', level: 'info', category: 'sms',
-              event: 'voice_booking_confirmation_sent',
-              tenant_id: salonId, session_id: sessionId, channel: result?.channel,
-            });
-          })
-          .catch((error: any) => {
-            logError('sms', 'voice_booking_confirmation_failed', error, {
-              tenant_id: salonId, session_id: sessionId,
-            });
-          })
-      );
+          // Voice tool requests must finish the fallback before returning.
+          // A long detached poll can be frozen once the serverless response ends.
+          whatsappConfirmTimeoutMs: 6000,
+        });
+        confirmationChannel = confirmation?.channel || null;
+        safeLog({
+          type: 'integration', level: 'info', category: 'sms',
+          event: 'voice_booking_confirmation_sent',
+          tenant_id: salonId, session_id: sessionId, channel: confirmation?.channel,
+        });
+      } catch (error: any) {
+        logError('sms', 'voice_booking_confirmation_failed', error, {
+          tenant_id: salonId, session_id: sessionId,
+        });
+      }
       // Deepgram's prompt is fixed for the call, so the tool result is the only
       // place the model can be told what the caller is about to receive.
       toolResult =
-        `${toolResult} A written confirmation is on its way to the number they called from, by WhatsApp or text. ` +
-        `Next action: call end_call with outcome "booked" and a warm closingMessage that says the booking is confirmed, the confirmation is on its way, and goodbye. Do not ask another question. ` +
-        `[[VOICE_END_CALL:booked:You're all booked in, and your confirmation is on its way. Thanks for calling, goodbye.]]`;
+        `${toolResult} ${confirmationChannel
+          ? `A written confirmation was sent by ${confirmationChannel === 'whatsapp' ? 'WhatsApp' : 'text'} to the number they called from.`
+          : 'The booking is confirmed, but the written confirmation could not be sent. Do not claim that it was sent.'} ` +
+        `Now call end_call as your final action with outcome "booked" and put the complete warm goodbye in closingMessage. Do not ask another question.`;
     }
   }
 

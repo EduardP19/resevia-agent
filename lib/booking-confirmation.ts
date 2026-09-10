@@ -16,6 +16,11 @@ import { safeLog } from '@/lib/logger';
 const WHATSAPP_CONFIRM_TIMEOUT_MS = Number(process.env.WHATSAPP_CONFIRM_TIMEOUT_MS || 20000);
 const BOOKING_CONFIRMATION_TEMPLATE_SID =
   process.env.TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_SID || null;
+const RETIRED_BOOKING_CONFIRMATION_TEMPLATE_SIDS = new Set([
+  // Duplicate template submitted on 2026-09-09, then deleted after we found
+  // Amo already had an approved Meta template with the same body.
+  'HX2dd40673975135520e1714cee50f91e9',
+]);
 
 export interface BookingConfirmationInput {
   salon: any;
@@ -27,6 +32,7 @@ export interface BookingConfirmationInput {
   appointment?: string | null;
   serviceName?: string | null;
   confirmationNumber?: string | null;
+  whatsappConfirmTimeoutMs?: number;
 }
 
 function normalizeE164(value: unknown): string | undefined {
@@ -43,11 +49,12 @@ function firstNameFrom(input: BookingConfirmationInput) {
 }
 
 function bookingConfirmationTemplateSid(salon: any) {
-  return (
+  const contentSid = (
     String(salon?.whatsapp_booking_confirmation_template_sid || '').trim() ||
     BOOKING_CONFIRMATION_TEMPLATE_SID ||
     null
   );
+  return contentSid && !RETIRED_BOOKING_CONFIRMATION_TEMPLATE_SIDS.has(contentSid) ? contentSid : null;
 }
 
 function renderBookingConfirmationBody(input: BookingConfirmationInput) {
@@ -93,6 +100,7 @@ export async function sendBookingConfirmation({
   appointment,
   serviceName,
   confirmationNumber,
+  whatsappConfirmTimeoutMs,
 }: BookingConfirmationInput): Promise<{ channel: 'whatsapp' | 'sms' } | null> {
   const statusCallbackUrl = process.env.TWILIO_STATUS_CALLBACK_URL || undefined;
   const logContext = { tenant_id: salon?.id, session_id: sessionId };
@@ -135,7 +143,7 @@ export async function sendBookingConfirmation({
       );
       const { confirmed, status } = await waitForWhatsAppConfirmation(
         message.sid,
-        WHATSAPP_CONFIRM_TIMEOUT_MS,
+        whatsappConfirmTimeoutMs ?? WHATSAPP_CONFIRM_TIMEOUT_MS,
         2000,
         logContext
       );
