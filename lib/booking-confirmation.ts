@@ -75,8 +75,9 @@ async function recordOutbound(params: {
   channel: 'whatsapp' | 'sms';
   body: string;
   message: any;
+  customerPhone: string;
 }) {
-  const transcript = await saveMessage(params.sessionId, 'assistant', params.body, params.channel);
+  const transcript = await saveMessage(params.sessionId, 'assistant', params.body, params.channel, params.customerPhone);
   await recordMessageCost({
     twilioMessageSid: params.message.sid,
     direction: 'outbound',
@@ -149,7 +150,7 @@ export async function sendBookingConfirmation({
       );
 
       if (confirmed) {
-        await recordOutbound({ salonId: salon.id, sessionId, channel: 'whatsapp', body: confirmationBody, message });
+        await recordOutbound({ salonId: salon.id, sessionId, channel: 'whatsapp', body: confirmationBody, message, customerPhone });
         await recordClientWhatsAppAvailability(salon.id, customerPhone, true);
         return { channel: 'whatsapp' };
       }
@@ -177,6 +178,6 @@ export async function sendBookingConfirmation({
     ...logContext,
     fromNumber: normalizeE164(salon?.twilio_number),
   });
-  await recordOutbound({ salonId: salon.id, sessionId, channel: 'sms', body: confirmationBody, message });
+  await recordOutbound({ salonId: salon.id, sessionId, channel: 'sms', body: confirmationBody, message, customerPhone });
   return { channel: 'sms' };
 }

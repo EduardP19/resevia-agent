@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
       .update({ channel: deliveredChannel, status: 'active', updated_at: new Date().toISOString() })
       .eq('id', conversation.id);
 
-    const assistantMessage = await saveMessage(conversation.id, 'assistant', transcriptContent, deliveredChannel);
+    const assistantMessage = await saveMessage(conversation.id, 'assistant', transcriptContent, deliveredChannel, clientPhone);
 
     const outboundMetadata = {
       twilioMessageSid: outboundMessage.sid,

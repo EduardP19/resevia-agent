@@ -546,6 +546,17 @@ After each test suite run:
 
 ---
 
+### [2026-09-10] — Submit replacement booking confirmation template
+
+**What changed:** Created Twilio Content template `amo_booking_confirmation_20260910` (`HX2178085964fbee6cc0fd7b98251b24ed`) with the booking confirmation body and four variables, submitted it to WhatsApp as `UTILITY`, set Amo Hair & Beauty's `whatsapp_booking_confirmation_template_sid` to the new SID, and set the same value in local `.env`.
+**Why:** The previous duplicate template was deleted, and the user asked to submit a fresh template for review and wait for approval.
+**Files touched:** `.env`, `skills/RESEVIA-AGENT-SKILL.md`.
+**Outcome:** Twilio accepted the WhatsApp approval request with status `received`; the template must become `approved` before WhatsApp confirmations deliver. Until then, the booking confirmation funnel will attempt WhatsApp and fall back to SMS.
+**Lesson learned:** After deleting a WhatsApp template, avoid immediate same-name reuse because WhatsApp may block deleted template names for 30 days.
+**Commit:** Uncommitted.
+
+---
+
 ### [2026-09-10] — Retire duplicate booking confirmation template
 
 **What changed:** Deleted the unnecessary pending Twilio Content template `HX2dd40673975135520e1714cee50f91e9`, cleared Amo Hair & Beauty's `whatsapp_booking_confirmation_template_sid`, removed the local `.env` value, and added a guard so that retired SID is ignored if it remains in a remote environment.

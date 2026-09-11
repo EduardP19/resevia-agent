@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
       }
       const { sessionId, tenantId, event, eventId, occurredAt, role, content, reason } = parsed.data;
       const { data: session, error: sessionError } = await supabase.from('sessions')
-        .select('id, created_at').eq('id', sessionId).eq('salon_id', tenantId).eq('channel', 'voice').maybeSingle();
+        .select('id, created_at, client_identifier').eq('id', sessionId).eq('salon_id', tenantId).eq('channel', 'voice').maybeSingle();
       if (sessionError) throw sessionError;
       if (!session) return NextResponse.json({ error: 'Call not found' }, { status: 404 });
 
@@ -51,7 +51,9 @@ export async function POST(req: NextRequest) {
         if (!content || !role) return NextResponse.json({ error: 'Transcript role and content are required' }, { status: 400 });
         try {
           await saveMessageToTable(sessionId, role, content, 'transcripts', undefined, {
-            channel: 'voice', ...(eventId ? { id: eventId } : {}),
+            channel: 'voice',
+            ...(session.client_identifier ? { from_number: session.client_identifier } : {}),
+            ...(eventId ? { id: eventId } : {}),
             ...(occurredAt ? { created_at: occurredAt } : {}),
           });
         } catch (error: any) {

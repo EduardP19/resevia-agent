@@ -219,7 +219,8 @@ async function processMissedCall(params: {
     conversation.id,
     'system',
     `[Voice webhook] Missed call from ${fromNumber}. Auto follow-up sent via ${deliveredChannel}.`,
-    'voice'
+    'voice',
+    fromNumber
   );
   console.log(`[voice] ✓ system message saved`);
 
@@ -230,7 +231,8 @@ async function processMissedCall(params: {
     conversation.id,
     'assistant',
     deliveredChannel === 'whatsapp' ? '[WhatsApp template sent]' : smsBody,
-    deliveredChannel
+    deliveredChannel,
+    fromNumber
   );
   const outboundMetadata = {
     twilioMessageSid: outboundMessage.sid,

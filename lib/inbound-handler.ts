@@ -115,7 +115,7 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
     return twiml();
   }
 
-  const userMessage = await saveMessage(conversation.id, 'user', userInput, channel);
+  const userMessage = await saveMessage(conversation.id, 'user', userInput, channel, fromNumber);
 
   if (inboundMessageSid && userMessage?.id) {
     const inboundSmsStatus = (formData.get('SmsStatus') as string | null) || 'received';
@@ -204,7 +204,7 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
     if (result.updatedBookingState) updatedBookingState = result.updatedBookingState;
     if (result.updatedSystemPrompt) systemPrompt = result.updatedSystemPrompt;
 
-    await saveMessage(conversation.id, 'system' as any, `Tool (${name}): ${result.toolResult}`, channel);
+    await saveMessage(conversation.id, 'system' as any, `Tool (${name}): ${result.toolResult}`, channel, fromNumber);
     const updatedHistory = await getTranscriptHistory(conversation.id);
     aiResponse = await callAI(
       systemPrompt,
@@ -235,7 +235,7 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
   const effectiveManual = resolveEffectiveApprovalMode(conversation, salon);
 
   if (effectiveManual) {
-    await saveMessage(conversation.id, 'draft' as any, reply, channel);
+    await saveMessage(conversation.id, 'draft' as any, reply, channel, fromNumber);
     safeLog({
       type: 'audit',
       level: 'info',
@@ -292,7 +292,7 @@ export async function handleInboundMessage(req: Request, channel: MessageChannel
     tenant_id: salon.id,
     session_id: conversation.id,
   });
-  const assistantMessage = await saveMessage(conversation.id, 'assistant', reply, channel);
+  const assistantMessage = await saveMessage(conversation.id, 'assistant', reply, channel, fromNumber);
 
   const outboundMetadata = {
     twilioMessageSid: outboundMessage.sid,

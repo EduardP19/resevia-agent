@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ duplicate: true, sessionId: conversation.id });
     }
 
-    await saveMessage(conversation.id, 'user', message, 'test');
+    await saveMessage(conversation.id, 'user', message, 'test', from);
 
     const [workers, faqs, activeHold, history] = await Promise.all([
       getWorkers(salon.id),
@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
       if (result.updatedBookingState) updatedBookingState = result.updatedBookingState;
       if (result.updatedSystemPrompt) systemPrompt = result.updatedSystemPrompt;
 
-      await saveMessage(conversation.id, 'system' as any, `Tool (${name}): ${result.toolResult}`, 'test');
+      await saveMessage(conversation.id, 'system' as any, `Tool (${name}): ${result.toolResult}`, 'test', from);
       const updatedHistory = await getTranscriptHistory(conversation.id);
       aiResponse = await callAI(
         systemPrompt,
@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
     const effectiveManual = resolveEffectiveApprovalMode(conversation, salon);
 
     if (effectiveManual) {
-      await saveMessage(conversation.id, 'draft' as any, reply, 'test');
+      await saveMessage(conversation.id, 'draft' as any, reply, 'test', from);
       safeLog({
         type: 'audit',
         level: 'info',
@@ -194,7 +194,7 @@ export async function POST(req: NextRequest) {
       updated_at: new Date().toISOString()
     }).eq('id', conversation.id);
 
-    await saveMessage(conversation.id, 'assistant', reply, 'test');
+    await saveMessage(conversation.id, 'assistant', reply, 'test', from);
     await refreshSessionSummary(conversation.id, triggerHandoff ? 'escalated' : 'active').catch(() => {});
 
     if (triggerHandoff) {

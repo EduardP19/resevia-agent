@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     });
 
     // 2. Save as final assistant message
-    const assistantMessage = await saveMessage(sessionId, 'assistant', content, channel);
+    const assistantMessage = await saveMessage(sessionId, 'assistant', content, channel, session.client_identifier);
 
     const outboundMetadata = {
       twilioMessageSid: outboundMessage.sid,

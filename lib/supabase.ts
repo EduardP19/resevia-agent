@@ -56,16 +56,20 @@ function isMissingSophiaSandboxTColumnError(error: any) {
   );
 }
 
-function isMissingTranscriptChannelColumnError(error: any) {
+function isMissingTranscriptColumnError(error: any, column: string) {
   const message = typeof error?.message === 'string' ? error.message : '';
   const details = typeof error?.details === 'string' ? error.details : '';
   const code = typeof error?.code === 'string' ? error.code : '';
 
   return (
     code === 'PGRST204' ||
-    message.includes("Could not find the 'channel' column") ||
-    details.includes("Could not find the 'channel' column")
+    message.includes(`Could not find the '${column}' column`) ||
+    details.includes(`Could not find the '${column}' column`)
   );
+}
+
+function isMissingTranscriptChannelColumnError(error: any) {
+  return isMissingTranscriptColumnError(error, 'channel');
 }
 
 // Load salon by ID
@@ -257,15 +261,20 @@ export async function saveMessage(
   sessionId: string,
   role: 'user' | 'assistant' | 'system' | 'draft',
   content: string,
-  channel?: TranscriptChannel
+  channel?: TranscriptChannel,
+  fromNumber?: string | null
 ) {
+  const extraPayload: Record<string, any> = {};
+  if (channel) extraPayload.channel = channel;
+  if (fromNumber) extraPayload.from_number = fromNumber;
+
   return saveMessageToTable(
     sessionId,
     role,
     content,
     'transcripts',
     undefined,
-    channel ? { channel } : undefined
+    Object.keys(extraPayload).length ? extraPayload : undefined
   );
 }
 
@@ -287,28 +296,30 @@ export async function saveMessageToTable(
   const includeT = table === TEST_UI_TRANSCRIPTS_TABLE;
 
   if (!includeT) {
-    const { data, error } = await supabase.from(table).insert(basePayload).select().single();
+    let { data, error } = await supabase.from(table).insert(basePayload).select().single();
+    if (error && basePayload.from_number && isMissingTranscriptColumnError(error, 'from_number')) {
+      const { from_number: _fromNumber, ...fallbackPayload } = basePayload;
+      ({ data, error } = await supabase.from(table).insert(fallbackPayload).select().single());
+    }
     if (error && basePayload.channel && isMissingTranscriptChannelColumnError(error)) {
       const { channel: _channel, ...fallbackPayload } = basePayload;
       const { data: fallbackData, error: fallbackError } = await supabase.from(table).insert(fallbackPayload).select().single();
 
       if (!fallbackError) return fallbackData;
     }
-    if (error) {
-      safeLog({
-        type: 'error',
-        level: 'error',
-        category: 'system',
-        event: 'db_error',
-        error: error?.message || String(error),
-        stack: error?.stack,
-        query_description: `Save ${role} message to ${table}`,
-        session_id: sessionId,
-        code: error?.code,
-      });
-      throw formatTranscriptTableError(error, table);
-    }
-    return data;
+    if (!error) return data;
+    safeLog({
+      type: 'error',
+      level: 'error',
+      category: 'system',
+      event: 'db_error',
+      error: error?.message || String(error),
+      stack: error?.stack,
+      query_description: `Save ${role} message to ${table}`,
+      session_id: sessionId,
+      code: error?.code,
+    });
+    throw formatTranscriptTableError(error, table);
   }
 
   const payloadWithT = {
@@ -714,9 +725,26 @@ export async function completeSession(salonId: string, clientIdentifier: string)
 export async function getSessionTranscript(sessionId: string) {
   const { data, error } = await supabase
     .from('transcripts')
-    .select('id, role, content, created_at, channel')
+    .select('id, role, content, created_at, channel, from_number')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true });
+
+  if (error && isMissingTranscriptColumnError(error, 'from_number')) {
+    const { data: fallbackData, error: fallbackError } = await supabase
+      .from('transcripts')
+      .select('id, role, content, created_at, channel')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true });
+    if (fallbackError && isMissingTranscriptChannelColumnError(fallbackError)) {
+      const { data: legacyData } = await supabase
+        .from('transcripts')
+        .select('id, role, content, created_at')
+        .eq('session_id', sessionId)
+        .order('created_at', { ascending: true });
+      return legacyData || [];
+    }
+    return fallbackData || [];
+  }
 
   if (error && isMissingTranscriptChannelColumnError(error)) {
     const { data: fallbackData } = await supabase
